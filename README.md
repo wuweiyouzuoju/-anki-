@@ -15,14 +15,14 @@ layout.
 - Anki: `26.05` (`e64c6b1` release commit)
 - Rust: `1.92.0`
 - DevEco Studio: `6.1.0.860`
-- Minimum system: HarmonyOS `5.0.0`, API 12
+- Minimum system: HarmonyOS `6.0.1`, API 21
 - Compile/target SDK: HarmonyOS SDK `6.1.0.105`, API 23
 - Native targets: `aarch64-unknown-linux-ohos`, `x86_64-unknown-linux-ohos`
 
-Features introduced after API 12 must have runtime capability checks and an
-API 12 implementation or graceful fallback. Local study, import/export,
+Features introduced after API 21 must have runtime capability checks and an
+API 21 implementation or graceful fallback. Local study, import/export,
 backup/restore, and collection integrity checks must remain available on API
-12 devices.
+21 devices.
 
 ## Build
 
