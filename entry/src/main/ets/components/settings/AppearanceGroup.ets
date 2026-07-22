@@ -248,13 +248,21 @@ export struct AppearanceGroup {
               .fontSize(15)
               .fontColor(settingsPalette(this.isDark).textPrimary)
             Blank()
-            Text(this.languageLabel(currentLanguageMode()))
-              .fontSize(13)
-              .fontColor(settingsPalette(this.isDark).textTertiary)
+            Row({ space: 6 }) {
+              Text(this.languageLabel(currentLanguageMode()))
+                .fontSize(13)
+                .fontColor(settingsPalette(this.isDark).textTertiary)
+              Text('▼')
+                .fontSize(11)
+                .fontColor(settingsPalette(this.isDark).textMuted)
+                .rotate({ angle: this.expandedKey === 'languageMode' ? 0 : -90 })
+            }
           }
           .width('100%')
           .height(48)
-          .onClick(() => this.toggleExpand('languageMode'))
+          .onClick(() => {
+            animateTo({ duration: 150, curve: Curve.EaseOut }, () => { this.toggleExpand('languageMode'); });
+          })
 
           if (this.expandedKey === 'languageMode') {
             Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
