@@ -444,9 +444,7 @@ mod ffi_tests {
         let mut handle = 0_u32;
         let mut error = AnkiBuffer::default();
 
-        let status = unsafe {
-            anki_backend_open(std::ptr::null(), 0, &mut handle, &mut error)
-        };
+        let status = unsafe { anki_backend_open(std::ptr::null(), 0, &mut handle, &mut error) };
 
         assert_eq!(status, STATUS_OK, "{}", buffer_text(&error));
         assert_ne!(handle, 0);
