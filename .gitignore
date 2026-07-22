@@ -1,0 +1,16 @@
+/.idea/
+/.hvigor/
+/.worktrees/
+/build/
+/entry/build/
+/entry/.cxx/
+/entry/oh_modules/
+/oh_modules/
+/native/**/target/
+/node_modules/
+/target/
+/work/
+/outputs/
+*.hap
+*.app
+*.log

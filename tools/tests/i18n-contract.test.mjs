@@ -1,0 +1,77 @@
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+
+const root = process.cwd();
+const read = (relativePath) => readFileSync(join(root, relativePath), 'utf8');
+
+function resourceKeys(relativePath) {
+  return JSON.parse(read(relativePath)).string.map((item) => item.name).sort();
+}
+
+function etsFiles(relativeDirectory) {
+  const directory = join(root, relativeDirectory);
+  return readdirSync(directory)
+    .filter((entry) => entry.endsWith('.ets'))
+    .map((entry) => join(relativeDirectory, entry));
+}
+
+test('Chinese and English resources expose identical keys', () => {
+  const english = 'entry/src/main/resources/en_US/element/string.json';
+  assert.equal(existsSync(join(root, english)), true, 'English resources must exist');
+  assert.deepEqual(resourceKeys(english), resourceKeys('entry/src/main/resources/base/element/string.json'));
+});
+
+test('English resources are translated and contain no Chinese copy', () => {
+  const english = 'entry/src/main/resources/en_US/element/string.json';
+  assert.equal(existsSync(join(root, english)), true, 'English resources must exist');
+  const zhItems = new Map(JSON.parse(read('entry/src/main/resources/base/element/string.json')).string
+    .map((item) => [item.name, item.value]));
+  const allowedIdenticalValues = new Set(['working_name', 'entry_ability_desc', 'feedback_email', 'app_about_copyright', 'field_help_button']);
+  for (const item of JSON.parse(read(english)).string) {
+    assert.doesNotMatch(item.value, /[\u4e00-\u9fff]/, `${item.name} must be English`);
+    if (!allowedIdenticalValues.has(item.name)) {
+      assert.notEqual(item.value, zhItems.get(item.name), `${item.name} must not copy the base translation`);
+    }
+  }
+});
+
+test('language store uses the HarmonyOS preferred-language API', () => {
+  const relativePath = 'entry/src/main/ets/model/LanguageStore.ets';
+  assert.equal(existsSync(join(root, relativePath)), true, 'LanguageStore must exist');
+  const source = read(relativePath);
+  assert.match(source, /export type LanguageMode = 'zh-Hans' \| 'en'/);
+  assert.match(source, /i18n\.System\.getAppPreferredLanguage/);
+  assert.match(source, /i18n\.System\.setAppPreferredLanguage/);
+  assert.doesNotMatch(source, /'system'/);
+});
+
+test('pages and components do not embed translated copy in Text, Button, or placeholders', () => {
+  const rawCopy = /(?<![A-Za-z])(?:Text|Button)\(\s*(['"])(?![›▼✓⌄⌃×⚠≡]\1)[\s\S]*?\1\s*\)|placeholder:\s*(['"])[\s\S]*?\2/;
+  const violations = [...etsFiles('entry/src/main/ets/components'), ...etsFiles('entry/src/main/ets/pages')]
+    .filter((relativePath) => rawCopy.test(read(relativePath)));
+  assert.deepEqual(violations, [], `resourceize user-facing literals: ${violations.join(', ')}`);
+});
+
+test('pages and components do not embed translated state, toast, a11y, select, or format copy', () => {
+  const forbiddenPatterns = [
+    /(?:showToast|accessibilityDescription|accessibilityText)\s*\([^\n]*(['"])[^'"\n]+\1/,
+    /this\.\w*(?:Error|Notice|Hint|Detail|Label|Title|Message)\s*=\s*(['"])[^'"\n]+\1/,
+    /(?:const|let)\s+\w*(?:LABELS|Labels|Options|OPTIONS)\w*\s*:\s*string\[\]\s*=\s*\[[^\]]*(['"])[^'"\n]+\1/,
+    /(?:getStringSync|format)\(\s*(['"])[^'"\n]+\1/
+  ];
+  const violations = [];
+  for (const relativePath of [...etsFiles('entry/src/main/ets/components'), ...etsFiles('entry/src/main/ets/pages')]) {
+    const source = read(relativePath);
+    if (forbiddenPatterns.some((pattern) => pattern.test(source))) {
+      violations.push(relativePath);
+    }
+  }
+  assert.deepEqual(violations, [], `resourceize user-facing state and dynamic copy: ${violations.join(', ')}`);
+});
+
+test('localized fallback errors do not dereference a missing ability context', () => {
+  const source = read('entry/src/main/ets/pages/StudyPage.ets');
+  assert.doesNotMatch(source, /if \(context === null\) \{[^}]*context\.resourceManager/);
+});

@@ -1,0 +1,16 @@
+[workspace]
+members = ["native/rsharmony"]
+exclude = ["third_party/anki"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+rust-version = "1.92"
+
+# release 瘦身：thin LTO 在编译时长与体积/性能间取平衡；
+# strip 去除符号表（debug 构建的 319 MB .so 绝大部分是符号与调试信息）。
+[profile.release]
+lto = "thin"
+strip = "symbols"

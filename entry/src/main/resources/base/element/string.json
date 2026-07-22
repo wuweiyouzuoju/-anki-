@@ -1,0 +1,1013 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Local-first card learning for HarmonyOS"
+    },
+    { "name": "deck_newPerDay_label", "value": "每日新卡上限" }, { "name": "deck_newPerDay_help", "value": "每天最多引入的新卡数量；当天没学满不会累积到明天，第二天仍按原上限计算。\n官方建议：新卡会在短期内显著增加复习负担，该值通常至少比「每日复习上限」小 10 倍。官方经验值——每天持续学 20 张新卡，日复习量会稳定在约 200 张。\n例：设为 20 时，今天最多学 20 张新卡，其余顺延到明天。\n注意：复习上限会连带限制新卡——复习上限 200 且已有 190 张复习在等待时，今天最多再引入 10 张新卡；复习额度用满后新卡默认不再出现（可在高级设置开启「新卡忽略复习上限」）。" },
+    { "name": "deck_reviewsPerDay_label", "value": "每日复习上限" }, { "name": "deck_reviewsPerDay_help", "value": "每天最多展示的到期复习卡数量。达到上限后即使还有更多卡等待也不再展示；跨日学习卡会优先于复习卡计入该上限。\n例：设为 200 时，即使 300 张卡到期，今天也只展示 200 张，其余顺延到明天。\n该上限同时约束新卡：复习额度用满后，默认新卡也不再出现。\n官方提示：上限适合用来削平偶尔的到期高峰（比如休息一周后回来）；当有卡因上限被隐藏时，完成页会提示你时间充裕的话可以考虑提高上限。" },
+    { "name": "deck_learnSteps_label", "value": "学习步幅（分钟）" }, { "name": "deck_learnSteps_help", "value": "新卡在「学习中」阶段要依次通过的延迟列表，数字之间用空格隔开。默认单位分钟，也支持 30s（秒）、2h（小时）、2d（天）。\n按「重来」回到第一步，按「良好」进入下一步，全部通过后卡片毕业为复习卡。\n「困难」按官方规则分三种情况：在第一步时取前两步的平均延迟（如 1 10 → 6 分钟）；只有一步时取该步的 1.5 倍（最多比该步多 1 天）；在其余步时重复当前步。\n例：填 1 10 表示——答错后 1 分钟重现；答对后 10 分钟重现；再次答对即毕业，之后按「毕业间隔」跨天出现。" },
+    { "name": "deck_relearnSteps_label", "value": "重新学习步幅（分钟）" }, { "name": "deck_relearnSteps_help", "value": "复习卡按「重来」遗忘后要重新通过的延迟列表，规则与学习步幅相同，可留空。\n例：填 10 表示——复习卡答错后 10 分钟重现一次，答对即回到复习队列。\n留空时：遗忘卡不进重学队列，直接按遗忘规则获得新间隔（默认 1 天）后回到复习队列。" },
+    { "name": "deck_newPerDayMinimum_label", "value": "每日最少新卡" }, { "name": "deck_newPerDayMinimum_help", "value": "官方 Anki 协议中标注为「当前未使用」的保留字段。填写它目前不会对排程产生实际影响，仅为兼容旧牌组配置而展示，日常无需修改。" },
+    { "name": "deck_graduatingIntervalGood_label", "value": "良好毕业间隔（天）" }, { "name": "deck_graduatingIntervalGood_help", "value": "新卡走完最后一个学习步幅并按「良好」后，再等几天才以复习卡身份出现。\n例：填 1 表示今天毕业、明天第一次作为复习卡出现；填 3 则 3 天后才出现。\n这是旧版 SM-2 算法的选项，启用 FSRS 后不再生效（FSRS 会自己计算首次复习时机）。" },
+    { "name": "deck_graduatingIntervalEasy_label", "value": "简单毕业间隔（天）" }, { "name": "deck_graduatingIntervalEasy_help", "value": "学习中按「简单」会立即让卡片毕业，并指定首次复习间隔（天），无论学习步幅是否走完。\n例：填 4 表示按「简单」后跳过剩余步幅，4 天后作为复习卡出现。\n官方校验：简单毕业间隔应不短于「良好毕业间隔」，通常再多几天。启用 FSRS 后本项不再生效。" },
+    { "name": "deck_newCardInsertOrder_label", "value": "新卡加入顺序" }, { "name": "deck_newCardInsertOrder_help", "value": "控制新添加卡片获得的初始位置（到期序号），序号小的先学；修改后已有新卡的位置会自动重排。\n「到期顺序」：先添加的先学；「随机」：新卡获得随机位置。\n官方建议：使用 v3 排程时保持「到期顺序」，抽取方式交给「新卡收集顺序」控制。" },
+    { "name": "deck_newCardGatherPriority_label", "value": "新卡收集顺序" }, { "name": "deck_newCardGatherPriority_help", "value": "每天学习前按什么顺序从牌组中收集新卡，达到日限即停止：\n· 牌组顺序：按子牌组从上到下逐个收集，每个子牌组内按位置升序；大牌库下最快，可优先靠前的子牌组；\n· 牌组后随机笔记：子牌组顺序同上，但每个子牌组内随机挑笔记取卡；\n· 最低位置 / 最高位置：按添加先后（到期序号）升序或降序收集；\n· 随机笔记：随机挑笔记，再取该笔记的全部卡片；\n· 随机卡片：完全随机取卡。\n官方技巧：子牌组始终按名称字母排序，可加数字前缀（如 001）控制先后，或用 _ 置顶、~ 置底。\n例：想让「期末突击」子牌组的新卡永远先被收集，把它改名为 001期末突击 并选「牌组顺序」。" },
+    { "name": "deck_newCardSortOrder_label", "value": "新卡排序顺序" }, { "name": "deck_newCardSortOrder_help", "value": "新卡收集完成后按什么顺序展示：\n· 卡片模板后按收集顺序：按模板号分组，同模板内按收集顺序；官方推荐场景——关闭同级埋藏时，同笔记的卡能在同一场学习中看到但不会挨在一起（先看完所有「正面→背面」再看「背面→正面」）；\n· 保持收集顺序：完全按收集顺序展示，同笔记的卡通常会一张接一张出现；\n· 卡片模板后随机：按模板号分组，组内随机——既不挨着又保留随机性；\n· 随机笔记后模板：随机挑笔记，再按模板顺序展示该笔记的全部卡；\n· 随机卡片：完全打乱。\n例：关闭「埋藏同笔记新卡」又不想让正反面卡挨着，选「卡片模板后按收集顺序」。" },
+    { "name": "deck_newMix_label", "value": "新卡显示位置" }, { "name": "deck_newMix_help", "value": "新卡相对复习卡的出现时机：与复习卡混合 / 复习卡之后 / 复习卡之前。\n例：选「复习卡之后」会先清完今天的到期复习，再开始学新卡；选「复习卡之前」则先学新卡再复习。" },
+    { "name": "deck_interdayLearningMix_label", "value": "跨日学习卡位置" }, { "name": "deck_interdayLearningMix_help", "value": "跨天的（重）学习卡（延迟 ≥1 天、尚未毕业的卡）相对复习卡的展示顺序。注意：跨日学习卡永远先于复习卡被收集并占用复习上限，本项只控制展示先后。\n官方观点：学习卡通常比复习卡难，有人喜欢放在最后（先把简单的做完），有人喜欢放在最前（给快忘的卡留出更多时间）。\n例：选「复习卡之后」时，今天到期的复习卡先展示，昨天遗留的学习卡最后再做。" },
+    { "name": "deck_minimumLapseInterval_label", "value": "最短遗忘间隔（天）" }, { "name": "deck_minimumLapseInterval_help", "value": "复习卡按「重来」遗忘、走完重学步幅（或跳过重学）后，再次展示前最少等待的天数，默认 1 天。\n官方校验：该值应不短于最后一个重学步幅，否则重学还没走完卡片就到期了。\n例：填 1 表示遗忘的卡最快明天再次出现；填 3 则遗忘后至少隔 3 天，避免同一张难卡反复出现在近期。" },
+    { "name": "deck_leechThreshold_label", "value": "难卡阈值" }, { "name": "deck_leechThreshold_help", "value": "复习卡累计按「重来」达到此次数后，被标记为难卡（Leech）。\n例：填 8 表示同一张卡第 8 次遗忘时被判定为难卡。\n难卡极耗时间。官方建议：重写卡片、删除，或为它想一个助记法。" },
+    { "name": "deck_leechAction_label", "value": "难卡处理方式" }, { "name": "deck_leechAction_help", "value": "达到难卡阈值后执行的动作：\n· 仅添加标签：给笔记打上 leech 标签并弹出提示，卡片照常出现；\n· 暂停卡片：除打标签外，隐藏该卡直到手动恢复。\n例：想事后集中处理就选「仅添加标签」，之后在浏览页用 tag:leech 统一找出并改写。" },
+    { "name": "deck_reviewOrder_label", "value": "复习排序顺序" }, { "name": "deck_reviewOrder_help", "value": "到期复习卡的展示顺序，默认「到期日」——等待最久的卡先出现，积压时先清旧账。\n常用：到期日（先还最久的欠账）、间隔递增（短间隔先来，快速过易卡）、可回忆率递减（最容易忘的优先）、相对逾期程度（逾期比例最高者优先）、牌组后到期日（按牌组集中清理）。\n例：积压 500 张时选默认「到期日」，两周前到期的卡会比昨天到期的先出现。" },
+    { "name": "deck_buryNew_label", "value": "埋藏同笔记新卡" }, { "name": "deck_buryNew_help", "value": "开启后：同一条笔记的其他「新」卡（如反向卡、相邻完形）今天不再出现，顺延到明天。\n例：笔记同时生成「正面→背面」与「背面→正面」两张新卡，今天学了正面那张，背面那张明天才来。" },
+    { "name": "deck_buryReviews_label", "value": "埋藏同笔记复习卡" }, { "name": "deck_buryReviews_help", "value": "开启后：同一条笔记的其他「复习」卡今天不再出现，顺延到明天。\n例：同一笔记的正反两张复习卡，今天只出现其中一张，避免答案互相剧透。" },
+    { "name": "deck_buryInterdayLearning_label", "value": "埋藏跨日学习同级卡" }, { "name": "deck_buryInterdayLearning_help", "value": "开启后：同一条笔记的其他跨日学习卡（间隔 >1 天）今天不再出现，顺延到明天。\n背景：收集顺序为 当日学习卡 → 跨日学习卡 → 复习卡 → 新卡，排位靠后的类型无法埋藏靠前的类型。\n例：只开「埋藏同笔记新卡」时，若先学到了某笔记的复习卡，其新卡兄弟今天不会再出现；反过来先学新卡则不会埋藏复习卡兄弟。" },
+    { "name": "deck_disableAutoplay_label", "value": "关闭自动播放" }, { "name": "deck_disableAutoplay_help", "value": "开启后不再自动播放卡片上的音频，需要手动点播放键。\n例：在图书馆或夜间学习时开启，避免翻卡时突然出声。" },
+    { "name": "deck_skipQuestionWhenReplayingAnswer_label", "value": "重放答案时跳过问题" }, { "name": "deck_skipQuestionWhenReplayingAnswer_help", "value": "重放答案音频时跳过问题部分的音频。\n例：卡片含「问题录音 + 答案录音」，点重放答案时只听答案部分，不再重复听问题。" },
+    { "name": "deck_waitForAudio_label", "value": "等待音频播放" }, { "name": "deck_waitForAudio_help", "value": "开启后，自动前进（自动显示答案 / 自动继续）会等音频播完再执行。\n例：听力卡配合「自动显示答案等待秒数」使用，保证录音播完才翻面。" },
+    { "name": "deck_capAnswerTimeToSecs_label", "value": "答题计时上限（秒）" }, { "name": "deck_capAnswerTimeToSecs_help", "value": "统计答题耗时时的记录上限（秒），超出按上限计。\n例：默认 60——一道卡想了 3 分钟也只记 60 秒，避免中途离开时学习统计被拉爆。" },
+    { "name": "deck_showTimer_label", "value": "显示答题计时器" }, { "name": "deck_showTimer_help", "value": "学习页显示本题已用时间。\n例：想控制每卡节奏（如 15 秒内作答）时开启，可直观看到用时。" },
+    { "name": "deck_stopTimerOnAnswer_label", "value": "作答后停止计时" }, { "name": "deck_stopTimerOnAnswer_help", "value": "显示答案后立即停止计时。\n例：开启后，翻看答案解析的时间不会计入答题耗时，统计更贴近真实思考时间。" },
+    { "name": "deck_secondsToShowQuestion_label", "value": "自动显示答案等待秒数" }, { "name": "deck_secondsToShowQuestion_help", "value": "问题展示后等待这么多秒自动显示答案；0 表示关闭。\n例：填 10——正面出现 10 秒后自动翻面；配合「问题自动操作」可改成只响提醒音不翻面。" },
+    { "name": "deck_secondsToShowAnswer_label", "value": "自动继续等待秒数" }, { "name": "deck_secondsToShowAnswer_help", "value": "答案展示后等待这么多秒自动进入下一卡；0 表示关闭。\n例：填 15——答案出现 15 秒后自动前进；配合「答案自动操作」可实现全自动浏览评分。" },
+    { "name": "deck_questionAction_label", "value": "问题自动操作" }, { "name": "deck_questionAction_help", "value": "「自动显示答案」倒计时结束时执行的动作：显示答案 / 显示提醒（只播放提示音，不翻面）。\n例：选「显示提醒」可到点只听到提示音，自己决定是否翻面，兼顾自测与节奏。" },
+    { "name": "deck_answerAction_label", "value": "答案自动操作" }, { "name": "deck_answerAction_help", "value": "「自动继续」倒计时结束时自动执行的动作：埋藏卡片 / 自动评「重来」「良好」「困难」/ 显示提醒。\n例：选「选择良好」则答案倒计时结束后自动按良好评分并进入下一卡，实现无操作浏览式复习。" },
+    { "name": "deck_desiredRetention_label", "value": "目标记忆保持率" }, { "name": "deck_desiredRetention_help", "value": "FSRS 按此目标安排复习时机：当预测回忆概率降到该值时让卡片出现。\n例：填 0.9 表示力争到期时还有 90% 概率记得。调高（如 0.95）→ 复习更频繁、每日量更大；调低（如 0.85）→ 复习更少但遗忘更多。官方建议 0.8~0.97，0.9 是常用平衡点。" },
+    { "name": "deck_fsrsParams4_label", "value": "FSRS 参数（v4）" }, { "name": "deck_fsrsParams4_help", "value": "旧版 FSRS v4 的权重列表，空格隔开，仅为兼容历史数据保留，当前排程以 v6 为准，通常无需手填。\n例：从旧版 Anki 导入的牌组可能带有 v4 参数；想获得有效参数请使用 FSRS 优化功能自动计算。" },
+    { "name": "deck_easyDaysPercentages_label", "value": "轻松日百分比" }, { "name": "deck_easyDaysPercentages_help", "value": "一周 7 天各自的 FSRS 负载权重（0~1，空格隔开，依次对应周一到周日）。权重低的日子复习量被压缩并摊到其他天。\n例：填 1 1 1 1 1 0.4 0.4 表示工作日正常复习，周六日只排约 40% 的量，实现周末减负。" },
+    { "name": "deck_fsrsParams5_label", "value": "FSRS 参数（v5）" }, { "name": "deck_fsrsParams5_help", "value": "旧版 FSRS v5 的 19 个权重，空格隔开，仅为兼容历史数据保留，当前排程以 v6 为准，通常无需手填。\n例：参数缺失或异常时留空可回退默认值，或使用优化功能重新拟合。" },
+    { "name": "deck_fsrsParams6_label", "value": "FSRS 参数（v6）" }, { "name": "deck_fsrsParams6_help", "value": "当前 FSRS v6 的 21 个权重，空格隔开，由「优化」按你的复习历史自动拟合，一般不要手改。\n例：手动改错会导致排程紊乱——留空回退默认参数，或重新优化让系统计算。" },
+    { "name": "deck_historicalRetention_label", "value": "历史记忆保持率" }, { "name": "deck_historicalRetention_help", "value": "根据过往复习记录估算出的实际保持率，供与「目标记忆保持率」对照。\n例：目标 0.9 而历史只有 0.83，说明卡片偏难或参数需要优化；两者接近说明排程符合预期。" },
+    { "name": "deck_paramSearch_label", "value": "参数搜索范围" }, { "name": "deck_paramSearch_help", "value": "FSRS 参数优化使用的内部搜索配置（兼容/实验字段），日常无需填写。\n例：普通用户直接留空，使用默认优化流程即可。" },
+    { "name": "deck_initialEase_label", "value": "初始难度系数" }, { "name": "deck_initialEase_help", "value": "旧版（SM-2）算法中新卡毕业时的初始难度系数（2.5 即 250%）。\n例：填 2.5 表示毕业后间隔从「毕业间隔 × 2.5」起步。\n仅在未启用 FSRS 时生效。" },
+    { "name": "deck_easyMultiplier_label", "value": "简单奖励系数" }, { "name": "deck_easyMultiplier_help", "value": "旧版算法中复习按「简单」时额外乘上的间隔倍率（默认 1.3）。\n例：当前间隔 10 天、难度系数 2.5，按简单后 ≈ 10 × 2.5 × 1.3 = 32.5 天。仅在未启用 FSRS 时生效。" },
+    { "name": "deck_hardMultiplier_label", "value": "困难间隔系数" }, { "name": "deck_hardMultiplier_help", "value": "旧版算法中复习按「困难」时的间隔倍率（默认 1.2）。\n例：当前间隔 10 天，按困难后 ≈ 10 × 1.2 = 12 天。仅在未启用 FSRS 时生效。" },
+    { "name": "deck_lapseMultiplier_label", "value": "遗忘间隔系数" }, { "name": "deck_lapseMultiplier_help", "value": "旧版算法中复习卡遗忘后，新间隔 = 原间隔 × 该系数（默认 0，即间隔清零重来）。\n例：填 0.5 表示遗忘后间隔减半而不是清零。仅在未启用 FSRS 时生效。" },
+    { "name": "deck_intervalMultiplier_label", "value": "间隔倍率" }, { "name": "deck_intervalMultiplier_help", "value": "旧版算法中所有复习间隔的全局倍率（默认 1）。\n例：觉得整体复习太密可填 1.1 把所有间隔拉长 10%；太松填 0.9 收紧。仅在未启用 FSRS 时生效。" },
+    { "name": "deck_maximumReviewInterval_label", "value": "最大间隔（天）" }, { "name": "deck_maximumReviewInterval_help", "value": "复习间隔的天数上限，超过按上限计（默认 36500 天 = 100 年）。\n例：填 365 表示无论算法算出的间隔多长，最晚一年后必再见，防止卡片「毕业到再也不出现」。" },
+    { "name": "deck_ignoreRevlogsBeforeDate_label", "value": "忽略此日期前的复习记录" }, { "name": "deck_ignoreRevlogsBeforeDate_help", "value": "FSRS 优化 / 评估时忽略此日期（YYYY-MM-DD）之前的复习记录，留空表示全部使用。\n例：早期曾用混乱的选项复习过，填 2026-01-01 可只用今年的干净数据拟合参数。" },
+    { "name": "deck_opt_due", "value": "到期顺序" }, { "name": "deck_opt_random", "value": "随机" }, { "name": "deck_opt_deck", "value": "牌组顺序" }, { "name": "deck_opt_deck_random_notes", "value": "牌组后随机笔记" }, { "name": "deck_opt_lowest_position", "value": "最低位置" }, { "name": "deck_opt_highest_position", "value": "最高位置" }, { "name": "deck_opt_random_notes", "value": "随机笔记" }, { "name": "deck_opt_random_cards", "value": "随机卡片" }, { "name": "deck_opt_template", "value": "卡片模板" }, { "name": "deck_opt_no_sort", "value": "保持收集顺序" }, { "name": "deck_opt_template_random", "value": "模板后随机" }, { "name": "deck_opt_random_note_template", "value": "随机笔记后模板" }, { "name": "deck_opt_mix", "value": "与复习卡混合" }, { "name": "deck_opt_after_reviews", "value": "复习卡之后" }, { "name": "deck_opt_before_reviews", "value": "复习卡之前" }, { "name": "deck_opt_day", "value": "到期日" }, { "name": "deck_opt_day_deck", "value": "到期日后牌组" }, { "name": "deck_opt_deck_day", "value": "牌组后到期日" }, { "name": "deck_opt_interval_asc", "value": "间隔递增" }, { "name": "deck_opt_interval_desc", "value": "间隔递减" }, { "name": "deck_opt_ease_asc", "value": "难度递增" }, { "name": "deck_opt_ease_desc", "value": "难度递减" }, { "name": "deck_opt_retr_asc", "value": "可回忆率递增" }, { "name": "deck_opt_retr_desc", "value": "可回忆率递减" }, { "name": "deck_opt_added", "value": "先添加的优先" }, { "name": "deck_opt_reverse_added", "value": "后添加的优先" }, { "name": "deck_opt_relative", "value": "相对逾期程度" }, { "name": "deck_opt_suspend", "value": "暂停卡片" }, { "name": "deck_opt_tag_only", "value": "仅添加标签" }, { "name": "deck_opt_show_answer", "value": "显示答案" }, { "name": "deck_opt_show_reminder", "value": "显示提醒" }, { "name": "deck_opt_bury_card", "value": "埋藏卡片" }, { "name": "deck_opt_answer_again", "value": "选择重来" }, { "name": "deck_opt_answer_good", "value": "选择良好" }, { "name": "deck_opt_answer_hard", "value": "选择困难" },
+    {
+      "name": "entry_ability_desc",
+      "value": "jidecards main ability"
+    },
+    {
+      "name": "working_name",
+      "value": "jidecards"
+    },
+    {
+      "name": "home_title",
+      "value": "今天也记住一点"
+    },
+    {
+      "name": "home_subtitle",
+      "value": "保持节奏，比一次学很多更重要"
+    },
+    {
+      "name": "today_progress",
+      "value": "今日进度"
+    },
+    {
+      "name": "completed_today",
+      "value": "今日完成"
+    },
+    {
+      "name": "pending_today",
+      "value": "待学习"
+    },
+    {
+      "name": "deck_count",
+      "value": "牌组"
+    },
+    {
+      "name": "streak_days",
+      "value": "连续学习"
+    },
+    {
+      "name": "new_cards",
+      "value": "新卡"
+    },
+    {
+      "name": "learning_cards",
+      "value": "学习中"
+    },
+    {
+      "name": "review_cards",
+      "value": "待复习"
+    },
+    {
+      "name": "deck_section_title",
+      "value": "我的牌组"
+    },
+    {
+      "name": "deck_section_hint",
+      "value": "选择牌组后开始学习"
+    },
+    {
+      "name": "start_study",
+      "value": "开始学习"
+    },
+    {
+      "name": "nav_decks",
+      "value": "牌组"
+    },
+    {
+      "name": "nav_browse",
+      "value": "浏览"
+    },
+    {
+      "name": "nav_stats",
+      "value": "统计"
+    },
+    {
+      "name": "nav_settings",
+      "value": "设置"
+    },
+    {
+      "name": "library_title",
+      "value": "资料库"
+    },
+    {
+      "name": "core_ready",
+      "value": "本地核心可用"
+    },
+    {
+      "name": "data_pending",
+      "value": "统计图表将在后续版本开放"
+    },
+    {
+      "name": "selected_deck",
+      "value": "当前牌组"
+    },
+    {
+      "name": "shell_notice",
+      "value": "该功能将在后续版本开放"
+    },
+    {
+      "name": "top_settings",
+      "value": "设置"
+    },
+    {
+      "name": "home_refresh",
+      "value": "刷新"
+    },
+    {
+      "name": "create_deck",
+      "value": "＋ 新建牌组"
+    },
+    {
+      "name": "create_deck_notice",
+      "value": "牌组创建后即可开始学习"
+    },
+    {
+      "name": "create_deck_title",
+      "value": "新建牌组"
+    },
+    {
+      "name": "deck_name_placeholder",
+      "value": "命名牌组名称"
+    },
+    {
+      "name": "create_deck_preview_child",
+      "value": "将创建“%1$s”的子牌组“%2$s”"
+    },
+    {
+      "name": "create_deck_preview_child_pending",
+      "value": "将创建“%1$s”的子牌组 · 请先输入名称"
+    },
+    {
+      "name": "create_deck_preview_top",
+      "value": "将新建一个父牌组“%1$s”"
+    },
+    {
+      "name": "create_deck_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "create_deck_confirm",
+      "value": "创建"
+    },
+    {
+      "name": "create_deck_creating",
+      "value": "创建中…"
+    },
+    {
+      "name": "create_deck_done",
+      "value": "牌组已创建"
+    },
+    {
+      "name": "import_close",
+      "value": "关闭"
+    },
+    {
+      "name": "study_back",
+      "value": "返回"
+    },
+    {
+      "name": "study_show_answer",
+      "value": "显示答案"
+    },
+    {
+      "name": "study_remaining_detail",
+      "value": "%d 新 · %d 学 · %d 复"
+    },
+    {
+      "name": "study_finish_title",
+      "value": "本组学习完成"
+    },
+    {
+      "name": "study_finish_hint",
+      "value": "当前牌组没有待学习的卡片，稍后再来看看"
+    },
+    {
+      "name": "study_load_error",
+      "value": "学习数据加载失败"
+    },
+    {
+      "name": "ability_context_unavailable",
+      "value": "应用上下文不可用"
+    },
+    {
+      "name": "study_undo",
+      "value": "撤销"
+    },
+    {
+      "name": "study_bury",
+      "value": "埋藏"
+    },
+    {
+      "name": "study_suspend",
+      "value": "暂停"
+    },
+    {
+      "name": "study_delete_card",
+      "value": "删除此卡"
+    },
+    {
+      "name": "study_delete_card_confirm_title",
+      "value": "删除此卡？"
+    },
+    {
+      "name": "study_delete_card_confirm_message",
+      "value": "仅删除当前这一张卡片，不影响牌组里的其他卡片。若该笔记只有这一张卡，笔记会一并清理。可通过顶部「撤销」按钮恢复。"
+    },
+    {
+      "name": "study_delete_card_failed",
+      "value": "删除失败：%s"
+    },
+    {
+      "name": "cancel",
+      "value": "取消"
+    },
+    {
+      "name": "study_congrats_title",
+      "value": "今天的学习完成了"
+    },
+    {
+      "name": "study_congrats_learn_remaining",
+      "value": "还有 %d 张学习卡，下一张约 %d 分钟后到期"
+    },
+    {
+      "name": "study_congrats_review_limit",
+      "value": "复习卡已达今日上限，剩余的明天再见"
+    },
+    {
+      "name": "study_congrats_new_limit",
+      "value": "新卡已达今日上限，剩余的明天再见"
+    },
+    {
+      "name": "study_unbury",
+      "value": "恢复埋藏卡片"
+    },
+    {
+      "name": "study_replay_sound",
+      "value": "重播音频"
+    },
+    {
+      "name": "rating_again",
+      "value": "重来"
+    },
+    {
+      "name": "rating_hard",
+      "value": "困难"
+    },
+    {
+      "name": "rating_good",
+      "value": "良好"
+    },
+    {
+      "name": "rating_easy",
+      "value": "简单"
+    },
+    {
+      "name": "month_learning",
+      "value": "本月学习"
+    },
+    {
+      "name": "heat_hint",
+      "value": "颜色越深，学习量越多"
+    },
+    {
+      "name": "today_again_rate",
+      "value": "今日不会率"
+    },
+    {
+      "name": "today_recall_rate",
+      "value": "今日回忆率"
+    },
+    {
+      "name": "today_answered_count",
+      "value": "今日共答 %d 次"
+    },
+    {
+      "name": "mature_correct_rate",
+      "value": "成熟卡正确率"
+    },
+    {
+      "name": "average_retrievability_subtitle",
+      "value": "全库平均可回忆率"
+    },
+    {
+      "name": "average_retrievability",
+      "value": "平均可回忆率"
+    },
+    {
+      "name": "memory_empty_hint",
+      "value": "完成复习后生成个人记忆统计"
+    },
+    {
+      "name": "memory_fsrs_disabled_hint",
+      "value": "请在牌组选项的高级设置中开启 FSRS"
+    },
+    {
+      "name": "memory_no_state_hint",
+      "value": "暂无 FSRS 记忆状态卡片，学习一张卡后查看"
+    },
+    {
+      "name": "recall_rate_days_invalid",
+      "value": "范围 1-365 天"
+    },
+    {
+      "name": "today_empty_no_decks_hint",
+      "value": "点击右上角新建牌组"
+    },
+    {
+      "name": "today_empty_no_activity_hint",
+      "value": "点击牌组开始学习"
+    },
+    {
+      "name": "month_empty_hint",
+      "value": "本月还没有学习记录"
+    },
+    {
+      "name": "empty_decks_title",
+      "value": "还没有牌组"
+    },
+    {
+      "name": "empty_decks_hint",
+      "value": "点击右上角“新建牌组”开始建立自己的卡片库"
+    },
+    {
+      "name": "home_load_error",
+      "value": "本地数据加载失败，请重试"
+    },
+    {
+      "name": "home_retry",
+      "value": "重新加载"
+    },
+    {
+      "name": "theme_settings",
+      "value": "外观设置"
+    },
+    {
+      "name": "theme_settings_hint",
+      "value": "主题会同时应用到页面、状态栏和底部手势区域。"
+    },
+    {
+      "name": "theme_system",
+      "value": "跟随系统"
+    },
+    {
+      "name": "theme_system_detail",
+      "value": "随设备深色模式自动切换"
+    },
+    {
+      "name": "theme_light",
+      "value": "浅色"
+    },
+    {
+      "name": "theme_light_detail",
+      "value": "始终使用明亮背景"
+    },
+    {
+      "name": "theme_dark",
+      "value": "深色"
+    },
+    {
+      "name": "theme_dark_detail",
+      "value": "始终使用深色背景"
+    },
+    {
+      "name": "done",
+      "value": "完成"
+    },
+    {
+      "name": "today_summary_detail",
+      "value": "%d 已完成 · %d 待学习"
+    },
+    {
+      "name": "deck_count_summary",
+      "value": "%d 个牌组"
+    },
+    {
+      "name": "deck_new_short",
+      "value": "%d 新"
+    },
+    {
+      "name": "deck_learning_short",
+      "value": "%d 学"
+    },
+    {
+      "name": "deck_review_short",
+      "value": "%d 复"
+    },
+    { "name": "deck_counts_today_hint", "value": "今日还能学" },
+    { "name": "deck_total_cards", "value": "总卡片数" },
+    {
+      "name": "card_pending_short",
+      "value": "%d 张"
+    },
+    {
+      "name": "calendar_month_title",
+      "value": "%d 年 %d 月"
+    },
+    {
+      "name": "weekday_1",
+      "value": "一"
+    },
+    {
+      "name": "weekday_2",
+      "value": "二"
+    },
+    {
+      "name": "weekday_3",
+      "value": "三"
+    },
+    {
+      "name": "weekday_4",
+      "value": "四"
+    },
+    {
+      "name": "weekday_5",
+      "value": "五"
+    },
+    {
+      "name": "weekday_6",
+      "value": "六"
+    },
+    {
+      "name": "weekday_7",
+      "value": "日"
+    },
+    {
+      "name": "licenses_title",
+      "value": "开源许可与第三方声明"
+    },
+    {
+      "name": "licenses_confirm",
+      "value": "确认"
+    },
+    {
+      "name": "licenses_app_section",
+      "value": "本应用许可"
+    },
+    {
+      "name": "licenses_app_body",
+      "value": "记得卡片（jidecards）由 jidecards contributors 开发，依据 GNU Affero General Public License v3.0 or later（AGPL-3.0-or-later）发布。您可以依照该许可证获取、使用、复制、修改和再发布本软件。"
+    },
+    {
+      "name": "licenses_source_section",
+      "value": "源代码获取"
+    },
+    {
+      "name": "licenses_source_body",
+      "value": "本应用的完整对应源代码（含构建脚本与第三方组件清单）随每个发布版本一同提供。开源仓库地址：【待填写】。（此占位须在正式发布前替换为实际仓库地址。）"
+    },
+    {
+      "name": "licenses_rights_section",
+      "value": "您的权利与使用"
+    },
+    {
+      "name": "licenses_rights_body",
+      "value": "依据 AGPL-3.0-or-later，您有权运行本软件、获得其源代码、进行修改，并再发布您自己的版本；再发布或提供网络服务时，须以同一许可证公开相应源代码。本软件的学习数据仅保存在您的设备本地，请定期备份以免丢失。"
+    },
+    {
+      "name": "licenses_third_section",
+      "value": "第三方组件"
+    },
+    {
+      "name": "licenses_third_anki",
+      "value": "Anki rslib 26.05 — 版权所有 Ankitects Pty Ltd 及贡献者，依据 AGPL-3.0-or-later 提供。用途：卡片数据、间隔重复调度、导入导出与格式兼容。本应用对其进行了适应性修改，修改内容随源代码公开。上游源码：https://github.com/ankitects/anki"
+    },
+    {
+      "name": "licenses_third_rust",
+      "value": "Rust 第三方库 — 本应用还使用了若干以 MIT、Apache-2.0 等许可证发布的 Rust 开源库，其完整清单与对应许可文本随源代码仓库一并分发。"
+    },
+    {
+      "name": "licenses_third_ibestui",
+      "value": "IBest-UI @ibestservices/ibest-ui v2.2.7 — 版权所有 (c) 安徽百得思维信息科技有限公司，依据 MIT License 提供。用途：HarmonyOS ArkUI 组件库（70+ 组件），本项目使用其 ImageCropper 图片裁剪组件实现牌组背景图裁剪交互。上游源码：https://github.com/ibestservices/ibest-ui"
+    },
+    {
+      "name": "licenses_trademark_section",
+      "value": "商标与独立性"
+    },
+    {
+      "name": "licenses_trademark_body",
+      "value": "记得卡片是独立开发的第三方项目，并非 Anki 官方客户端，也未获得 Ankitects 的赞助、认可或支持。Anki 是 Ankitects Pty Ltd 的注册商标。"
+    },
+    {
+      "name": "licenses_disclaimer_section",
+      "value": "免责声明"
+    },
+    {
+      "name": "licenses_disclaimer_body",
+      "value": "本软件按“现状”提供。在适用法律允许的最大范围内，作者和贡献者不提供任何明示或默示担保，也不对因使用或无法使用本软件造成的数据丢失、数据错误、间接损失或后果性损失承担责任；法律强制规定不得排除的责任除外。"
+    },
+    {
+      "name": "check_db_title",
+      "value": "检查数据库"
+    },
+    {
+      "name": "check_db_hint",
+      "value": "校验本地卡片库的完整性"
+    },
+    {
+      "name": "check_db_help",
+      "value": "检查本地卡片库（collection）的完整性，发现并修复异常数据。\n\n可能修复的问题包括：\n• 卡片属性无效或缺失笔记\n• 字段数量错误、模板缺失或重复\n• 牌组缺失、复习记录属性无效\n• 无效 UTF-8 字符、未来时间戳\n• 集合文件损坏（需从备份恢复）\n\n何时使用：\n• 怀疑卡片数据异常（如卡片消失、复习记录错乱）\n• 同步冲突后、强制关闭应用后\n• Anki 官方排障流程的第 4 步（Tools → Check Database）\n\n注：检查会重建并优化数据库，正常情况下不会丢失数据；若提示集合已损坏，请从自动备份恢复。"
+    },
+    {
+      "name": "check_db_running",
+      "value": "正在检查数据库，请稍候…"
+    },
+    {
+      "name": "check_db_passed",
+      "value": "检查通过，未发现问题"
+    },
+    {
+      "name": "check_db_problems",
+      "value": "发现 %d 个问题"
+    },
+    {
+      "name": "check_db_failed",
+      "value": "检查失败"
+    },
+    {
+      "name": "top_level_deck",
+      "value": "（新建一个父牌组）"
+    },
+    {
+      "name": "deck_options_title",
+      "value": "牌组选项"
+    },
+    {
+      "name": "deck_new_limit",
+      "value": "新卡日上限"
+    },
+    {
+      "name": "deck_review_limit",
+      "value": "复习日上限"
+    },
+    {
+      "name": "deck_learn_steps",
+      "value": "学习步幅（分钟）"
+    },
+    {
+      "name": "deck_new_limit_placeholder",
+      "value": "例如：20"
+    },
+    {
+      "name": "deck_review_limit_placeholder",
+      "value": "例如：200"
+    },
+    {
+      "name": "deck_learn_steps_placeholder",
+      "value": "例如：1 10"
+    },
+    {
+      "name": "deck_learn_steps_hint",
+      "value": "数字之间用空格隔开。当前表示：新卡会在 1 分钟后重现，答对后 10 分钟后再次出现。"
+    },
+    {
+      "name": "deck_learn_step_first",
+      "value": "第 %d 步 · %d 分钟：新卡或答错（重来）后按此间隔重现"
+    },
+    {
+      "name": "deck_learn_step_following",
+      "value": "第 %d 步 · %d 分钟：答对后按此间隔再现"
+    },
+    {
+      "name": "deck_learn_step_graduating",
+      "value": "，再次答对即毕业"
+    },
+    {
+      "name": "deck_limit_validation_error",
+      "value": "日上限需为不小于 0 的整数"
+    },
+    {
+      "name": "deck_learn_steps_validation_error",
+      "value": "学习步幅需为至少一个正数（分钟），多个以空格分隔"
+    },
+    {
+      "name": "deck_options_loading",
+      "value": "读取中…"
+    },
+    {
+      "name": "deck_options_save",
+      "value": "保存"
+    },
+    {
+      "name": "deck_options_saving",
+      "value": "保存中…"
+    },
+    { "name": "deck_tone_blue", "value": "蓝色色条" },
+    { "name": "deck_tone_purple", "value": "紫色色条" },
+    { "name": "deck_tone_mint", "value": "薄荷色条" },
+    { "name": "deck_tone_amber", "value": "琥珀色条" },
+    { "name": "deck_tone_black", "value": "黑色色条" },
+    { "name": "deck_tone_red", "value": "红色色条" },
+    { "name": "deck_tone_none", "value": "取消色条" },
+    { "name": "deck_menu_switch_tone", "value": "切换色条" },
+    { "name": "deck_menu_back", "value": "‹ 返回" },
+    { "name": "deck_menu_reorder", "value": "拖动排序" },
+    { "name": "deck_menu_hide", "value": "隐藏牌组" },
+    { "name": "deck_menu_delete", "value": "删除牌组" },
+    { "name": "deck_delete_confirm_title", "value": "删除牌组「%s」？" },
+    { "name": "deck_delete_confirm_message", "value": "该牌组及其所有子牌组、卡片会被删除。该操作不可恢复（可通过顶部撤销按钮恢复）。删除后无法找回原牌组层级结构。\n\n注意：牌组中引用的音频和图片文件不会随牌组一并删除，会继续保留在应用存储中占用空间。" },
+    { "name": "deck_delete_failed", "value": "删除失败：%s" },
+    { "name": "deck_delete_success", "value": "已删除 %d 个牌组" },
+    { "name": "deck_hide_success", "value": "已隐藏牌组，可在设置页恢复" },
+    { "name": "deck_hide_failed", "value": "隐藏失败" },
+    { "name": "hidden_decks_entry", "value": "已隐藏牌组" },
+    { "name": "hidden_decks_entry_subtitle", "value": "管理已隐藏的牌组" },
+    { "name": "hidden_decks_title", "value": "已隐藏牌组" },
+    { "name": "hidden_decks_empty", "value": "暂无已隐藏的牌组" },
+    { "name": "hidden_decks_unhide", "value": "恢复" },
+    { "name": "deck_reorder_done", "value": "完成" },
+    { "name": "deck_reorder_hint", "value": "长按卡片拖动可调整顺序，仅同级可拖动。点完成退出排序模式。" },
+    { "name": "deck_customize", "value": "自定义牌组…" },
+    { "name": "deck_customize_title", "value": "自定义牌组" },
+    { "name": "deck_customize_name_label", "value": "牌组名称" },
+    { "name": "deck_customize_save", "value": "保存" },
+    { "name": "deck_customize_name_empty", "value": "名称不能为空" },
+    { "name": "deck_customize_rename_failed", "value": "改名失败，请重试" },
+    { "name": "deck_customize_save_done", "value": "已保存" },
+    { "name": "deck_customize_background_label", "value": "牌组背景图" },
+    { "name": "deck_customize_background_hint", "value": "长按牌组可在背景上叠图，按牌组实际尺寸裁剪。" },
+    { "name": "deck_customize_background_pick", "value": "选择图片" },
+    { "name": "deck_customize_background_replace", "value": "替换图片" },
+    { "name": "deck_customize_background_remove", "value": "移除背景" },
+    { "name": "deck_customize_background_crop_title", "value": "裁剪背景图" },
+    { "name": "deck_customize_background_crop_hint", "value": "拖动与缩放图片，裁剪框与牌组实际尺寸一致。" },
+    { "name": "deck_customize_background_crop_confirm", "value": "应用裁剪" },
+    { "name": "deck_customize_background_crop_cancel", "value": "取消" },
+    { "name": "deck_customize_background_pick_failed", "value": "选图失败，请重试" },
+    { "name": "deck_customize_background_save_failed", "value": "保存背景图失败，请重试" },
+    { "name": "deck_customize_background_remove_failed", "value": "移除背景图失败，请重试" },
+    { "name": "deck_customize_background_removed", "value": "已移除背景图" },
+    {
+      "name": "settings_title",
+      "value": "设置"
+    },
+    {
+      "name": "settings_confirm",
+      "value": "确认"
+    },
+    {
+      "name": "settings_basic",
+      "value": "基础设置"
+    },
+    {
+      "name": "settings_advanced",
+      "value": "高级设置"
+    },
+    { "name": "settings_scheduler", "value": "调度" },
+    { "name": "settings_fsrs_label", "value": "启用 FSRS 算法" },
+    { "name": "settings_fsrs_help", "value": "FSRS 是 Anki 24.04 起官方推荐的间隔重复算法，比传统 SM-2 更精准。此开关为全局开关：开启后所有牌组统一使用 FSRS，无法对部分牌组单独关闭。每个牌组仍可在牌组选项中单独配置学习步骤（如 1d 10m 这类未毕业前的短期复习节奏），但长期调度算法本身由全局决定。开启后已有卡片的复习间隔会按新算法重新计算；目标记忆保持率等参数可在牌组选项中调整。" },
+    { "name": "settings_fsrs_loading", "value": "读取中…" },
+    { "name": "settings_fsrs_load_error", "value": "读取失败" },
+    {
+      "name": "backup_sync_title",
+      "value": "备份与同步"
+    },
+    {
+      "name": "backup_sync_hint",
+      "value": "本地备份、AnkiWeb 同步将在后续版本开放"
+    },
+    {
+      "name": "settings_about",
+      "value": "关于"
+    },
+    { "name": "settings_audio_voice", "value": "语音朗读" },
+    { "name": "settings_audio_voice_hint", "value": "下方列出本机当前可用的朗读音色语种，由鸿蒙 CoreSpeechKit 决定，不同设备/系统版本支持的语种可能不同。卡片模板里的「tts en_US:字段」这种写法来自 Anki 官方模板语法（Anki 2.1.20+ 起支持），jidecards 沿用此语法，朗读时调用鸿蒙系统 TTS 引擎；冒号前的语种决定的是「朗读引擎/发音规则」，不是「内容语种」：用英文音色读中文汉字会按英文发音规则硬拼，听起来很怪，建议引擎语种与内容语种保持一致。已安装的语种可直接用于朗读；未安装的语种点右侧下载按钮即可拉起系统下载弹窗，无需进入系统设置。若列表中没有你需要的语种（如日文/韩文），说明当前鸿蒙系统暂未内置该语种音色，应用内亦无法下载。卡片实际朗读时，若目标语种未安装，会自动用中文引擎兜底。" },
+    { "name": "settings_voice_per_language_hint", "value": "每个语种独立选音色：英语卡片只受 en-US 选择影响，中文卡片只受 zh-CN 选择影响。切换音色后下一张卡立即生效。" },
+    { "name": "settings_voice_checking", "value": "正在检查音色…" },
+    { "name": "settings_voice_downloading", "value": "下载中…" },
+    { "name": "settings_voice_unsupported", "value": "当前系统版本不支持应用内下载音色，列表中未列出的语种（如日文/韩文）暂无法获取" },
+    { "name": "settings_voice_empty", "value": "本机未发现任何可用音色" },
+    { "name": "settings_voice_status_installed", "value": "已安装" },
+    { "name": "settings_voice_status_not_installed", "value": "未安装" },
+    { "name": "settings_voice_download_btn_lang", "value": "下载" },
+    { "name": "settings_voice_download_ok_lang", "value": "%s 音色下载成功" },
+    { "name": "settings_voice_download_canceled_lang", "value": "%s 音色已取消下载" },
+    { "name": "settings_voice_download_failed_lang", "value": "%s 音色下载失败" },
+    { "name": "settings_voice_voice_count", "value": "%d 个音色可选" },
+    { "name": "settings_study_layout", "value": "复习页布局" },
+    { "name": "settings_study_layout_bottom", "value": "底部固定" },
+    { "name": "settings_study_layout_float", "value": "浮动可拖" },
+    { "name": "study_toolbar_drag_hint", "value": "在复习页按住浮动工具栏可拖到屏幕左右侧；松手后自动吸附到最近侧并保存位置。" },
+    {
+      "name": "appearance_theme",
+      "value": "外观主题"
+    },
+    {
+      "name": "app_about_title",
+      "value": "记得卡片 / jidecards"
+    },
+    {
+      "name": "app_about_summary",
+      "value": "一款独立开发、本地优先的开源卡片学习软件。"
+    },
+    {
+      "name": "app_about_copyright",
+      "value": "2026 · jidecards contributors"
+    },
+    {
+      "name": "app_about_data_notice",
+      "value": "数据仅存于本设备，请定期做好独立备份。"
+    },
+    {
+      "name": "app_about_license_notice",
+      "value": "依据 AGPL-3.0 或更新版本发布，可自由使用、修改与再发布。完整许可与第三方声明请见下方“开源许可与第三方声明”。"
+    },
+    {
+      "name": "app_about_anki_notice",
+      "value": "使用 Anki 26.05 开源 Rust Core 实现数据兼容与调度；本应用为独立项目，与 Anki 官方无关联，Anki 为 Ankitects Pty Ltd 注册商标。"
+    },
+    {
+      "name": "feedback_title",
+      "value": "意见反馈"
+    },
+    {
+      "name": "feedback_hint",
+      "value": "如有问题或建议，欢迎发送邮件至："
+    },
+    {
+      "name": "feedback_email",
+      "value": "wuweiyouzuoju@proton.me"
+    },
+    {
+      "name": "sponsor_title",
+      "value": "赞赏作者"
+    },
+    {
+      "name": "sponsor_hint",
+      "value": "赞赏与否不影响体验全部功能，感谢支持~"
+    },
+    {
+      "name": "sponsor_qrcode_hint",
+      "value": "微信扫码赞赏"
+    },
+    {
+      "name": "licenses_summary",
+      "value": "完整许可、上游来源与对应源代码"
+    },
+    {
+      "name": "transfer_export_deck",
+      "value": "导出牌组"
+    },
+    {
+      "name": "transfer_export_personal",
+      "value": "导出个人数据"
+    },
+    {
+      "name": "transfer_import_deck",
+      "value": "导入牌组"
+    },
+    {
+      "name": "transfer_import_personal",
+      "value": "导入个人数据"
+    },
+    {
+      "name": "transfer_export_options",
+      "value": "导出选项"
+    },
+    {
+      "name": "transfer_hide_export_options",
+      "value": "收起导出选项"
+    },
+    {
+      "name": "transfer_include_scheduling",
+      "value": "包含学习进度"
+    },
+    {
+      "name": "transfer_include_deck_configs",
+      "value": "包含牌组选项预设"
+    },
+    {
+      "name": "transfer_include_media",
+      "value": "包含媒体文件"
+    },
+    {
+      "name": "transfer_legacy",
+      "value": "旧版兼容"
+    },
+    {
+      "name": "transfer_personal_replace_warning",
+      "value": "覆盖个人数据会删除当前集合；应用会先创建仅供恢复使用的内部副本。"
+    },
+    {
+      "name": "transfer_replace_personal",
+      "value": "覆盖现有个人数据"
+    },
+    {
+      "name": "transfer_import_deck_merge",
+      "value": "导入牌组（合并）"
+    },
+    {
+      "name": "continue",
+      "value": "继续"
+    },
+    { "name": "field_help_button", "value": "ⓘ" },
+    { "name": "deck_group_deck_limits", "value": "本牌组上限" },
+    { "name": "deck_group_today_limits", "value": "今日上限" },
+    { "name": "deck_group_new", "value": "新卡" },
+    { "name": "deck_group_advanced_hub", "value": "高级设置" },
+    { "name": "deck_group_lapses", "value": "遗忘" },
+    { "name": "deck_group_burying", "value": "埋藏" },
+    { "name": "deck_group_audio", "value": "音频" },
+    { "name": "deck_group_timer", "value": "计时器" },
+    { "name": "deck_group_fsrs", "value": "自由间隔重复" },
+    { "name": "deck_group_advanced", "value": "高级" },
+    { "name": "deck_new_minimum", "value": "新卡每日最小数量" },
+    { "name": "deck_graduating_good", "value": "良好毕业间隔（天）" },
+    { "name": "deck_graduating_easy", "value": "简单毕业间隔（天）" },
+    { "name": "deck_insert_order", "value": "新卡加入顺序" },
+    { "name": "deck_gather_order", "value": "新卡收集顺序" },
+    { "name": "deck_sort_order", "value": "新卡排序顺序" },
+    { "name": "deck_review_order", "value": "复习排序顺序" },
+    { "name": "deck_minimum_lapse_interval", "value": "最短重新学习间隔（天）" },
+    { "name": "deck_leech_action", "value": "难卡处理方式" },
+    { "name": "deck_fsrs_parameters", "value": "FSRS 参数（用空格隔开）" },
+    { "name": "deck_historical_retention", "value": "历史记忆保持率" },
+    { "name": "deck_parameter_search", "value": "参数搜索范围" },
+    { "name": "deck_skip_replay_question", "value": "重播答案时跳过问题" },
+    { "name": "deck_wait_for_audio", "value": "等待音频播放完毕" },
+    { "name": "deck_answer_time_cap", "value": "答题计时上限（秒）" },
+    { "name": "deck_stop_timer", "value": "作答后停止计时" },
+    { "name": "deck_question_seconds", "value": "自动显示答案等待秒数" },
+    { "name": "deck_answer_seconds", "value": "自动继续等待秒数" },
+    { "name": "deck_question_action", "value": "问题自动操作" },
+    { "name": "deck_answer_action", "value": "答案自动操作" },
+    { "name": "deck_relearn_steps", "value": "重新学习步幅（分钟）" },
+    { "name": "deck_desired_retention", "value": "目标记忆保持率" },
+    { "name": "deck_maximum_interval", "value": "最大间隔（天）" },
+    { "name": "deck_leech_threshold", "value": "难卡阈值" },
+    { "name": "deck_disable_autoplay", "value": "关闭自动播放" },
+    { "name": "deck_show_timer", "value": "显示答题计时器" },
+    { "name": "deck_bury_new", "value": "埋藏同笔记新卡" },
+    { "name": "deck_bury_reviews", "value": "埋藏同笔记复习卡" },
+    { "name": "deck_bury_interday", "value": "埋藏跨日学习卡" },
+    { "name": "deck_fsrs_enabled", "value": "启用 FSRS" },
+    { "name": "deck_ignore_revlogs_before", "value": "忽略此日期前的复习记录（YYYY-MM-DD）" },
+    { "name": "deck_learn_steps_help", "value": "新卡在「学习中」阶段要依次通过的延迟列表，数字之间用空格隔开。默认单位分钟，也支持 30s（秒）、2h（小时）、2d（天）。\n按「重来」回到第一步，按「良好」进入下一步，全部通过后卡片毕业为复习卡。\n例：填 1 10 表示——答错后 1 分钟重现；答对后 10 分钟重现；再次答对即毕业。" },
+    { "name": "deck_relearn_steps_help", "value": "复习卡按「重来」遗忘后要重新通过的延迟列表，规则与学习步幅相同，可留空。\n例：填 10 表示——复习卡答错后 10 分钟重现一次，答对即回到复习队列；留空则不进重学队列，直接调整间隔。" },
+    { "name": "deck_relearn_steps_validation_error", "value": "重新学习步幅必须是用空格隔开的正数" },
+    { "name": "deck_retention_validation_error", "value": "目标记忆保持率必须大于 0 且不超过 1" },
+    { "name": "deck_nonnegative_validation_error", "value": "该值必须不小于 0" },
+    { "name": "deck_enum_validation_error", "value": "该选项值不受支持" },
+    { "name": "deck_date_validation_error", "value": "请使用 YYYY-MM-DD 日期格式" }
+    ,
+    { "name": "add_note_title", "value": "添加卡片" },
+    { "name": "add_note_deck", "value": "牌组" },
+    { "name": "add_note_deck_help", "value": "这张卡片要放进哪个牌组，默认选中进入本页前正在查看的牌组。\n例：想把单词卡放进「英语::四级」子牌组，点开下拉找到该牌组即可；牌组层级用「::」表示。\n更换牌组只影响本次保存的卡片去向，不改变卡片内容。" },
+    { "name": "add_note_notetype", "value": "笔记类型" },
+    { "name": "add_note_notetype_help", "value": "笔记类型决定这张卡有哪些字段、按什么模板生成卡片；更换后下方字段列表会跟着变。\n例：「基础」只有 正面/背面 两个字段，生成 1 张卡；「基础（和翻转的卡片）」额外生成反向卡；「完形填空」在文本里用 {{c1::...}} 标记挖空。\n提示：切换类型后按字段名提示填写，必填字段为空会保存失败。" },
+    { "name": "add_note_advanced", "value": "高级设置" },
+    { "name": "add_note_advanced_hide", "value": "收起高级设置" },
+    { "name": "add_note_tags", "value": "标签" },
+    { "name": "add_note_tags_help", "value": "给笔记打标签，多个标签用空格隔开；标签与牌组无关，用于跨牌组检索和筛选，可用「::」做层级。\n例：填 英语 四级::听力 表示同时打上「英语」和「四级::听力」两个标签，之后可用 tag:英语 或 tag:四级::听力 搜索过滤。\n留空表示不打标签。" },
+    { "name": "add_note_tags_placeholder", "value": "多个标签用空格隔开" },
+    { "name": "add_note_duplicate_rejected", "value": "发现重复内容时将不保存；请修改字段后重试。" },
+    { "name": "add_note_cancel", "value": "取消" },
+    { "name": "add_note_save", "value": "添加" },
+    { "name": "add_note_saving", "value": "添加中…" },
+    { "name": "add_note_empty_error", "value": "请填写必填字段。" },
+    { "name": "add_note_duplicate_error", "value": "存在相同的笔记，未保存。" },
+    { "name": "add_note_invalid_cloze_error", "value": "完形填空格式无效，请检查 c1、c2 等标记。" },
+    { "name": "deck_add_card", "value": "添加卡片" },
+    { "name": "deck_more", "value": "更多" },
+    { "name": "deck_create_subdeck", "value": "创建子牌组" },
+    { "name": "deck_export_this", "value": "导出此牌组" },
+    { "name": "settings_appearance_language", "value": "外观与语言" },
+    { "name": "settings_data_management", "value": "数据管理" },
+    { "name": "settings_database_check", "value": "数据库检查" },
+    { "name": "settings_language", "value": "语言" },
+    { "name": "language_chinese", "value": "简体中文" },
+    { "name": "language_english", "value": "英文" },
+    { "name": "settings_import_data", "value": "导入数据" },
+    { "name": "settings_export_data", "value": "导出数据" },
+    { "name": "transfer_confirm_personal", "value": "我已了解，继续" },
+    { "name": "transfer_replacing", "value": "正在覆盖个人数据…" },
+    { "name": "transfer_done", "value": "数据处理完成" },
+    { "name": "deck_reviewLimit_label", "value": "本牌组复习上限" }, { "name": "deck_reviewLimit_help", "value": "只对当前牌组生效的每日复习上限，覆盖预设值；留空表示跟随预设。\n例：预设每天 200 张复习，给「医学」牌组填 50，则医学每天最多 50 张复习，其他使用预设的牌组不受影响。" },
+    { "name": "deck_newLimit_label", "value": "本牌组新卡上限" }, { "name": "deck_newLimit_help", "value": "只对当前牌组生效的每日新卡上限，覆盖预设值；留空表示跟随预设。\n例：预设每天 20 张新卡，给「口语」牌组填 5，则口语每天最多引入 5 张新卡。" },
+    { "name": "deck_reviewToday_label", "value": "今日复习上限" }, { "name": "deck_reviewToday_help", "value": "仅今天生效的临时复习上限，明天自动失效；留空表示清除临时设置。\n例：今天时间紧，把上限临时改成 50，明天自动恢复为预设值。" },
+    { "name": "deck_reviewTodayActive_label", "value": "启用今日复习上限" }, { "name": "deck_reviewTodayActive_help", "value": "指示「今日复习上限」当前是否启用：开启才应用上面填的临时值；关闭时临时值保留但今天不生效。\n例：填了 50 但开关关闭，今天仍按预设上限复习。" },
+    { "name": "deck_newToday_label", "value": "今日新卡上限" }, { "name": "deck_newToday_help", "value": "仅今天生效的临时新卡上限，明天自动失效；留空表示清除临时设置。\n例：今天想多冲一点，把新卡上限临时改成 40，明天自动恢复。" },
+    { "name": "deck_newTodayActive_label", "value": "启用今日新卡上限" }, { "name": "deck_newTodayActive_help", "value": "指示「今日新卡上限」当前是否启用：开启才应用临时值；关闭时临时值保留但今天不生效。\n例：填了 40 但开关关闭，今天仍按预设新卡上限引入。" },
+    { "name": "deck_desiredRetentionOverride_label", "value": "本牌组目标保持率" }, { "name": "deck_desiredRetentionOverride_help", "value": "仅此牌组生效的 FSRS 目标记忆保持率，覆盖预设值；留空表示跟随预设。\n例：预设 0.9，给「高频考点」牌组填 0.95，则该牌组复习更密集，其他牌组保持 0.9。" },
+    { "name": "deck_newCardsIgnoreReviewLimit_label", "value": "新卡忽略复习上限" }, { "name": "deck_newCardsIgnoreReviewLimit_help", "value": "默认复习上限用满后新卡也不再出现；开启后新卡不受复习上限影响照常出现。\n例：复习上限 200 已全部被复习占用，开启后今天仍可引入新卡（当日总负载会相应变重）。这是集合级设置，影响所有牌组。" },
+    { "name": "deck_fsrsEnabled_label", "value": "启用 FSRS" }, { "name": "deck_fsrsEnabled_help", "value": "对整个集合启用 FSRS 排程算法（替代旧版 SM-2）。FSRS 依据复习历史拟合记忆模型，通常能在同等记忆率下减少复习量。\n注意：这是集合级开关，影响所有牌组；开启后建议执行一次参数优化。" },
+    { "name": "deck_applyAllParentLimits_label", "value": "应用所有父牌组限制" }, { "name": "deck_applyAllParentLimits_help", "value": "默认从子牌组学习时不受上层牌组日限约束；开启后日限从最顶层牌组开始逐级生效。\n例：「外语」（上限 50）下有「英语」（上限 30），开启后从英语牌组学习时外语的 50 总上限也生效，两级同时约束。适合想给整个牌组树设总量的人。这是集合级设置。" },
+    { "name": "deck_fsrsReschedule_label", "value": "保存后重新调度" }, { "name": "deck_fsrsReschedule_help", "value": "开启后，保存选项时按 FSRS 立即重算所有卡片的排程。\n例：刚优化完参数，开启此项保存，全部卡片的下次到期日立刻按新参数刷新；关闭则只影响之后的复习。\n注意：大牌库重排耗时较长，且可能与尚未同步的其他设备产生冲突。" },
+    { "name": "deck_fsrsHealthCheck_label", "value": "FSRS 健康检查" }, { "name": "deck_fsrsHealthCheck_help", "value": "保存时对 FSRS 排程数据做一次健康检查并修复异常状态。\n例：怀疑卡片排程数据异常时，开启此项保存一次，让系统自检修复；平时保持关闭即可。" },
+    { "name": "deck_invalid_number_validation_error", "value": "请输入有效数字" }, { "name": "deck_range_validation_error", "value": "该值不在 Anki 允许的范围内" }, { "name": "deck_fsrs_parameters_validation_error", "value": "FSRS 参数数量不正确" }, { "name": "deck_easy_days_validation_error", "value": "轻松日必须是 7 个数字或留空" },
+    { "name": "transfer_failed", "value": "数据处理失败" },
+    { "name": "settings_glossary", "value": "更多详解" },
+    { "name": "glossary_bury_label", "value": "埋藏卡片" },
+    { "name": "glossary_bury_help", "value": "把当前卡片从今日复习队列移出，明天自动回到队列。适合「现在不想答这张卡/想专注其他卡」的场景。\n\n与暂停的区别：埋藏明天自动恢复，暂停需要手动取消。\n\nAnki 还会在牌组选项开启「埋藏兄弟卡」时自动埋藏同一笔记的兄弟卡（如正反两张卡），避免同一次学习中先后看到同一笔记的多张卡。完成今日复习前，可在完成页点击「恢复埋藏」提前取消埋藏。" },
+    { "name": "glossary_suspend_label", "value": "暂停卡片" },
+    { "name": "glossary_suspend_help", "value": "把当前卡片移出复习队列，直到手动取消暂停前不再出现（与埋藏不同，暂停不会自动恢复）。\n\n适合「这张卡暂时不想再看到，但又不想删」的场景。\n\n注意：一张卡不能同时被埋藏和暂停，暂停一张已埋藏的卡会自动取消埋藏。\n\n要取消暂停需到 Anki 桌面端浏览器手动操作（jidecards 暂未提供取消暂停入口）。" },
+    { "name": "glossary_delete_label", "value": "删除卡片" },
+    { "name": "glossary_delete_help", "value": "仅删除当前这一张卡片，不影响同一笔记下的其他卡片（如反向卡）。若该笔记只有这一张卡，笔记会一并清理。\n\n与 Anki 桌面端 More 菜单的 Delete Note 不同：Anki 桌面端会删除整条笔记及其所有卡片；jidecards 走 backend RemoveCards 路径，只删当前卡（与 AnkiDroid 的 Delete Card 行为一致）。\n\n可点击复习页顶部「撤销」按钮恢复（撤销栈会记录删除操作）。\n\n注意：删除是危险操作，点击后会弹二次确认对话框。" },
+    { "name": "glossary_undo_label", "value": "撤销" },
+    { "name": "glossary_undo_help", "value": "撤销上一次操作（评分/埋藏/暂停/删除等），与 Anki 桌面端 Ctrl+Z 同语义。\n\njidecards 在复习页顶部显示撤销按钮（仅当后端 undo 栈非空时可见），撤销后被撤销的卡回到队列顶部。\n\n注意：撤销栈在关闭应用后会清空，无法跨会话撤销。" },
+    { "name": "glossary_ratings_label", "value": "评分按钮" },
+    { "name": "glossary_ratings_help", "value": "复习页翻面后显示 4 个评分按钮：\n\n• Again（重来）：答错或想不起来，卡片回到学习队列，很快再次出现\n• Hard（困难）：答对但费力，间隔变短\n• Good（良好）：正常答对，按算法默认间隔安排下次复习（最常用，约 80-95%）\n• Easy（简单）：轻松答对，间隔变长\n\n每个按钮下方的文字是后端返回的下次到期时间（如「<1m」「10m」「1d」等）。Anki 官方建议 Again 占 5-20%，Good 占 80-95%。" },
+    { "name": "glossary_leech_label", "value": "难卡（Leech）" },
+    { "name": "glossary_leech_help", "value": "复习卡累计按「重来」达到「难卡阈值」（默认 8 次）后，被标记为难卡。\n\n可选处理方式：仅添加标签（笔记打上 leech 标签，卡片照常出现）/ 暂停卡片（隐藏该卡直到手动恢复）。\n\n难卡极耗时间。Anki 官方建议：重写卡片、删除，或为它想一个助记法，而不是反复遗忘。\n\n可在牌组选项「难卡阈值」「难卡处理方式」中配置。" },
+    { "name": "glossary_siblings_label", "value": "同级卡（Siblings）" },
+    { "name": "glossary_siblings_help", "value": "同一条笔记生成的多张卡片，例如「正面→背面」和「背面→正面」两张卡，或同一文本的不同完形填空。\n\n同级卡的问题：同一次学习中先后看到同一笔记的多张卡，可能因答案互相剧透而失效。\n\nAnki 可在牌组选项「埋藏同笔记新卡」「埋藏同笔记复习卡」开启后自动埋藏同级卡，让它们分散到不同天出现。\n\n注意：Anki 不会埋藏学习中的同级卡（学习卡时间敏感）。" },
+    { "name": "glossary_graduating_interval_label", "value": "毕业间隔" },
+    { "name": "glossary_graduating_interval_help", "value": "新卡走完最后一个学习步幅后，转为复习卡的首次间隔。\n\n按「良好」毕业：使用「良好毕业间隔」（默认 1 天，即明天以复习卡身份出现）\n按「简单」毕业：跳过剩余步幅，使用「简单毕业间隔」（默认 4 天）\n\n这是旧版 SM-2 算法的选项；启用 FSRS 后，首次复习时机由 FSRS 自行计算，本项不再生效。" },
+    { "name": "glossary_fsrs_retention_label", "value": "FSRS 目标保持率" },
+    { "name": "glossary_fsrs_retention_help", "value": "FSRS 按此目标安排复习时机：当预测回忆概率降到该值时让卡片出现。\n\n默认 0.9（90%），官方建议范围 0.8~0.97。\n调高（如 0.95）→ 复习更频繁、每日量更大、记忆更牢；调低（如 0.85）→ 复习更少但遗忘更多。\n\n0.9 是多数用户的平衡点。可在牌组选项「目标记忆保持率」中配置。" },
+    { "name": "glossary_fuzz_label", "value": "随机抖动（Fuzz）" },
+    { "name": "glossary_fuzz_help", "value": "复习卡按评分计算下次到期日后，Anki 会再加一点随机偏移，防止同期引入、同评分的卡片永远同天到期、扎堆出现。\n\n学习卡也会被加最多 5 分钟的额外延迟，让它们顺序不那么固定（但评分按钮上的下次到期文字不会反映这个延迟）。\n\n官方说明：此特性无法关闭。" },
+    { "name": "glossary_shortcuts_label", "value": "键盘快捷键" },
+    { "name": "glossary_shortcuts_help", "value": "复习页支持外接键盘、蓝牙键盘与 2in1 设备内置键盘，按键定义与 Anki 桌面端对齐：\n\n• 空格 / Enter：问题阶段显示答案；答案阶段评「良好」\n• 1 / 2 / 3 / 4：答案阶段评「重来 / 困难 / 良好 / 简单」\n• * 或 B：埋藏当前卡（明天自动恢复）\n• @ 或 S：暂停当前卡（手动恢复前不再出现）\n• Delete：删除当前卡（弹二次确认）\n• Ctrl+Z：撤销上一次操作\n• Esc：返回上一页\n• R：重放当前侧音频（无音频时静默无副作用）\n\n字母键 B / S / R 是为没有数字小键盘的键盘用户提供的易按替代；与符号键 * @ 并存，按任一皆可。" },
+    { "name": "glossary_lapse_label", "value": "遗忘（Lapse）" },
+    { "name": "glossary_lapse_help", "value": "复习卡按「重来」时即发生一次遗忘，进入重学流程。\n\n重学流程：按「重新学习步幅」（默认 10 分钟）依次重现，通过后新间隔按「最短遗忘间隔」（默认 1 天）起步。\n\n每发生一次遗忘，该卡的遗忘次数 +1；累计达「难卡阈值」会被标记为难卡。\n\n启用 FSRS 后，遗忘后的新间隔由 FSRS 根据 memory_state 重新计算，不再使用旧版「遗忘间隔系数」。" },
+    { "name": "settings_sync_group", "value": "AnkiWeb 云同步" },
+    { "name": "sync_subtitle_logged_out", "value": "登录后可同步牌组与媒体文件" },
+    { "name": "sync_username_hint", "value": "AnkiWeb 用户名（邮箱）" },
+    { "name": "sync_password_hint", "value": "密码" },
+    { "name": "sync_login", "value": "登录" },
+    { "name": "sync_logging_in", "value": "登录中…" },
+    { "name": "sync_logout", "value": "注销" },
+    { "name": "sync_logout_confirm_message", "value": "确认注销当前账号?注销后需重新登录才能同步。本地数据不受影响。" },
+    { "name": "sync_now", "value": "立即同步" },
+    { "name": "sync_backup_first", "value": "先备份后同步" },
+    { "name": "sync_help_text", "value": "「立即同步」是双向同步：既上传本地新改动到云端，也下载云端新改动到本地。rslib 按每条记录的 usn 决定方向，仅在严重冲突时才需要选上传还是下载。" },
+    { "name": "sync_syncing", "value": "同步中…" },
+    { "name": "sync_syncing_media", "value": "正在同步媒体文件…" },
+    { "name": "sync_media_upload", "value": "(上传)" },
+    { "name": "sync_media_download", "value": "(下载)" },
+    { "name": "sync_abort", "value": "中止" },
+    { "name": "sync_success", "value": "同步完成" },
+    { "name": "close", "value": "关闭" },
+    { "name": "sync_up_to_date", "value": "已是最新，无需同步" },
+    { "name": "sync_aborted", "value": "同步已中止" },
+    { "name": "sync_error_auth", "value": "用户名或密码错误" },
+    { "name": "sync_error_session_expired", "value": "登录已过期，请重新登录" },
+    { "name": "sync_error_network", "value": "网络错误，请检查网络后重试" },
+    { "name": "sync_error_generic", "value": "同步失败" },
+    { "name": "sync_conflict_title", "value": "需要全量同步" },
+    { "name": "sync_conflict_message", "value": "本地与云端数据无法合并。选择「上传」将用本地数据覆盖云端；选择「下载」将用云端数据覆盖本地。" },
+    { "name": "sync_conflict_upload", "value": "上传覆盖云端" },
+    { "name": "sync_conflict_download", "value": "下载覆盖本地" },
+    { "name": "sync_download_only_message", "value": "本地暂无卡片，需从云端下载数据（将覆盖本地）。" },
+    { "name": "sync_upload_only_message", "value": "云端暂无数据，需上传本地数据（将覆盖云端）。" },
+    { "name": "sync_fsrs_disabled_title", "value": "FSRS 已关闭" },
+    { "name": "sync_fsrs_disabled_message", "value": "云端的 FSRS 设置覆盖了本地。是否重新开启 FSRS 算法？\n\n选「重新开启」会立即回写本地 FSRS 状态为开；选「保持关闭」则维持云端的状态。" },
+    { "name": "sync_fsrs_disabled_reenable", "value": "重新开启" },
+    { "name": "sync_fsrs_disabled_keep", "value": "保持关闭" },
+    { "name": "transfer_panel_title", "value": "导出 / 导入" },
+    { "name": "transfer_subtitle_export_deck", "value": "导出牌组到 .apkg 文件" },
+    { "name": "transfer_subtitle_export_personal", "value": "导出全部数据到 .colpkg 文件" },
+    { "name": "transfer_subtitle_import_deck", "value": "从 .apkg 文件导入牌组（合并）" },
+    { "name": "transfer_subtitle_import_personal", "value": "从 .colpkg 文件恢复全部数据" },
+    { "name": "transfer_label_deck", "value": "选择牌组" },
+    { "name": "transfer_exporting", "value": "正在导出…" },
+    { "name": "transfer_importing", "value": "正在导入…" },
+    { "name": "transfer_acknowledge_personal", "value": "我已知晓上述风险" },
+    { "name": "transfer_stage_prepare_file", "value": "准备文件中…" },
+    { "name": "transfer_stage_import_data", "value": "导入数据中…" },
+    { "name": "transfer_stage_refresh_list", "value": "刷新列表中…" },
+    { "name": "transfer_stage_export_data", "value": "导出数据中…" },
+    { "name": "transfer_stage_save_file", "value": "保存文件中…" },
+    { "name": "transfer_stage_close_db", "value": "关闭数据库中…" },
+    { "name": "transfer_stage_restore_db", "value": "恢复数据库中…" }
+  ]
+}

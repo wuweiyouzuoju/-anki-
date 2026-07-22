@@ -1,0 +1,14 @@
+{
+  "name": "jidecards-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-transform-types --import ./tools/tests/register-ts-hook.mjs --test tools/tests/*.test.mjs",
+    "doctor": "node tools/doctor.mjs",
+    "build:app": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-app.ps1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "AGPL-3.0-or-later"
+}

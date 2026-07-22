@@ -1,0 +1,8 @@
+{
+  modelVersion: '5.0.0',
+  name: 'jidecards',
+  version: '0.1.0',
+  description: 'Independent HarmonyOS client backed by the Anki Rust core',
+  dependencies: {},
+  devDependencies: {}
+}

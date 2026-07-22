@@ -1,0 +1,116 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#10151D"
+    },
+    {
+      "name": "surface_page",
+      "value": "#10151D"
+    },
+    {
+      "name": "surface_card",
+      "value": "#18202B"
+    },
+    {
+      "name": "surface_sidebar",
+      "value": "#141B25"
+    },
+    {
+      "name": "surface_selected",
+      "value": "#243454"
+    },
+    {
+      "name": "text_primary",
+      "value": "#F1F5F9"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#B8C1CE"
+    },
+    {
+      "name": "text_tertiary",
+      "value": "#8E9AAA"
+    },
+    {
+      "name": "action_primary",
+      "value": "#5C84E6"
+    },
+    {
+      "name": "action_on_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "border_subtle",
+      "value": "#2A3442"
+    },
+    {
+      "name": "border_input",
+      "value": "#3D4A5E"
+    },
+    {
+      "name": "status_ready",
+      "value": "#55C69A"
+    },
+    {
+      "name": "error_text",
+      "value": "#F97066"
+    },
+    {
+      "name": "count_new",
+      "value": "#7CA7F2"
+    },
+    {
+      "name": "count_learning",
+      "value": "#E6A45F"
+    },
+    {
+      "name": "count_review",
+      "value": "#B2A0F2"
+    },
+    {
+      "name": "deck_blue",
+      "value": "#6F8FD2"
+    },
+    {
+      "name": "deck_purple",
+      "value": "#8A7CC5"
+    },
+    {
+      "name": "deck_mint",
+      "value": "#64B49E"
+    },
+    {
+      "name": "deck_amber",
+      "value": "#C49B57"
+    },
+    {
+      "name": "deck_black",
+      "value": "#4A5568"
+    },
+    {
+      "name": "deck_red",
+      "value": "#C87878"
+    },
+    {
+      "name": "heat_0",
+      "value": "#232D3A"
+    },
+    {
+      "name": "heat_1",
+      "value": "#293A58"
+    },
+    {
+      "name": "heat_2",
+      "value": "#355484"
+    },
+    {
+      "name": "heat_3",
+      "value": "#4B72B8"
+    },
+    {
+      "name": "heat_4",
+      "value": "#6F96ED"
+    }
+  ]
+}

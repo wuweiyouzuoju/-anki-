@@ -1,0 +1,14 @@
+{
+  "name": "entry",
+  "version": "0.1.0",
+  "description": "jidecards HarmonyOS application",
+  "main": "",
+  "author": "jidecards contributors",
+  "license": "AGPL-3.0-or-later",
+  "dependencies": {
+    "libjidecards.so": "file:./src/main/cpp/types/libjidecards",
+    "@ibestservices/ibest-ui": "^2.2.7"
+  },
+  "devDependencies": {},
+  "dynamicDependencies": {}
+}

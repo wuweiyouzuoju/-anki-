@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
+import test from 'node:test';
+
+function projectUrl(relativePath) {
+  return new URL(`../../${relativePath}`, import.meta.url);
+}
+
+function read(relativePath) {
+  return readFileSync(projectUrl(relativePath), 'utf8');
+}
+
+const HIERARCHY = 'entry/src/main/ets/model/DeckHierarchy.ets';
+const MODELS = 'entry/src/main/ets/model/HomeModels.ets';
+const MAPPER = 'entry/src/main/ets/model/HomeSnapshotMapper.ets';
+const LIST_ITEM = 'entry/src/main/ets/components/DeckListItem.ets';
+const CREATE_PANEL = 'entry/src/main/ets/components/CreateDeckPanel.ets';
+
+test('hierarchy module normalizes separators and exposes tree metadata', () => {
+  assert.equal(existsSync(projectUrl(HIERARCHY)), true, `${HIERARCHY} must exist`);
+  const hierarchy = read(HIERARCHY);
+
+  assert.match(hierarchy, /export function normalizeDeckPath/);
+  assert.match(hierarchy, /replace\(\/：\/g, '::'\)/);
+  assert.match(hierarchy, /replace\(/, 'path normalization must handle separator variants');
+  assert.match(hierarchy, /export function composeDeckPath/);
+  assert.match(hierarchy, /export function flattenDeckTree/);
+  assert.match(hierarchy, /export function visibleDeckRows/);
+  assert.match(hierarchy, /part\.length === 0/, 'empty hierarchy segments must be rejected');
+});
+
+test('deck summaries retain tree relationships and backend aggregate counts', () => {
+  const models = read(MODELS);
+  const hierarchy = read(HIERARCHY);
+  for (const field of ['fullName', 'depth', 'parentId', 'hasChildren', 'ancestorIds']) {
+    assert.match(models, new RegExp(field));
+  }
+  assert.match(hierarchy, /totalIncludingChildren/, 'parent totals must come from the backend node');
+  assert.doesNotMatch(hierarchy, /totalCards\s*\+=/, 'parent totals must not be recalculated from children');
+});
+
+test('home mapper flattens the full deck tree rather than only root children', () => {
+  const mapper = read(MAPPER);
+  assert.match(mapper, /flattenDeckTree\(root/);
+  assert.doesNotMatch(mapper, /主页面列表只展示顶层牌组/);
+});
+
+test('deck rows disclose and indent children while creation composes a normalized parent path', () => {
+  const listItem = read(LIST_ITEM);
+  const panel = read(CREATE_PANEL);
+
+  assert.match(listItem, /expanded/);
+  assert.match(listItem, /onToggle/);
+  assert.match(listItem, /deck\.depth/);
+  assert.match(listItem, /deck\.hasChildren/);
+  assert.match(panel, /parentOptions: DeckSummary\[\]/);
+  assert.match(panel, /initialParentId/);
+  assert.match(panel, /onConfirm: \(fullName: string\) => void/);
+  assert.match(panel, /composeDeckPath/);
+});

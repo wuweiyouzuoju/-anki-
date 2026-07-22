@@ -1,0 +1,34 @@
+{
+  apiType: 'stageMode',
+  buildOption: {
+    externalNativeOptions: {
+      path: './src/main/cpp/CMakeLists.txt',
+      arguments: '',
+      cppFlags: '-std=c++17',
+      abiFilters: [
+        // 真机 arm64-v8a + 模拟器 x86_64 同时打包，方便一个 HAP 同时部署两类设备。
+        'arm64-v8a',
+        'x86_64'
+      ]
+    }
+  },
+  buildOptionSet: [
+    {
+      name: 'release',
+      arkOptions: {
+        obfuscation: {
+          ruleOptions: {
+            // 阶段 0/1 刻意关闭：保持崩溃堆栈符号可读，且 AGPL 项目源码本就公开。
+            enable: false,
+            files: ['./obfuscation-rules.txt']
+          }
+        }
+      }
+    }
+  ],
+  targets: [
+    {
+      name: 'default'
+    }
+  ]
+}
