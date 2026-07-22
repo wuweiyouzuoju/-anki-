@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Repository tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm test
+
+  rust-check:
+    name: Rust workspace check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          components: rustfmt, clippy
+      - uses: arduino/setup-protoc@v3
+      - name: Check rsharmony (without anki-core)
+        run: cargo check -p rsharmony
+      - name: rustfmt check
+        run: cargo fmt --all -- --check
+      - name: clippy (warnings only)
+        run: cargo clippy -p rsharmony -- -W warnings
+        continue-on-error: true
