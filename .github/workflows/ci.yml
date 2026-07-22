@@ -27,10 +27,12 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: arduino/setup-protoc@v3
-      - name: Check rsharmony (without anki-core)
-        run: cargo check -p rsharmony
+      - name: Check jidecards_core (without anki-core)
+        run: cargo check -p jidecards_core
+      - name: Run FFI unit tests
+        run: cargo test -p jidecards_core
       - name: rustfmt check
         run: cargo fmt --all -- --check
       - name: clippy (warnings only)
-        run: cargo clippy -p rsharmony -- -W warnings
+        run: cargo clippy -p jidecards_core -- -W warnings
         continue-on-error: true
