@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // 后端错误类型与 NAPI 错误映射。纯逻辑、无桥接依赖，可独立单元测试。
 
 import { decodeBackendError } from '../proto/messages/BackendMessages';

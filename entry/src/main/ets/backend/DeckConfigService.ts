@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // DeckConfigService：牌组选项（DeckConfig）域的高层调用封装（T4）。
 // 职责：拉取编辑视图（GetDeckConfigsForUpdate）与整体回写（UpdateDeckConfigs）；
 // 不持有 UI 状态，不做字段映射——三字段建模与未建模字段保真回写见 DeckConfigMessages。

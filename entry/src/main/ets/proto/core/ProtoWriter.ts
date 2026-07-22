@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Protobuf wire format 写入器（proto3，与 prost 编码对齐）。
 // 规范来源：https://protobuf.dev/programming-guides/encoding/
 // 设计：只覆盖本项目用到的类型；proto3 默认值由调用方跳过（与 prost 一致）。

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // anki.backend.BackendInit / BackendError 编解码。
 // 字段来源：third_party/anki/proto/anki/backend.proto（Anki 26.05）
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // anki.scheduler 复习链路消息编解码。
 // 字段来源：third_party/anki/proto/anki/scheduler.proto、cards.proto、generic.proto（Anki 26.05）
 //

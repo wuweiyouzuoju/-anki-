@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // anki.card_rendering 渲染链路消息编解码。
 // 字段来源：third_party/anki/proto/anki/card_rendering.proto（Anki 26.05）
 //

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Anki 26.05 cards.proto messages.
 // 字段来源：third_party/anki/proto/anki/cards.proto
 // service 号：BACKEND_CARDS = 5（backend.rs line 6672）

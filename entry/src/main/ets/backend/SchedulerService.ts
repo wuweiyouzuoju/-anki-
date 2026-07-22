@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // SchedulerService：复习调度域的高层调用封装（M7）。
 // 职责：取卡队列（含调度状态）、按钮文案、提交评分；不持有 UI 状态。
 // 方法索引来源：ServiceIds.ts（提取自 Anki 26.05 生成代码）。

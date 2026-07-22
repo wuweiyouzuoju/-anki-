@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // DeckService：牌组域的高层调用封装（M4 起逐步扩展）。
 // 职责：编解码 + 经 BackendSession 调用；不持有 UI 状态，不做数据映射。
 // 数据语义见 HomeSnapshotMapper 与 third_party/anki/rslib/src/decks/tree.rs。

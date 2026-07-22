@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Anki 26.05 BackendSyncService 边界。
 // 包装 BackendSyncService 的 9 个 RPC：
 //   - SyncLogin：AnkiWeb 登录，返回 SyncAuth（hkey + 可选 endpoint）

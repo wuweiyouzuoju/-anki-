@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Anki 26.05 notes.proto messages needed by the native add-note flow.
 import { ProtoReader } from '../core/ProtoReader';
 import { ProtoWriter } from '../core/ProtoWriter';

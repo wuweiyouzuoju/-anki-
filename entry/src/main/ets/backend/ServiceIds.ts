@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // 服务/方法索引常量（唯一来源）。
 // 提取自 Rust 构建产物 target/**​/build/anki-*​/out/backend.rs 的
 // run_backend_*_service_method match 分支，与 AnkiDroid 同源规则，绑定 Anki 26.05。

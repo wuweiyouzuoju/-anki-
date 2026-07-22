@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { AppDimens } from '../utils/AppDimens';
 
 /** Small, reusable help sheet. Option help is intentionally opt-in through ⓘ only. */

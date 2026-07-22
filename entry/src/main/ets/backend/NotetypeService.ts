@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { BackendSession } from './BackendSession';
 import { NOTETYPES_METHOD, SERVICE } from './ServiceIds';
 import type { NotetypeNameId, NotetypeView } from '../proto/messages/NotetypeMessages';

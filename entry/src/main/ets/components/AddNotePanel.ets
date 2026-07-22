@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { AppDimens } from '../utils/AppDimens';
 import { FieldHelpPanel } from './FieldHelpPanel';
 import { COLOR_KEYS } from '../model/ColorTheme';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { DeckLimits } from '../proto/messages/DeckConfigMessages';
 import type { ValidationIssue } from './DeckConfigForm';
 

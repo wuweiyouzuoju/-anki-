@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // BackendSession：Rust backend 句柄与 collection 生命周期的唯一管理者。
 // 职责：幂等打开（backend → collection）、统一错误类型化、为高层服务提供 run 通道。
 // 不持有任何 UI 状态；UI 通过 isReady() 感知就绪。

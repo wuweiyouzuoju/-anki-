@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { DeckSummary, HomeSnapshot } from '../model/HomeModels';
 import { AppDimens } from '../utils/AppDimens';
 import { StartStudyButton } from './StartStudyButton';

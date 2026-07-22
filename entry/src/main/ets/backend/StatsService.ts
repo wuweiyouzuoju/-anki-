@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // StatsService：统计域的高层调用封装（T6 首页月历热力 + 记忆率）。
 // 职责：一次 Graphs 调用同时取回按日复习计数（reviews.count map）与
 // 平均可提取率（retrievability.average + fsrs 标志），不持有 UI 状态。

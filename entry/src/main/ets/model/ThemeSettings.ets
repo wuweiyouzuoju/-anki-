@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 export type ThemeMode = 'system' | 'light' | 'dark';
 
 export const DEFAULT_THEME_MODE: ThemeMode = 'system';

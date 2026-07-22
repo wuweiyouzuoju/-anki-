@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // CollectionService：撤销/重做域的高层调用封装（T2）。
 // 职责：查询 undo/redo 可用状态、执行撤销/重做；不持有 UI 状态。
 // 方法索引来源：ServiceIds.ts（提取自 Anki 26.05 生成代码）。

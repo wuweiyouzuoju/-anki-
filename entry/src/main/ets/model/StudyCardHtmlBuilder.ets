@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // StudyCardHtmlBuilder：渲染节点流 → 学习页 HTML 的纯函数积木（M7）。
 // 不依赖后端/Web 组件，可独立单元测试。
 //

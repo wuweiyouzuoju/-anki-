@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // 首页视觉尺寸 token：与颜色、字符串资源同级管理。
 // 调整设计或适配新形态时只改这里，页面与组件不再出现魔法数字。
 export class AppDimens {

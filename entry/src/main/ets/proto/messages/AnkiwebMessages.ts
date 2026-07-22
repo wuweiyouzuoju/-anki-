@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // anki.ankiweb.proto 消息编解码（Anki 26.05）。
 // 仅覆盖本项目使用的字段，与 prost 编码对齐：proto3 默认值省略。
 

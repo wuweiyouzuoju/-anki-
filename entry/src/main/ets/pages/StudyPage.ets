@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // StudyPage：复习流程页（M7）。
 // 链路：ensureOpen → SetCurrentDeck+GetQueuedCards → RenderExistingCard →
 //       DescribeNextStates → Web 渲染正面 → 翻面 → AnswerCard → 取下一张。

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Protobuf wire format 读取器（proto3）。
 // 规范来源：https://protobuf.dev/programming-guides/encoding/
 // int64/uint64 超过 Number.MAX_SAFE_INTEGER 时抛错——Anki 的 id/时间戳远小于此，

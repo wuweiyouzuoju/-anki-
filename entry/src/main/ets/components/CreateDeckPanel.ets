@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { AppDimens } from '../utils/AppDimens';
 import { composeDeckPath, normalizeDeckPath } from '../model/DeckHierarchy';
 import type { DeckSummary } from '../model/HomeModels';

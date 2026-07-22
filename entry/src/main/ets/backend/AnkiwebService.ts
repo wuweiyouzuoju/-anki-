@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Anki 26.05 AnkiwebService 边界。
 // 包装 BackendAnkiwebService 的 2 个 RPC：
 //   - GetAddonInfo：从 AnkiWeb 拉取 addon 元信息（最多 25 个/次）

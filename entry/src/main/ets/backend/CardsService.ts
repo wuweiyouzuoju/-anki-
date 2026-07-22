@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { BackendSession } from './BackendSession';
 import { CARDS_METHOD, SERVICE } from './ServiceIds';
 import type { Card } from '../proto/messages/CardsMessages';

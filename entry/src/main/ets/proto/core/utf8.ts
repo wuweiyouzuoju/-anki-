@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // UTF-8 编解码（纯逻辑实现）。
 // 不依赖 util.TextEncoder / @kit.ArkTS，保证同一份代码既能在 HarmonyOS 运行，
 // 也能在 Node 单元测试中直接 import 验证。
