@@ -5,9 +5,10 @@ import { evaluateEnvironment, projectToolchainCommands } from '../doctor.mjs';
 
 test('resolves the workspace-local Rust toolchain without changing global PATH', () => {
   const commands = projectToolchainCommands('C:/workspace/work/toolchains');
+  const exe = process.platform === 'win32' ? '\\.exe' : '';
 
-  assert.match(commands.rustc, /work[\\/]toolchains[\\/]cargo[\\/]bin[\\/]rustc\.exe$/);
-  assert.match(commands.cargo, /work[\\/]toolchains[\\/]cargo[\\/]bin[\\/]cargo\.exe$/);
+  assert.match(commands.rustc, new RegExp(`work[\\\\/]toolchains[\\\\/]cargo[\\\\/]bin[\\\\/]rustc${exe}$`));
+  assert.match(commands.cargo, new RegExp(`work[\\\\/]toolchains[\\\\/]cargo[\\\\/]bin[\\\\/]cargo${exe}$`));
 });
 
 test('reports required and optional toolchain gaps separately', () => {
