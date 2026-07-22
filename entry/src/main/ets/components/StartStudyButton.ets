@@ -18,6 +18,25 @@ export struct StartStudyButton {
   @StorageProp(COLOR_KEYS.actionPrimaryActive) private actionPrimaryActiveColor: string = '#1E4FB8';
   @State private pressed: boolean = false;
 
+  // 往白色混合 10% 让按钮色偏淡一点点（用户决策 2026-07-22：所有主题色的开始学习按钮偏淡）
+  // 只作用于本按钮渲染，不改主题色定义，不影响其他 primary 场景
+  private lighten(hex: string): string {
+    const s: string = hex.startsWith('#') ? hex.slice(1) : hex;
+    const r0: number = parseInt(s.slice(0, 2), 16);
+    const g0: number = parseInt(s.slice(2, 4), 16);
+    const b0: number = parseInt(s.slice(4, 6), 16);
+    const alpha: number = 0.10;
+    const r: number = Math.round(r0 * (1 - alpha) + 255 * alpha);
+    const g: number = Math.round(g0 * (1 - alpha) + 255 * alpha);
+    const b: number = Math.round(b0 * (1 - alpha) + 255 * alpha);
+    const toHex = (n: number): string => {
+      const clamped: number = Math.max(0, Math.min(255, n));
+      const h: string = clamped.toString(16);
+      return h.length === 1 ? '0' + h : h;
+    };
+    return '#' + toHex(r) + toHex(g) + toHex(b);
+  }
+
   build() {
     Button() {
       Row() {
@@ -39,8 +58,8 @@ export struct StartStudyButton {
     .linearGradient({
       angle: 180,
       colors: this.pressed
-        ? [[this.actionPrimaryActiveColor as ResourceColor, 0.0], [this.actionPrimaryActiveColor as ResourceColor, 1.0]]
-        : [[this.actionPrimaryColor as ResourceColor, 0.0], [this.actionPrimaryActiveColor as ResourceColor, 1.0]]
+        ? [[this.lighten(this.actionPrimaryActiveColor) as ResourceColor, 0.0], [this.lighten(this.actionPrimaryActiveColor) as ResourceColor, 1.0]]
+        : [[this.lighten(this.actionPrimaryColor) as ResourceColor, 0.0], [this.lighten(this.actionPrimaryActiveColor) as ResourceColor, 1.0]]
     })
     .borderRadius(AppDimens.RADIUS_CTA)
     .animation({ duration: 80, curve: Curve.EaseOut })
