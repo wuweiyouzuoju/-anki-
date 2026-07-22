@@ -460,12 +460,14 @@ export struct SettingsPanel {
                   .fontSize(12)
                   .fontColor(settingsPalette(this.isDark).error)
                   .width('100%')
+                  .margin({ top: 10 })
               } else if (this.checkDbDone) {
                 Text(this.checkDbProblems.length === 0 ? $r('app.string.check_db_passed') :
                   $r('app.string.check_db_problems', this.checkDbProblems.length))
                   .fontSize(12)
                   .fontColor(settingsPalette(this.isDark).textSecondary)
                   .width('100%')
+                  .margin({ top: 10 })
                 if (this.checkDbProblems.length > 0) {
                   ForEach(this.checkDbProblems.slice(0, 3), (problem: string) => {
                     Text(problem)
