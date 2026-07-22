@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { emptyDeckConfigSettings } from '../proto/messages/DeckConfigMessages';
 import type { DeckConfigSettings } from '../proto/messages/DeckConfigMessages';
 

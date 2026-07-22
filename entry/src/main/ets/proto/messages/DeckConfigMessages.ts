@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Anki 26.05 DeckConfig protocol. Every public Config field is modeled here;
 // `preserved` holds future unknown fields verbatim so updates remain lossless.
 import { ProtoReader } from '../core/ProtoReader';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // SoundPlayer：原生 AVPlayer 队列播放器（M7 音频方案）。
 // 学习页音频改走原生播放：Web <audio> 自动播放受手势策略拦截，真机无声。
 // 串行语义：playQueue/replay 先停后播；completed 自动接续下一首；gen 代次防旧回调污染。

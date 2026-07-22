@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // anki.decks 相关消息编解码：Deck（新建牌组往返）、DeckTreeRequest、
 // DeckTreeNode（主页计数树）、GetDeckNamesRequest、DeckNames。
 // 字段来源：third_party/anki/proto/anki/decks.proto（Anki 26.05）

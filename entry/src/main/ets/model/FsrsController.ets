@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // FSRS（Free Spaced Repetition Scheduler）全局开关控制器。
 //
 // Anki 的 fsrs 字段是 collection 级全局 flag（不是 per-deck）：整个 collection 要么

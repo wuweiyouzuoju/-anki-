@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // CardRenderingService：卡片渲染域的高层调用封装（M7）。
 // 职责：RenderExistingCard → 正反面模板节点流 + CSS；不持有 UI 状态。
 // 节点流 → HTML 的组装在 model/StudyCardHtmlBuilder（纯函数，可单测）。

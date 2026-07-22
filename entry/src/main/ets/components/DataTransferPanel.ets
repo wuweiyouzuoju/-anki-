@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { CollectionExportOptions, DeckExportOptions } from '../model/DataTransferModels';
 import { AppDimens } from '../utils/AppDimens';
 import { settingsPalette } from '../utils/SettingsColors';

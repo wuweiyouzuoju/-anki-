@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * System document-picker boundary. Transfer I/O belongs to DataTransferService:
  * picker results are provider URIs, so the service opens them by descriptor.

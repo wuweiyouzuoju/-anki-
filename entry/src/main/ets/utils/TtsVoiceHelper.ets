@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // TtsVoiceHelper：TTS 音色查询与下载的小工具（多语种通用版）。
 // 复用 TtsPlayer 中已验证的 isInstalledVoice 判定，提供：
 //   - listAllVoices()：调 textToSpeech.listVoices 拉取本机所有可用音色，按 language 聚合

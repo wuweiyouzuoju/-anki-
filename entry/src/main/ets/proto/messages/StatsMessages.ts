@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // anki.stats 轻量消息编解码：GraphsResponse 仅提取首页热力和记忆率所需的字段。
 // 字段来源：third_party/anki/proto/anki/stats.proto（Anki 26.05）
 // 语义来源：rslib/src/stats/graphs/（reviews.count 的键为「距今天数」，0=今天；

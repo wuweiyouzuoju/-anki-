@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // TtsPlayer：基于 HarmonyOS CoreSpeechKit 的 TTS 朗读播放器（M7 音频方案）。
 // 负责 Anki [anki:tts lang=xxx]text[/anki:tts] 标签的本地朗读，与 SoundPlayer 分轨并行。
 //

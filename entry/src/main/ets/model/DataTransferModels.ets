@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { ImportSummary } from '../proto/messages/ImportExportMessages';
 
 export interface DeckExportOptions {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 

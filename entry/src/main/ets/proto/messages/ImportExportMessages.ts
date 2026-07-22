@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // anki.import_export package codecs, sourced from Anki 26.05 import_export.proto.
 import { ProtoReader } from '../core/ProtoReader';
 import { ProtoWriter } from '../core/ProtoWriter';

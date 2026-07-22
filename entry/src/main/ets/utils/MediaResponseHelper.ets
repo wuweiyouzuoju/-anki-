@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // MediaResponseHelper：ArkWeb 媒体拦截的 MIME 推断与沙箱读文件（M7）。
 // 与 StudyPage 的 onInterceptRequest 配合：自建域名 → collection.media/ 文件。
 

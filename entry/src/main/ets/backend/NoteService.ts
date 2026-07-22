@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { BackendSession } from './BackendSession';
 import { NOTES_METHOD, SERVICE } from './ServiceIds';
 import type { DeckAndNotetype, EditableNote } from '../proto/messages/NoteMessages';

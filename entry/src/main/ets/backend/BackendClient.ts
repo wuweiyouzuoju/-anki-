@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { closeBackend, openBackend, runMethodRaw } from 'libjidecards.so';
 
 export class BackendClient {

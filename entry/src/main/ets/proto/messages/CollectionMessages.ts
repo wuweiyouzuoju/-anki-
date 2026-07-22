@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // anki.collection.OpenCollectionRequest / OpChanges 族 / UndoStatus /
 // OpChangesAfterUndo / CheckDatabaseResponse 编解码。
 // 字段来源：third_party/anki/proto/anki/collection.proto（Anki 26.05）

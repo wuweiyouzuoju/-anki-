@@ -1,4 +1,6 @@
-﻿﻿import { DeckSummary, DeckTone, deckDisplayName } from '../model/HomeModels';
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+﻿import { DeckSummary, DeckTone, deckDisplayName } from '../model/HomeModels';
 import { AppDimens } from '../utils/AppDimens';
 import { COLOR_KEYS } from '../model/ColorTheme';
 import { image } from '@kit.ImageKit';

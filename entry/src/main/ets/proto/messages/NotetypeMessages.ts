@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Minimal read-only Notetype decoding for Anki 26.05 dynamic add-note fields.
 import { ProtoReader } from '../core/ProtoReader';
 import { ProtoWriter } from '../core/ProtoWriter';
