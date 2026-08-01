@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Clone Anki source (required for path dependency resolution)
+        run: git clone --depth 1 https://github.com/ankitects/anki.git third_party/anki
       - uses: dtolnay/rust-toolchain@1.92.0
         with:
           components: rustfmt, clippy
