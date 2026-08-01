@@ -30,3 +30,6 @@
 
 # Dependencies
 /node_modules/
+
+# Vendored Anki source (clone from github.com/ankitects/anki)
+/third_party/
