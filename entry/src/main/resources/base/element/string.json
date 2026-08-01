@@ -4,6 +4,7 @@
       "name": "module_desc",
       "value": "Local-first card learning for HarmonyOS"
     },
+    { "name": "app_name", "value": "记得卡片" },
     { "name": "deck_newPerDay_label", "value": "每日新卡上限" }, { "name": "deck_newPerDay_help", "value": "每天最多引入的新卡数量；当天没学满不会累积到明天，第二天仍按原上限计算。\n官方建议：新卡会在短期内显著增加复习负担，该值通常至少比「每日复习上限」小 10 倍。官方经验值——每天持续学 20 张新卡，日复习量会稳定在约 200 张。\n例：设为 20 时，今天最多学 20 张新卡，其余顺延到明天。\n注意：复习上限会连带限制新卡——复习上限 200 且已有 190 张复习在等待时，今天最多再引入 10 张新卡；复习额度用满后新卡默认不再出现（可在高级设置开启「新卡忽略复习上限」）。" },
     { "name": "deck_reviewsPerDay_label", "value": "每日复习上限" }, { "name": "deck_reviewsPerDay_help", "value": "每天最多展示的到期复习卡数量。达到上限后即使还有更多卡等待也不再展示；跨日学习卡会优先于复习卡计入该上限。\n例：设为 200 时，即使 300 张卡到期，今天也只展示 200 张，其余顺延到明天。\n该上限同时约束新卡：复习额度用满后，默认新卡也不再出现。\n官方提示：上限适合用来削平偶尔的到期高峰（比如休息一周后回来）；当有卡因上限被隐藏时，完成页会提示你时间充裕的话可以考虑提高上限。" },
     { "name": "deck_learnSteps_label", "value": "学习步幅（分钟）" }, { "name": "deck_learnSteps_help", "value": "新卡在「学习中」阶段要依次通过的延迟列表，数字之间用空格隔开。默认单位分钟，也支持 30s（秒）、2h（小时）、2d（天）。\n按「重来」回到第一步，按「良好」进入下一步，全部通过后卡片毕业为复习卡。\n「困难」按官方规则分三种情况：在第一步时取前两步的平均延迟（如 1 10 → 6 分钟）；只有一步时取该步的 1.5 倍（最多比该步多 1 天）；在其余步时重复当前步。\n例：填 1 10 表示——答错后 1 分钟重现；答对后 10 分钟重现；再次答对即毕业，之后按「毕业间隔」跨天出现。" },
@@ -141,10 +142,6 @@
       "value": "当前牌组"
     },
     {
-      "name": "shell_notice",
-      "value": "该功能将在后续版本开放"
-    },
-    {
       "name": "top_settings",
       "value": "设置"
     },
@@ -233,6 +230,10 @@
       "value": "撤销"
     },
     {
+      "name": "study_more",
+      "value": "更多"
+    },
+    {
       "name": "study_bury",
       "value": "埋藏"
     },
@@ -250,7 +251,7 @@
     },
     {
       "name": "study_delete_card_confirm_message",
-      "value": "仅删除当前这一张卡片，不影响牌组里的其他卡片。若该笔记只有这一张卡，笔记会一并清理。可通过顶部「撤销」按钮恢复。"
+      "value": "仅删除当前这一张卡片，不影响牌组里的其他卡片。若该笔记只有这一张卡，笔记会一并清理。可通过顶部「更多 → 撤销」恢复。"
     },
     {
       "name": "study_delete_card_failed",
@@ -359,6 +360,34 @@
     {
       "name": "month_empty_hint",
       "value": "本月还没有学习记录"
+    },
+    {
+      "name": "ankiweb_guide_title",
+      "value": "如何获取学习资源"
+    },
+    {
+      "name": "ankiweb_guide_message",
+      "value": "记得卡片是不请求任何用户数据，无任何内部收费与内置广告的开源软件。本身不预置学习或卡片记忆内容。你可以前往 AnkiWeb 查找公开分享的牌组，下载后再导入应用中使用。"
+    },
+    {
+      "name": "ankiweb_guide_url_label",
+      "value": "AnkiWeb 共享牌组网站："
+    },
+    {
+      "name": "ankiweb_guide_notice",
+      "value": "请注意查看牌组来源、内容质量和使用许可。"
+    },
+    {
+      "name": "ankiweb_guide_button_copy",
+      "value": "复制网址"
+    },
+    {
+      "name": "ankiweb_guide_button_ok",
+      "value": "我已了解"
+    },
+    {
+      "name": "ankiweb_guide_copied",
+      "value": "已复制网址"
     },
     {
       "name": "empty_decks_title",
@@ -479,12 +508,20 @@
       "value": "确认"
     },
     {
+      "name": "licenses_overview_section",
+      "value": "应用简介"
+    },
+    {
+      "name": "licenses_overview_body",
+      "value": "一款独立开发、本地优先的开源卡片学习软件。"
+    },
+    {
       "name": "licenses_app_section",
       "value": "本应用许可"
     },
     {
       "name": "licenses_app_body",
-      "value": "记得卡片（jidecards）由 jidecards contributors 开发，依据 GNU Affero General Public License v3.0 or later（AGPL-3.0-or-later）发布。您可以依照该许可证获取、使用、复制、修改和再发布本软件。"
+      "value": "记得卡片（jidecards）由 wuweiyouzuoju 开发，依据 GNU Affero General Public License v3.0 or later（AGPL-3.0-or-later）发布。您可以依照该许可证获取、使用、复制、修改和再发布本软件。"
     },
     {
       "name": "licenses_source_section",
@@ -508,7 +545,7 @@
     },
     {
       "name": "licenses_third_anki",
-      "value": "Anki rslib 26.05 — 版权所有 Ankitects Pty Ltd 及贡献者，依据 AGPL-3.0-or-later 提供。用途：卡片数据、间隔重复调度、导入导出与格式兼容。本应用对其进行了适应性修改，修改内容随源代码公开。上游源码：https://github.com/ankitects/anki"
+      "value": "本应用内核基于 Anki 26.05 开源 Rust Core 实现。Anki rslib 26.05 — 版权所有 Ankitects Pty Ltd 及贡献者，依据 AGPL-3.0-or-later 提供。用途：卡片数据、间隔重复调度、导入导出与格式兼容。本应用对其进行了适应性修改，修改内容随源代码公开。上游源码：https://github.com/ankitects/anki"
     },
     {
       "name": "licenses_third_rust",
@@ -566,6 +603,8 @@
       "name": "top_level_deck",
       "value": "（新建一个父牌组）"
     },
+    { "name": "create_deck_help_title", "value": "关于「Default」牌组" },
+    { "name": "create_deck_help_body", "value": "Anki 启动时会自带一个名为「Default」的牌组，任何因重命名、删除或导入异常而“无家可归”的卡片都会落入这里。\n\n【何时会自动隐藏】\n当 Default 没有子牌组、且你已经创建了其他顶层牌组时，本应用会自动把它从主页隐藏，让列表更干净。\n\n【为什么 Default 一直显示】\n一旦你给 Default 创建了子牌组（即在「父牌组」中选了 Default，再命名一个新牌组），Default 就不会再被自动隐藏——Anki 后端需要保留它来承托子牌组层级。此行为与 Anki 桌面端一致。\n\n【建议】\n· 若想让 Default 消失：选「（新建一个父牌组）」作为父牌组，不要把新牌组挂在 Default 下；\n· 若 Default 已有子牌组：在主页长按该子牌组选「删除牌组」把它删掉，Default 在没有子牌组后会重新自动隐藏；\n· 也可以在主页长按 Default 选「隐藏牌组」手动从列表隐藏（仅前端过滤，不影响后端数据，可在设置页「已隐藏牌组」中恢复）。" },
     {
       "name": "deck_options_title",
       "value": "牌组选项"
@@ -709,7 +748,7 @@
       "value": "关于"
     },
     { "name": "settings_audio_voice", "value": "语音朗读" },
-    { "name": "settings_audio_voice_hint", "value": "下方列出本机当前可用的朗读音色语种，由鸿蒙 CoreSpeechKit 决定，不同设备/系统版本支持的语种可能不同。卡片模板里的「tts en_US:字段」这种写法来自 Anki 官方模板语法（Anki 2.1.20+ 起支持），jidecards 沿用此语法，朗读时调用鸿蒙系统 TTS 引擎；冒号前的语种决定的是「朗读引擎/发音规则」，不是「内容语种」：用英文音色读中文汉字会按英文发音规则硬拼，听起来很怪，建议引擎语种与内容语种保持一致。已安装的语种可直接用于朗读；未安装的语种点右侧下载按钮即可拉起系统下载弹窗，无需进入系统设置。若列表中没有你需要的语种（如日文/韩文），说明当前鸿蒙系统暂未内置该语种音色，应用内亦无法下载。卡片实际朗读时，若目标语种未安装，会自动用中文引擎兜底。" },
+    { "name": "settings_audio_voice_hint", "value": "触发条件：只有卡片模板里写了「tts 语种:字段」标签（如 tts en_US:Front）的卡片，在复习时才会自动朗读该字段；模板里没写 tts 标签的卡片不会朗读。下方列出本机当前可用的朗读音色语种，由鸿蒙 CoreSpeechKit 决定，不同设备/系统版本支持的语种可能不同。冒号前的语种决定的是「朗读引擎/发音规则」，不是「内容语种」：用英文音色读中文汉字会按英文发音规则硬拼，听起来很怪，建议引擎语种与内容语种保持一致。已安装的语种可直接用于朗读；未安装的语种点右侧下载按钮即可拉起系统下载弹窗，无需进入系统设置。若列表中没有你需要的语种（如日文/韩文），说明当前鸿蒙系统暂未内置该语种音色，应用内亦无法下载。卡片实际朗读时，若目标语种未安装，会自动用中文引擎兜底。" },
     { "name": "settings_voice_per_language_hint", "value": "每个语种独立选音色：英语卡片只受 en-US 选择影响，中文卡片只受 zh-CN 选择影响。切换音色后下一张卡立即生效。" },
     { "name": "settings_voice_checking", "value": "正在检查音色…" },
     { "name": "settings_voice_downloading", "value": "下载中…" },
@@ -726,34 +765,39 @@
     { "name": "settings_study_layout_bottom", "value": "底部固定" },
     { "name": "settings_study_layout_float", "value": "浮动可拖" },
     { "name": "study_toolbar_drag_hint", "value": "在复习页按住浮动工具栏可拖到屏幕左右侧；松手后自动吸附到最近侧并保存位置。" },
+    { "name": "settings_home_today_summary", "value": "显示今日进度卡片" },
+    { "name": "settings_home_today_summary_hint", "value": "关闭后主页顶部不再显示今日摘要与月历卡片" },
     {
       "name": "appearance_theme",
       "value": "外观主题"
+    },
+    {
+      "name": "appearance_color_theme",
+      "value": "颜色主题"
     },
     {
       "name": "app_about_title",
       "value": "记得卡片 / jidecards"
     },
     {
-      "name": "app_about_summary",
-      "value": "一款独立开发、本地优先的开源卡片学习软件。"
-    },
-    {
       "name": "app_about_copyright",
-      "value": "2026 · jidecards contributors"
+      "value": "2026 · wuweiyouzuoju"
     },
-    {
-      "name": "app_about_data_notice",
-      "value": "数据仅存于本设备，请定期做好独立备份。"
-    },
-    {
-      "name": "app_about_license_notice",
-      "value": "依据 AGPL-3.0 或更新版本发布，可自由使用、修改与再发布。完整许可与第三方声明请见下方“开源许可与第三方声明”。"
-    },
-    {
-      "name": "app_about_anki_notice",
-      "value": "使用 Anki 26.05 开源 Rust Core 实现数据兼容与调度；本应用为独立项目，与 Anki 官方无关联，Anki 为 Ankitects Pty Ltd 注册商标。"
-    },
+    { "name": "about_ankiweb_title", "value": "AnkiWeb 共享牌组" },
+    { "name": "about_ankiweb_summary", "value": "浏览社区分享的牌组资源，下载后导入本应用使用" },
+    { "name": "about_ankiweb_open_failed", "value": "无法打开浏览器，网址已复制到剪贴板" },
+    { "name": "about_rate_title", "value": "给我好评" },
+    { "name": "about_rate_summary", "value": "在应用内直接评分，或前往应用市场评论" },
+    { "name": "about_rate_already_title", "value": "已评分过" },
+    { "name": "about_rate_already_message", "value": "感谢你的支持！你已对当前版本评分，一年内无法再次评论。" },
+    { "name": "about_rate_failed_fallback", "value": "应用内评分暂不可用，请前往应用市场详情页评论" },
+    { "name": "about_rate_open_market", "value": "前往应用市场" },
+    { "name": "rate_guide_title", "value": "喜欢这个应用可以点个好评" },
+    { "name": "rate_guide_message", "value": "意见也可以直接反馈给我" },
+    { "name": "rate_guide_button_rate", "value": "去好评" },
+    { "name": "rate_guide_button_feedback", "value": "意见反馈" },
+    { "name": "rate_guide_button_later", "value": "稀后" },
+    { "name": "rate_guide_feedback_copied", "value": "反馈邮箱已复制到剪贴板" },
     {
       "name": "feedback_title",
       "value": "意见反馈"
@@ -821,6 +865,10 @@
     {
       "name": "transfer_legacy",
       "value": "旧版兼容"
+    },
+    {
+      "name": "transfer_legacy_help",
+      "value": "导出为旧版 Anki 2.0 兼容格式（.apkg 内嵌 sqlite + 媒体清单）。\n仅在需要把数据导入老版本 Anki 客户端（2.0.x / 2.1.x 早期）时启用；正常情况请保持关闭——新版 .colpkg 格式体积更小、支持增量同步与媒体校验。\n开启旧版兼容会牺牲部分新特性（如 FSRS 调度信息可能降级）。"
     },
     {
       "name": "transfer_personal_replace_warning",
@@ -893,6 +941,12 @@
     { "name": "add_note_deck_help", "value": "这张卡片要放进哪个牌组，默认选中进入本页前正在查看的牌组。\n例：想把单词卡放进「英语::四级」子牌组，点开下拉找到该牌组即可；牌组层级用「::」表示。\n更换牌组只影响本次保存的卡片去向，不改变卡片内容。" },
     { "name": "add_note_notetype", "value": "笔记类型" },
     { "name": "add_note_notetype_help", "value": "笔记类型决定这张卡有哪些字段、按什么模板生成卡片；更换后下方字段列表会跟着变。\n例：「基础」只有 正面/背面 两个字段，生成 1 张卡；「基础（和翻转的卡片）」额外生成反向卡；「完形填空」在文本里用 {{c1::...}} 标记挖空。\n提示：切换类型后按字段名提示填写，必填字段为空会保存失败。" },
+    { "name": "add_note_notetype_basic_help", "value": "用途：最基础的问答题类型，一问一答，适合单词、概念、定义等简单记忆。\n与可输入答案型的区别：Basic 复习时只在心中回忆，不要求输入答案。\n生成 1 张卡（正面→背面）。复习时看到正面，心算回忆背面，翻面核对。\n字段填写效果：Front（正面）填问题，例如「apple」；Back（背面）填答案，例如「苹果」。" },
+    { "name": "add_note_notetype_basic_reversed_help", "value": "用途：双向记忆的问答题类型，适合正反两向都要练的内容，如中英单词互译。\n与普通 Basic 的区别：会额外生成一张反向卡，正反两向都考。\n生成 2 张卡（正→反 + 反→正）。一张由 Front 提问、Back 作答，另一张反过来。\n字段填写效果：Front（正面）填问题，例如「apple」；Back（背面）填答案，例如「苹果」。两个字段被两张卡共用。" },
+    { "name": "add_note_notetype_basic_optional_reversed_help", "value": "用途：可选双向的问答题类型，逐条决定是否生成反向卡，适合部分内容需要双向、部分只单向的场景。\n与 Basic (and reversed card) 的区别：反向卡不是固定生成，第 3 字段 Add Reverse 控制是否生成反向卡。\n默认生成 1 张正向卡（正面→背面）；当 Add Reverse 填「1」或「y」时，额外生成 1 张反向卡（背面→正面），共 2 张。\n字段填写效果：Front（正面）填问题，例如「apple」；Back（背面）填答案，例如「苹果」；Add Reverse（添加反向卡）填「1」或「y」生成反向卡，留空则只有正向卡。" },
+    { "name": "add_note_notetype_cloze_help", "value": "【用途】填空题类型，直接在原句上挖空考回忆，适合背诵原文、定义、例句。\n\n【c1-c5 按钮用法】\n① 在 Text 字段输入原文；\n② 选中要挖空的部分；\n③ 点 c1/c2/c3/c4/c5 按钮，自动包成 {{cN::选中的文字}}。\n未选中文字时点按钮则插入空标记 {{cN::}}，光标自动定位到冒号后等待输入。\n\n【c 编号语义】\n· 同一个 c 编号的所有标记 → 在同一张卡上同时挖空；\n· 不同 c 编号 → 生成不同卡片（c1 是第 1 张卡，c2 是第 2 张……）。\n例：The {{c1::capital}} of {{c1::France}} is {{c2::Paris}}\n  · 卡 1（c1）：The [...] of [...] is Paris\n  · 卡 2（c2）：The capital of France is [...]\n这样设计是为了支持渐进式学习——c1 挖大块（先背整体），c2、c3 挖细节（再背细节）。\n\n【与问答题的区别】不需要另写问题，挖空即问题；一张笔记按 c 编号数生成多张卡。\n\n【字段填写效果】\n· Text（文字）：填含 {{c1::答案}} 标记的原文，例如「The capital of France is {{c1::Paris}}」，复习时 c1 处显示 [...]，回忆 Paris 后翻面揭示。\n· Extra（额外）：填注释或例句，通常留空。" },
+    { "name": "add_note_notetype_basic_type_answer_help", "value": "用途：可输入答案的问答题，是问答题的变种，背面会显示输入框，用户输入答案后系统自动比对正确答案，逐字符标红/标绿。\n与普通问答题的区别在于复习时需要主动输入而非心算，更适合拼写、默写类内容。\n生成 1 张卡（正面 Front，背面 Back + 输入框校验）。\n字段填写效果：Front（正面）填问题，例如「apple」；Back（背面）填答案，例如「apple」，复习时输入框接受用户输入，提交后与该字段比对。" },
+    { "name": "add_note_notetype_image_occlusion_help", "value": "用途：用于在图片上画遮罩背记（如解剖图标注、地图地名），适合图像记忆场景。\n与普通问答题的区别是用图片+遮罩代替文字问答题——不在文字上挖空，而是在图片上画矩形遮住要考的区域。\n每个遮罩编号生成一张卡，复习时遮罩盖住区域，翻面后揭示原图对应位置。\n字段填写效果：选图后画矩形遮罩、可选填标题与额外说明。Image（图片）选图后系统自动写入并填好 <img src=\"...\">，无需手填；Occlusions（遮罩）进入遮罩编辑器画 1 个或多个矩形遮罩，每个遮罩对应一个 c 编号，系统自动生成 {{c1::image-occlusion:rect:...}} 字符串，无需手填；Header（标题）可选，填卡片顶部标题，如「上肢肌肉分布」；Back Extra（背面额外）可选，填翻面后追加显示的说明文字。" },
     { "name": "add_note_advanced", "value": "高级设置" },
     { "name": "add_note_advanced_hide", "value": "收起高级设置" },
     { "name": "add_note_tags", "value": "标签" },
@@ -917,6 +971,8 @@
     { "name": "language_english", "value": "英文" },
     { "name": "settings_import_data", "value": "导入数据" },
     { "name": "settings_export_data", "value": "导出数据" },
+    { "name": "settings_export_import_data", "value": "导出/导入数据" },
+    { "name": "settings_export_import_data_subtitle", "value": "牌组与个人数据" },
     { "name": "transfer_confirm_personal", "value": "我已了解，继续" },
     { "name": "transfer_replacing", "value": "正在覆盖个人数据…" },
     { "name": "transfer_done", "value": "数据处理完成" },
@@ -968,8 +1024,8 @@
     { "name": "sync_logout", "value": "注销" },
     { "name": "sync_logout_confirm_message", "value": "确认注销当前账号?注销后需重新登录才能同步。本地数据不受影响。" },
     { "name": "sync_now", "value": "立即同步" },
-    { "name": "sync_backup_first", "value": "先备份后同步" },
-    { "name": "sync_help_text", "value": "「立即同步」是双向同步：既上传本地新改动到云端，也下载云端新改动到本地。rslib 按每条记录的 usn 决定方向，仅在严重冲突时才需要选上传还是下载。" },
+    { "name": "sync_backup_first", "value": "备份同步" },
+    { "name": "sync_help_text", "value": "「立即同步」是双向同步：既上传本地新改动到云端，也下载云端新改动到本地。rslib 按每条记录的 usn 决定方向，仅在严重冲突时才需要选上传还是下载。注意：刚上传到云端的同步内容，另一台设备需要等待一小段处理时间（通常几十秒）才能同步下来；如果另一端立即同步显示「已最新」，等一会儿再同步即可。" },
     { "name": "sync_syncing", "value": "同步中…" },
     { "name": "sync_syncing_media", "value": "正在同步媒体文件…" },
     { "name": "sync_media_upload", "value": "(上传)" },
@@ -1008,6 +1064,27 @@
     { "name": "transfer_stage_export_data", "value": "导出数据中…" },
     { "name": "transfer_stage_save_file", "value": "保存文件中…" },
     { "name": "transfer_stage_close_db", "value": "关闭数据库中…" },
-    { "name": "transfer_stage_restore_db", "value": "恢复数据库中…" }
+    { "name": "transfer_stage_restore_db", "value": "恢复数据库中…" },
+    { "name": "study_type_answer_placeholder", "value": "输入答案后点显示答案" },
+    { "name": "add_note_cloze_placeholder", "value": "输入内容后选中并点 c1 挖空，或手动输入 {{c1::答案}}" },
+    { "name": "add_note_cloze_missing", "value": "Cloze 字段必须含 {{c1::内容}} 标记" },
+    { "name": "add_note_notetype_load_failed", "value": "无法加载该卡片类型，请重试" },
+    { "name": "image_occlusion_undo", "value": "撤销" },
+    { "name": "image_occlusion_clear", "value": "清空" },
+    { "name": "image_occlusion_confirm", "value": "确定" },
+    { "name": "image_occlusion_cancel", "value": "取消" },
+    { "name": "image_occlusion_hint", "value": "选中颜色，在图片上拖动绘制矩形遮罩" },
+    { "name": "image_occlusion_c_label", "value": "c%d" },
+    { "name": "add_note_image_occlusion_pick_image", "value": "选择图片" },
+    { "name": "add_note_image_occlusion_change_image", "value": "更换图片" },
+    { "name": "add_note_image_occlusion_edit_masks", "value": "编辑遮罩" },
+    { "name": "add_note_image_occlusion_need_mask", "value": "至少画一个遮罩" },
+    { "name": "add_note_image_occlusion_no_image", "value": "请先选择图片" },
+    { "name": "theme_color_aurora", "value": "极光蓝" },
+    { "name": "theme_color_forest", "value": "仙野绿" },
+    { "name": "theme_color_midnight", "value": "暗夜紫" },
+    { "name": "theme_color_lagoon", "value": "碧涛青" },
+    { "name": "theme_color_sunset", "value": "活力橙" },
+    { "name": "theme_color_lemon", "value": "柠檬金" }
   ]
 }

@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// anki.backend.BackendInit / BackendError 编解码。
-// 字段来源：third_party/anki/proto/anki/backend.proto（Anki 26.05）
-
-import { ProtoReader } from '../core/ProtoReader';
-import { ProtoWriter } from '../core/ProtoWriter';
+import { 协议读取器 } from '../core/ProtoReader';
+import { 协议写入器 } from '../core/ProtoWriter';
 
 export interface BackendInit {
   preferredLangs: string[];
@@ -13,19 +10,19 @@ export interface BackendInit {
 }
 
 export function encodeBackendInit(init: BackendInit): Uint8Array {
-  const w = new ProtoWriter();
+  const w = new 协议写入器();
   for (const lang of init.preferredLangs) {
     if (lang !== '') {
-      w.writeString(1, lang);
+      w.写入字符串(1, lang);
     }
   }
   if (init.localeFolderPath !== '') {
-    w.writeString(2, init.localeFolderPath);
+    w.写入字符串(2, init.localeFolderPath);
   }
   if (init.server) {
-    w.writeBool(3, true);
+    w.写入布尔(3, true);
   }
-  return w.toBytes();
+  return w.转为字节();
 }
 
 export interface BackendErrorInfo {
@@ -35,22 +32,22 @@ export interface BackendErrorInfo {
 }
 
 export function decodeBackendError(bytes: Uint8Array): BackendErrorInfo {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const info: BackendErrorInfo = { message: '', kind: 0, context: '' };
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        info.message = r.readString();
+        info.message = r.读取字符串();
         break;
       case 2:
-        info.kind = r.readVarint();
+        info.kind = r.读取变长整数();
         break;
       case 4:
-        info.context = r.readString();
+        info.context = r.读取字符串();
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   return info;

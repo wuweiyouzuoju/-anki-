@@ -1,20 +1,15 @@
-// 复习流程链路契约测试（M7）：
-// - SchedulerService/CardRenderingService 只经 BackendSession 走正确服务/方法索引；
-// - StudyCardHtmlBuilder 为纯函数：节点流 → HTML，媒体相对路径重写到自建域名；
-// - StudyPage 走完整链路（取卡→渲染→文案→评分→下一张），Web 组件配置防跨域；
-// - Index.ets 通过 Navigation + NavPathStack 跳转 StudyPage（API 12 推荐写法，替代废弃 router）。
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { encodeDeckId } from '../../entry/src/main/ets/proto/messages/DeckMessages.ts';
 import { decodeCountsForDeckToday } from '../../entry/src/main/ets/proto/messages/SchedulerMessages.ts';
-import { ProtoWriter } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
+import { 协议写入器 } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
 import {
-  buildCardHtml,
-  MEDIA_BASE_URL,
-  rawSideHtml,
-  rewriteMediaUrls
-} from '../../entry/src/main/ets/model/StudyCardHtmlBuilder.ets';
+  构建卡片HTML,
+  媒体基地址,
+  原始侧HTML,
+  重写媒体地址
+} from '../../entry/src/main/ets/model/学习卡片HTML构建器.ets';
 import {
   decodeExtractAvTagsResponse,
   encodeExtractAvTagsRequest
@@ -28,42 +23,41 @@ function read(relativePath) {
   return readFileSync(projectUrl(relativePath), 'utf8');
 }
 
-const SCHEDULER = 'entry/src/main/ets/backend/SchedulerService.ts';
-const RENDERING = 'entry/src/main/ets/backend/CardRenderingService.ts';
-const STUDY_PAGE = 'entry/src/main/ets/pages/StudyPage.ets';
-const MEDIA_HELPER = 'entry/src/main/ets/utils/MediaResponseHelper.ets';
-const INDEX_PAGE = 'entry/src/main/ets/pages/Index.ets';
+const SCHEDULER = 'entry/src/main/ets/backend/调度器服务.ts';
+const RENDERING = 'entry/src/main/ets/backend/卡片渲染服务.ts';
+const STUDY_PAGE = 'entry/src/main/ets/pages/学习页.ets';
+const MEDIA_HELPER = 'entry/src/main/ets/utils/媒体响应助手.ets';
+const INDEX_PAGE = 'entry/src/main/ets/pages/首页.ets';
 const MAIN_PAGES = 'entry/src/main/resources/base/profile/main_pages.json';
 const STRINGS = 'entry/src/main/resources/base/element/string.json';
 
 test('scheduler service walks the study queue contract', () => {
   const service = read(SCHEDULER);
 
-  assert.match(service, /async getQueuedCards\(deckId: number\): Promise<QueuedCardsView>/);
-  assert.match(service, /DECKS_METHOD\.SET_CURRENT_DECK/, 'must select deck before queueing');
-  assert.match(service, /SCHEDULER_METHOD\.GET_QUEUED_CARDS/);
+  assert.match(service, /async 获取队首卡片\(牌组ID: number\): Promise<QueuedCardsView>/);
+  assert.match(service, /牌组方法\.设置当前牌组/, 'must select deck before queueing');
+  assert.match(service, /调度器方法\.获取队首卡片/);
   assert.match(service, /encodeGetQueuedCardsRequest\(1, false\)/, 'fetch one card at a time');
-  assert.match(service, /SCHEDULER_METHOD\.DESCRIBE_NEXT_STATES/);
-  assert.match(service, /encodeSchedulingStates\(states\)/, 'states passthrough for labels');
-  assert.match(service, /SCHEDULER_METHOD\.ANSWER_CARD/);
-  assert.match(service, /encodeCardAnswer\(answer\)/);
-  assert.doesNotMatch(service, /new BackendClient/, 'must go through BackendSession');
+  assert.match(service, /调度器方法\.描述下一档状态/);
+  assert.match(service, /encodeSchedulingStates\(状态字节\)/, 'states passthrough for labels');
+  assert.match(service, /调度器方法\.提交评分/);
+  assert.match(service, /encodeCardAnswer\(作答参数\)/);
+  assert.doesNotMatch(service, /new 后端客户端/, 'must go through 后端会话');
 });
 
 test('card rendering service wraps RenderExistingCard and ExtractAvTags', () => {
   const service = read(RENDERING);
 
-  assert.match(service, /async renderExistingCard\(cardId: number\): Promise<RenderedCard>/);
-  assert.match(service, /CARD_RENDERING_METHOD\.RENDER_EXISTING_CARD/);
-  assert.match(service, /encodeRenderExistingCardRequest\(cardId\)/);
-  assert.match(service, /async extractSoundFiles\(html: string, questionSide: boolean\): Promise<string\[\]>/);
-  assert.match(service, /CARD_RENDERING_METHOD\.EXTRACT_AV_TAGS/);
-  assert.match(service, /encodeExtractAvTagsRequest\(html, questionSide\)/);
-  assert.doesNotMatch(service, /new BackendClient/);
+  assert.match(service, /async 渲染既有卡片\(卡片ID: number\): Promise<RenderedCard>/);
+  assert.match(service, /卡片渲染方法\.渲染既有卡片/);
+  assert.match(service, /encodeRenderExistingCardRequest\(卡片ID\)/);
+  assert.match(service, /async 提取音频文件\(HTML文本: string, 是否正面: boolean\): Promise<string\[\]>/);
+  assert.match(service, /卡片渲染方法\.提取音视频标签/);
+  assert.match(service, /encodeExtractAvTagsRequest\(HTML文本, 是否正面\)/);
+  assert.doesNotMatch(service, /new 后端客户端/);
 });
 
 test('deck id encoder matches decks.DeckId wire format', () => {
-  // did=300 (varint 0xAC 0x02)，tag = field1 << 3 | 0 = 0x08
   assert.deepEqual(Array.from(encodeDeckId(300)), [0x08, 0xAC, 0x02]);
   assert.deepEqual(Array.from(encodeDeckId(0)), [], 'proto3 default omitted');
 });
@@ -83,13 +77,13 @@ test('html builder assembles nodes, css and media base url', () => {
     isEmpty: false
   };
 
-  const question = buildCardHtml(rendered, 'question');
+  const question = 构建卡片HTML(rendered, 'question');
   assert.match(question, /<!DOCTYPE html>/);
   assert.match(question, /<style>\.card \{ color: black; \}/);
   assert.match(question, /猫 <img src="https:\/\/jidecards-media\.local\/neko\.png">/);
   assert.match(question, /<div class="front">/);
 
-  const answer = buildCardHtml(rendered, 'answer');
+  const answer = 构建卡片HTML(rendered, 'answer');
   assert.match(answer, /href="https:\/\/jidecards-media\.local\/sound\.mp3"/);
   assert.ok(!answer.includes('neko.png'), 'answer side must not include question nodes');
 });
@@ -97,11 +91,11 @@ test('html builder assembles nodes, css and media base url', () => {
 test('media url rewrite skips absolute urls and anchors', () => {
   const html = '<img src="https://cdn.example.com/a.png"><img src="/abs.png">' +
     '<a href="#section">x</a><img src="空格 图.png">';
-  const out = rewriteMediaUrls(html);
+  const out = 重写媒体地址(html);
   assert.match(out, /src="https:\/\/cdn\.example\.com\/a\.png"/, 'absolute http untouched');
   assert.match(out, /src="\/abs\.png"/, 'absolute path untouched');
   assert.match(out, /href="#section"/, 'anchor untouched');
-  assert.match(out, new RegExp(`src="${MEDIA_BASE_URL.replaceAll('.', '\\.')}${encodeURIComponent('空格 图.png')}"`),
+  assert.match(out, new RegExp(`src="${媒体基地址.replaceAll('.', '\\.')}${encodeURIComponent('空格 图.png')}"`),
     'relative media names are rewritten and uri-encoded');
 });
 
@@ -118,50 +112,60 @@ test('html builder strips [sound:] tags, playback left to native player', () => 
     isEmpty: false
   };
 
-  const html = buildCardHtml(rendered, 'answer');
+  const html = 构建卡片HTML(rendered, 'answer');
   assert.ok(!html.includes('[sound:'), 'raw sound syntax must be consumed');
   assert.ok(!html.includes('<audio'), 'no web audio elements in native player scheme');
   assert.match(html, /class="sound-flag"/, 'a small marker stays where audio was');
-  assert.match(rawSideHtml(rendered, 'answer'), /\[sound:word\.mp3\]/, 'raw side keeps tags for extraction');
+  assert.match(原始侧HTML(rendered, 'answer'), /\[sound:word\.mp3\]/, 'raw side keeps tags for extraction');
 });
 
 test('extract av tags wire format round-trips sound files in order', () => {
   const tag = (name) => {
-    const w = new ProtoWriter();
-    w.writeString(1, name);
-    return w.toBytes();
+    const w = new 协议写入器();
+    w.写入字符串(1, name);
+    return w.转为字节();
   };
-  const w = new ProtoWriter();
-  w.writeString(1, 'stripped text');
-  w.writeBytes(2, tag('a.mp3'));
-  w.writeBytes(2, tag('b.ogg'));
-  const out = decodeExtractAvTagsResponse(w.toBytes());
+  const w = new 协议写入器();
+  w.写入字符串(1, 'stripped text');
+  w.写入字节(2, tag('a.mp3'));
+  w.写入字节(2, tag('b.ogg'));
+  const out = decodeExtractAvTagsResponse(w.转为字节());
   assert.equal(out.text, 'stripped text');
   assert.deepEqual(out.soundFiles, ['a.mp3', 'b.ogg']);
 
-  // 请求侧：questionSide=false 为 proto3 默认，不写字段
   assert.deepEqual(Array.from(encodeExtractAvTagsRequest('', false)), []);
 });
 
 test('sound player wraps AVPlayer as a serial queue player', () => {
-  const player = read('entry/src/main/ets/utils/SoundPlayer.ets');
+  const player = read('entry/src/main/ets/utils/声音播放器.ets');
   assert.match(player, /media\.createAVPlayer\(\)/);
-  assert.match(player, /async playQueue\(paths: string\[\]\)/);
-  assert.match(player, /async replay\(\)/);
-  assert.match(player, /async release\(\)/);
-  assert.match(player, /player\.fdSrc = \{ fd: file\.fd, offset: 0, length: /);
-  assert.match(player, /state === 'completed' \|\| state === 'error'/, 'completed advances the queue');
+  assert.match(player, /async 播放队列\(路径列表: string\[\]\)/);
+  assert.match(player, /async 重播\(\)/);
+  assert.match(player, /async 释放\(\)/);
+  assert.match(player, /播放器\.fdSrc = \{ fd: 文件\.fd, offset: 0, length: /);
+  assert.match(player, /状态 === 'completed' \|\| 状态 === 'error'/, 'completed advances the queue');
 });
 
 test('study page plays card audio through native SoundPlayer', () => {
   const page = read(STUDY_PAGE);
-  assert.match(page, /import \{ SoundPlayer \} from '..\/utils\/SoundPlayer'/);
-  assert.match(page, /extractSoundFiles\(rawHtml, questionSide\)/, 'extract av tags via backend');
-  assert.match(page, /soundPlayer\.playQueue\(/, 'auto play per side');
-  assert.match(page, /soundPlayer\.replay\(\)/, 'replay button wired');
-  assert.match(page, /aboutToDisappear\(\)[\s\S]*?soundPlayer\.release\(\)/, 'player released on page exit');
+  assert.match(page, /import \{ 声音播放器 \} from '..\/utils\/声音播放器'/);
+  assert.match(page, /提取音频文件\(rawHtml, questionSide\)/, 'extract av tags via backend');
+  assert.match(page, /声音播放器实例\.播放队列\(/, 'auto play per side');
+  assert.match(page, /声音播放器实例\.重播\(\)/, 'replay button wired');
+  assert.match(page, /aboutToDisappear\(\)[\s\S]*?声音播放器实例\.释放\(\)/, 'player released on page exit');
   assert.doesNotMatch(page, /mediaPlayGestureAccess/, 'web audio scheme removed');
-  assert.doesNotMatch(page, /runJavaScript\(/, 'no injected audio playback script');
+  assert.doesNotMatch(page, /runJavaScript\([^)]*\baudio\b/i, 'no injected audio playback script');
+  assert.match(page, /runJavaScript\(['"]anki\.imageOcclusion\.setup\(\)['"]\)/,
+    'image occlusion setup fallback wired via runJavaScript');
+});
+
+test('image occlusion IIFE exposes toggle and hides #toggle button (BUG-007)', () => {
+  const builder = read('entry/src/main/ets/model/学习卡片HTML构建器.ets');
+  assert.match(builder, /toggle:\s*function\s*\(\s*\)\s*\{/, 'anki.imageOcclusion.toggle method defined');
+  assert.match(builder, /getElementById\(['"]toggle['"]\)/, '#toggle button looked up in setup');
+  assert.match(builder, /btn\.style\.display\s*=\s*['"]none['"]/, '#toggle button hidden via display=none');
+  assert.match(builder, /if\s*\(window\.anki\.imageOcclusion\)\s*\{\s*return;\s*\}/,
+    'IIFE does not redefine anki.imageOcclusion if already present');
 });
 
 test('study page wires the full review loop', () => {
@@ -170,56 +174,56 @@ test('study page wires the full review loop', () => {
   assert.match(page, /pageDeckId: string = ''/, 'deck id arrives via Navigation param');
   assert.match(page, /this\.pathStack\.pop\(\)/, 'back goes through NavPathStack pop');
   assert.doesNotMatch(page, /router\.(getParams|pushUrl|back)\b/, 'deprecated router must be gone');
-  assert.match(page, /ensureOpen\(context\.filesDir\)/);
-  assert.match(page, /schedulerService\.getQueuedCards\(this\.deckId\)/);
-  assert.match(page, /cardRenderingService\.renderExistingCard\(this\.currentCard\.cardId\)/);
-  assert.match(page, /schedulerService\.describeNextStates\(this\.currentCard\.states\)/);
-  assert.match(page, /buildCardHtml\(this\.rendered, 'question'\)/);
-  assert.match(page, /buildCardHtml\(this\.rendered, 'answer'\)/);
-  assert.match(page, /schedulerService\.answerCard\(/);
+  assert.match(page, /确保已打开\(context\.filesDir\)/);
+  assert.match(page, /调度器服务实例\.获取队首卡片\(this\.牌组ID\)/);
+  assert.match(page, /卡片渲染服务实例\.渲染既有卡片\(this\.当前卡片\.cardId\)/);
+  assert.match(page, /调度器服务实例\.描述下一档状态\(this\.当前卡片\.states\)/);
+  assert.match(page, /构建卡片HTML\(this\.已渲染, 'question'\)/);
+  assert.match(page, /构建卡片HTML\(this\.已渲染, 'answer'\)/);
+  assert.match(page, /调度器服务实例\.提交评分\(/);
   assert.match(page, /currentState: states\.current/, 'raw state passthrough on answer');
-  assert.match(page, /queued\.cards\.length === 0[\s\S]*?phase = 'done'/, 'empty queue reaches done phase');
-  assert.match(page, /this\.answering = true/, 'rating must be reentrancy-guarded');
+  assert.match(page, /queued\.cards\.length === 0[\s\S]*?阶段 = 'done'/, 'empty queue reaches done phase');
+  assert.match(page, /this\.评分中 = true/, 'rating must be reentrancy-guarded');
 });
 
 test('study page web component blocks file-protocol cross origin correctly', () => {
   const page = read(STUDY_PAGE);
 
-  assert.match(page, /Web\(\{ src: MEDIA_BASE_URL, controller: this\.webController \}\)/);
+  assert.match(page, /Web\(\{ src: '', controller: this\.网页控制器 \}\)/);
   assert.match(page, /\.fileAccess\(true\)/);
   assert.match(page, /\.javaScriptAccess\(true\)/);
   assert.match(page, /\.onInterceptRequest\(/);
-  assert.match(page, /loadData\(this\.questionHtml, 'text\/html', 'UTF-8', MEDIA_BASE_URL, ' '\)/);
-  assert.match(page, /loadData\(this\.answerHtml, 'text\/html', 'UTF-8', MEDIA_BASE_URL, ' '\)/);
-  assert.match(page, /readMediaFile\(this\.mediaDir, fileName\)/);
+  assert.match(page, /loadData\(this\.正面HTML, 'text\/html', 'UTF-8', 媒体基地址, ' '\)/);
+  assert.match(page, /loadData\(this\.背面HTML, 'text\/html', 'UTF-8', 媒体基地址, ' '\)/);
+  assert.match(page, /读取媒体文件\(this\.媒体目录, fileName\)/);
   assert.match(page, /collection\.media/, 'media dir points at the anki media folder');
 });
 
 test('media helper infers mime types and reads sandbox files defensively', () => {
   const helper = read(MEDIA_HELPER);
 
-  assert.match(helper, /export function mimeTypeOf\(fileName: string\): string/);
+  assert.match(helper, /export function 取MIME类型\(文件名: string\): string/);
   assert.match(helper, /'png': 'image\/png'/);
   assert.match(helper, /'mp3': 'audio\/mpeg'/);
   assert.match(helper, /application\/octet-stream/, 'unknown extensions fall back');
-  assert.match(helper, /export function readMediaFile\(mediaDir: string, fileName: string\): ArrayBuffer \| null/);
-  assert.match(helper, /catch \(error\) \{\s*return null;/, 'read failures degrade to null');
+  assert.match(helper, /export function 读取媒体文件\(媒体目录: string, 文件名: string\): ArrayBuffer \| null/);
+  assert.match(helper, /catch \(错误\) \{\s*return null;/, 'read failures degrade to null');
 });
 
 test('study page is registered and reachable from home', () => {
   const mainPages = JSON.parse(read(MAIN_PAGES));
-  assert.ok(mainPages.src.includes('pages/Index'), 'Index must be registered');
-  assert.ok(!mainPages.src.includes('pages/StudyPage'),
-    'StudyPage is a NavDestination, not a router page');
+  assert.ok(mainPages.src.includes('pages/首页'), '首页 must be registered');
+  assert.ok(!mainPages.src.includes('pages/学习页'),
+    '学习页 is a NavDestination, not a router page');
 
   const index = read(INDEX_PAGE);
-  assert.match(index, /Navigation\(this\.pathStack\)/);
-  assert.match(index, /\.navDestination\(this\.pageMap\)/);
+  assert.match(index, /Navigation\(this\.页面栈\)/);
+  assert.match(index, /\.navDestination\(this\.页面映射\)/);
   assert.match(index, /name: 'StudyPage'/);
-  assert.match(index, /deckId: this\.selectedDeckId/);
-  assert.match(index, /deckName: deckDisplayName\(this\.selectedDeck\(\)\)/,
+  assert.match(index, /deckId: this\.选中的牌组ID/);
+  assert.match(index, /deckName: 牌组显示名\(this\.选中牌组\(\)\)/,
     'deckName follows UI display name (covers user-customized aliases)');
-  assert.match(index, /onPop[\s\S]{0,120}?loadHomeData\(\)/,
+  assert.match(index, /onPop[\s\S]{0,120}?加载主页数据\(\)/,
     'home refreshes after returning from study');
   assert.doesNotMatch(index, /router\.pushUrl/, 'deprecated router must be gone');
 });
@@ -234,17 +238,17 @@ test('study strings are resourced', () => {
 
   const page = read(STUDY_PAGE);
   assert.doesNotMatch(page, /\.fontSize\(\d/, 'page must use dimension tokens');
-  assert.match(page, /AppDimens/);
+  assert.match(page, /应用尺寸/);
   assert.match(page, /app\.string\.study_show_answer/);
   assert.match(page, /app\.string\.study_finish_title/);
   assert.match(page, /app\.string\.study_load_error/);
 });
 
 test('counts for deck today decodes new and review tallies', () => {
-  const w = new ProtoWriter();
-  w.writeVarint(1, 7);
-  w.writeVarint(2, 23);
-  const counts = decodeCountsForDeckToday(w.toBytes());
+  const w = new 协议写入器();
+  w.写入变长整数(1, 7);
+  w.写入变长整数(2, 23);
+  const counts = decodeCountsForDeckToday(w.转为字节());
   assert.equal(counts.newCount, 7);
   assert.equal(counts.reviewCount, 23);
 
@@ -253,18 +257,16 @@ test('counts for deck today decodes new and review tallies', () => {
 
 test('scheduler service exposes deck today counts via scheduler method 10', () => {
   const service = read(SCHEDULER);
-  assert.match(service, /async countsForDeckToday\(deckId: number\): Promise<DeckTodayCounts>/);
-  assert.match(service, /SCHEDULER_METHOD\.COUNTS_FOR_DECK_TODAY/);
-  assert.match(service, /encodeDeckId\(deckId\)/);
+  assert.match(service, /async 获取牌组今日计数\(牌组ID: number\): Promise<DeckTodayCounts>/);
+  assert.match(service, /调度器方法\.牌组今日计数/);
+  assert.match(service, /encodeDeckId\(牌组ID\)/);
 });
 
 test('home sources completed today from graphs.today.answerCount instead of per-deck RPCs', () => {
-  // 旧实现 sumCompletedToday 只迭代顶层牌组调用 countsForDeckToday，既漏子牌组学习、
-  // 又缺 learn/relearn 口径；新实现直接用 graphs.today.answerCount（全库聚合、完整口径）。
   const index = read(INDEX_PAGE);
   assert.doesNotMatch(index, /sumCompletedToday/,
     'sumCompletedToday must be removed; today.answerCount replaces it');
-  assert.doesNotMatch(index, /schedulerService\.countsForDeckToday/,
-    'home must not call countsForDeckToday; graphs.today already aggregates all decks');
-  assert.match(index, /buildHomeSnapshot\(tree, graphs/);
+  assert.doesNotMatch(index, /调度器服务实例\.获取牌组今日计数/,
+    'home must not call 获取牌组今日计数; graphs.today already aggregates all decks');
+  assert.match(index, /构建主页快照\(tree, graphs/);
 });

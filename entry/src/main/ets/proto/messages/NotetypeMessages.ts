@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Minimal read-only Notetype decoding for Anki 26.05 dynamic add-note fields.
-import { ProtoReader } from '../core/ProtoReader';
-import { ProtoWriter } from '../core/ProtoWriter';
+import { 协议读取器 } from '../core/ProtoReader';
+import { 协议写入器 } from '../core/ProtoWriter';
 
 export interface NotetypeNameId {
   id: number;
@@ -22,58 +21,56 @@ export interface NotetypeView {
 }
 
 export function encodeNotetypeId(id: number): Uint8Array {
-  const writer = new ProtoWriter();
+  const writer = new 协议写入器();
   if (id !== 0) {
-    writer.writeInt64(1, id);
+    writer.写入64位整数(1, id);
   }
-  return writer.toBytes();
+  return writer.转为字节();
 }
 
 function decodeUInt32(bytes: Uint8Array): number {
-  const reader = new ProtoReader(bytes);
+  const reader = new 协议读取器(bytes);
   let value = 0;
   let tag;
-  while ((tag = reader.readTag()) !== null) {
-    if (tag.fieldNumber === 1) {
-      value = reader.readVarint();
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      value = reader.读取变长整数();
     } else {
-      reader.skipField(tag.wireType);
+      reader.跳过字段(tag.线类型);
     }
   }
   return value;
 }
 
 function decodeNotetypeField(bytes: Uint8Array): NotetypeField {
-  const reader = new ProtoReader(bytes);
+  const reader = new 协议读取器(bytes);
   const field: NotetypeField = { ord: 0, name: '' };
   let tag;
-  while ((tag = reader.readTag()) !== null) {
-    if (tag.fieldNumber === 1) {
-      field.ord = decodeUInt32(reader.readBytes());
-    } else if (tag.fieldNumber === 2) {
-      field.name = reader.readString();
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      field.ord = decodeUInt32(reader.读取字节());
+    } else if (tag.字段号 === 2) {
+      field.name = reader.读取字符串();
     } else {
-      // Field config and any future fields are read-only for this flow.
-      reader.skipField(tag.wireType);
+      reader.跳过字段(tag.线类型);
     }
   }
   return field;
 }
 
 export function decodeNotetype(bytes: Uint8Array): NotetypeView {
-  const reader = new ProtoReader(bytes);
+  const reader = new 协议读取器(bytes);
   const result: NotetypeView = { id: 0, name: '', fields: [], fieldNames: [] };
   let tag;
-  while ((tag = reader.readTag()) !== null) {
-    if (tag.fieldNumber === 1) {
-      result.id = reader.readInt64();
-    } else if (tag.fieldNumber === 2) {
-      result.name = reader.readString();
-    } else if (tag.fieldNumber === 8) {
-      result.fields.push(decodeNotetypeField(reader.readBytes()));
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      result.id = reader.读取64位整数();
+    } else if (tag.字段号 === 2) {
+      result.name = reader.读取字符串();
+    } else if (tag.字段号 === 8) {
+      result.fields.push(decodeNotetypeField(reader.读取字节()));
     } else {
-      // This UI never writes Notetype protobufs, so preserve its source bytes in Anki.
-      reader.skipField(tag.wireType);
+      reader.跳过字段(tag.线类型);
     }
   }
   result.fields.sort((left: NotetypeField, right: NotetypeField): number => left.ord - right.ord);
@@ -82,30 +79,30 @@ export function decodeNotetype(bytes: Uint8Array): NotetypeView {
 }
 
 function decodeNotetypeNameId(bytes: Uint8Array): NotetypeNameId {
-  const reader = new ProtoReader(bytes);
+  const reader = new 协议读取器(bytes);
   const result: NotetypeNameId = { id: 0, name: '' };
   let tag;
-  while ((tag = reader.readTag()) !== null) {
-    if (tag.fieldNumber === 1) {
-      result.id = reader.readInt64();
-    } else if (tag.fieldNumber === 2) {
-      result.name = reader.readString();
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      result.id = reader.读取64位整数();
+    } else if (tag.字段号 === 2) {
+      result.name = reader.读取字符串();
     } else {
-      reader.skipField(tag.wireType);
+      reader.跳过字段(tag.线类型);
     }
   }
   return result;
 }
 
 export function decodeNotetypeNames(bytes: Uint8Array): NotetypeNameId[] {
-  const reader = new ProtoReader(bytes);
+  const reader = new 协议读取器(bytes);
   const entries: NotetypeNameId[] = [];
   let tag;
-  while ((tag = reader.readTag()) !== null) {
-    if (tag.fieldNumber === 1) {
-      entries.push(decodeNotetypeNameId(reader.readBytes()));
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      entries.push(decodeNotetypeNameId(reader.读取字节()));
     } else {
-      reader.skipField(tag.wireType);
+      reader.跳过字段(tag.线类型);
     }
   }
   return entries;

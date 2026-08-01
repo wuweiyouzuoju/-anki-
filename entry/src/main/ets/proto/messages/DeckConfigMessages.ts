@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Anki 26.05 DeckConfig protocol. Every public Config field is modeled here;
-// `preserved` holds future unknown fields verbatim so updates remain lossless.
-import { ProtoReader } from '../core/ProtoReader';
-import { ProtoWriter, WIRE_LENGTH_DELIMITED } from '../core/ProtoWriter';
+import { 协议读取器 } from '../core/ProtoReader';
+import { 协议写入器, 线类型_长度分隔 } from '../core/ProtoWriter';
 
 export function encodeDeckConfigId(dcid: number): Uint8Array {
-  const w = new ProtoWriter();
-  if (dcid !== 0) w.writeInt64(1, dcid);
-  return w.toBytes();
+  const w = new 协议写入器();
+  if (dcid !== 0) w.写入64位整数(1, dcid);
+  return w.转为字节();
 }
 
 export interface DeckConfigSettings {
@@ -42,18 +40,18 @@ export function emptyDeckConfigSettings(): DeckConfigSettings {
   };
 }
 
-function floats(w: ProtoWriter, field: number, value: number[]): void { if (value.length > 0) w.writePackedFloat(field, value); }
-function uint(w: ProtoWriter, field: number, value: number): void { if (value !== 0) w.writeVarint(field, value); }
-function float(w: ProtoWriter, field: number, value: number): void { if (value !== 0) w.writeFloat(field, value); }
-function bool(w: ProtoWriter, field: number, value: boolean): void { if (value) w.writeBool(field, true); }
-function text(w: ProtoWriter, field: number, value: string): void { if (value !== '') w.writeString(field, value); }
-function readFloats(r: ProtoReader, wireType: number, target: number[]): void {
-  if (wireType === WIRE_LENGTH_DELIMITED) target.push(...r.readPackedFloat()); else target.push(r.readFloat());
+function floats(w: 协议写入器, field: number, value: number[]): void { if (value.length > 0) w.写入打包浮点(field, value); }
+function uint(w: 协议写入器, field: number, value: number): void { if (value !== 0) w.写入变长整数(field, value); }
+function float(w: 协议写入器, field: number, value: number): void { if (value !== 0) w.写入浮点(field, value); }
+function bool(w: 协议写入器, field: number, value: boolean): void { if (value) w.写入布尔(field, true); }
+function text(w: 协议写入器, field: number, value: string): void { if (value !== '') w.写入字符串(field, value); }
+function 读取浮点s(r: 协议读取器, wireType: number, target: number[]): void {
+  if (wireType === 线类型_长度分隔) target.push(...r.读取打包浮点()); else target.push(r.读取浮点());
 }
 
-function encodeSettings(input: DeckConfigSettings): ProtoWriter {
+function encodeSettings(input: DeckConfigSettings): 协议写入器 {
   const v: DeckConfigSettings = { ...emptyDeckConfigSettings(), ...input };
-  const w = new ProtoWriter();
+  const w = new 协议写入器();
   floats(w, 1, v.learnSteps); floats(w, 2, v.relearnSteps); floats(w, 3, v.fsrsParams4); floats(w, 4, v.easyDaysPercentages);
   floats(w, 5, v.fsrsParams5); floats(w, 6, v.fsrsParams6); uint(w, 9, v.newPerDay); uint(w, 10, v.reviewsPerDay);
   float(w, 11, v.initialEase); float(w, 12, v.easyMultiplier); float(w, 13, v.hardMultiplier); float(w, 14, v.lapseMultiplier);
@@ -65,68 +63,68 @@ function encodeSettings(input: DeckConfigSettings): ProtoWriter {
   uint(w, 33, v.reviewOrder); uint(w, 34, v.newCardGatherPriority); uint(w, 35, v.newPerDayMinimum); uint(w, 36, v.questionAction);
   float(w, 37, v.desiredRetention); bool(w, 38, v.stopTimerOnAnswer); float(w, 40, v.historicalRetention);
   float(w, 41, v.secondsToShowQuestion); float(w, 42, v.secondsToShowAnswer); uint(w, 43, v.answerAction); bool(w, 44, v.waitForAudio);
-  text(w, 45, v.paramSearch); text(w, 46, v.ignoreRevlogsBeforeDate); if (v.other.length > 0) w.writeBytes(255, v.other);
-  for (const raw of v.preserved) w.writeRawBytes(raw);
+  text(w, 45, v.paramSearch); text(w, 46, v.ignoreRevlogsBeforeDate); if (v.other.length > 0) w.写入字节(255, v.other);
+  for (const raw of v.preserved) w.写入原始字节(raw);
   return w;
 }
 
 function decodeSettings(bytes: Uint8Array): DeckConfigSettings {
-  const r = new ProtoReader(bytes); const out = emptyDeckConfigSettings();
+  const r = new 协议读取器(bytes); const out = emptyDeckConfigSettings();
   while (true) {
-    const start = r.offset;
-    const tag = r.readTag();
+    const start = r.当前位置;
+    const tag = r.读取标签();
     if (tag === null) break;
-    switch (tag.fieldNumber) {
-      case 1: readFloats(r, tag.wireType, out.learnSteps); break; case 2: readFloats(r, tag.wireType, out.relearnSteps); break;
-      case 3: readFloats(r, tag.wireType, out.fsrsParams4); break; case 4: readFloats(r, tag.wireType, out.easyDaysPercentages); break;
-      case 5: readFloats(r, tag.wireType, out.fsrsParams5); break; case 6: readFloats(r, tag.wireType, out.fsrsParams6); break;
-      case 9: out.newPerDay = r.readVarint(); break; case 10: out.reviewsPerDay = r.readVarint(); break;
-      case 11: out.initialEase = r.readFloat(); break; case 12: out.easyMultiplier = r.readFloat(); break;
-      case 13: out.hardMultiplier = r.readFloat(); break; case 14: out.lapseMultiplier = r.readFloat(); break;
-      case 15: out.intervalMultiplier = r.readFloat(); break; case 16: out.maximumReviewInterval = r.readVarint(); break;
-      case 17: out.minimumLapseInterval = r.readVarint(); break; case 18: out.graduatingIntervalGood = r.readVarint(); break;
-      case 19: out.graduatingIntervalEasy = r.readVarint(); break; case 20: out.newCardInsertOrder = r.readVarint(); break;
-      case 21: out.leechAction = r.readVarint(); break; case 22: out.leechThreshold = r.readVarint(); break;
-      case 23: out.disableAutoplay = r.readBool(); break; case 24: out.capAnswerTimeToSecs = r.readVarint(); break;
-      case 25: out.showTimer = r.readBool(); break; case 26: out.skipQuestionWhenReplayingAnswer = r.readBool(); break;
-      case 27: out.buryNew = r.readBool(); break; case 28: out.buryReviews = r.readBool(); break;
-      case 29: out.buryInterdayLearning = r.readBool(); break; case 30: out.newMix = r.readVarint(); break;
-      case 31: out.interdayLearningMix = r.readVarint(); break; case 32: out.newCardSortOrder = r.readVarint(); break;
-      case 33: out.reviewOrder = r.readVarint(); break; case 34: out.newCardGatherPriority = r.readVarint(); break;
-      case 35: out.newPerDayMinimum = r.readVarint(); break; case 36: out.questionAction = r.readVarint(); break;
-      case 37: out.desiredRetention = r.readFloat(); break; case 38: out.stopTimerOnAnswer = r.readBool(); break;
-      case 40: out.historicalRetention = r.readFloat(); break; case 41: out.secondsToShowQuestion = r.readFloat(); break;
-      case 42: out.secondsToShowAnswer = r.readFloat(); break; case 43: out.answerAction = r.readVarint(); break;
-      case 44: out.waitForAudio = r.readBool(); break; case 45: out.paramSearch = r.readString(); break;
-      case 46: out.ignoreRevlogsBeforeDate = r.readString(); break; case 255: out.other = r.readBytes(); break;
-      default: r.skipField(tag.wireType); out.preserved.push(r.sliceFrom(start)); break;
+    switch (tag.字段号) {
+      case 1: 读取浮点s(r, tag.线类型, out.learnSteps); break; case 2: 读取浮点s(r, tag.线类型, out.relearnSteps); break;
+      case 3: 读取浮点s(r, tag.线类型, out.fsrsParams4); break; case 4: 读取浮点s(r, tag.线类型, out.easyDaysPercentages); break;
+      case 5: 读取浮点s(r, tag.线类型, out.fsrsParams5); break; case 6: 读取浮点s(r, tag.线类型, out.fsrsParams6); break;
+      case 9: out.newPerDay = r.读取变长整数(); break; case 10: out.reviewsPerDay = r.读取变长整数(); break;
+      case 11: out.initialEase = r.读取浮点(); break; case 12: out.easyMultiplier = r.读取浮点(); break;
+      case 13: out.hardMultiplier = r.读取浮点(); break; case 14: out.lapseMultiplier = r.读取浮点(); break;
+      case 15: out.intervalMultiplier = r.读取浮点(); break; case 16: out.maximumReviewInterval = r.读取变长整数(); break;
+      case 17: out.minimumLapseInterval = r.读取变长整数(); break; case 18: out.graduatingIntervalGood = r.读取变长整数(); break;
+      case 19: out.graduatingIntervalEasy = r.读取变长整数(); break; case 20: out.newCardInsertOrder = r.读取变长整数(); break;
+      case 21: out.leechAction = r.读取变长整数(); break; case 22: out.leechThreshold = r.读取变长整数(); break;
+      case 23: out.disableAutoplay = r.读取布尔(); break; case 24: out.capAnswerTimeToSecs = r.读取变长整数(); break;
+      case 25: out.showTimer = r.读取布尔(); break; case 26: out.skipQuestionWhenReplayingAnswer = r.读取布尔(); break;
+      case 27: out.buryNew = r.读取布尔(); break; case 28: out.buryReviews = r.读取布尔(); break;
+      case 29: out.buryInterdayLearning = r.读取布尔(); break; case 30: out.newMix = r.读取变长整数(); break;
+      case 31: out.interdayLearningMix = r.读取变长整数(); break; case 32: out.newCardSortOrder = r.读取变长整数(); break;
+      case 33: out.reviewOrder = r.读取变长整数(); break; case 34: out.newCardGatherPriority = r.读取变长整数(); break;
+      case 35: out.newPerDayMinimum = r.读取变长整数(); break; case 36: out.questionAction = r.读取变长整数(); break;
+      case 37: out.desiredRetention = r.读取浮点(); break; case 38: out.stopTimerOnAnswer = r.读取布尔(); break;
+      case 40: out.historicalRetention = r.读取浮点(); break; case 41: out.secondsToShowQuestion = r.读取浮点(); break;
+      case 42: out.secondsToShowAnswer = r.读取浮点(); break; case 43: out.answerAction = r.读取变长整数(); break;
+      case 44: out.waitForAudio = r.读取布尔(); break; case 45: out.paramSearch = r.读取字符串(); break;
+      case 46: out.ignoreRevlogsBeforeDate = r.读取字符串(); break; case 255: out.other = r.读取字节(); break;
+      default: r.跳过字段(tag.线类型); out.preserved.push(r.截取片段(start)); break;
     }
   }
   return out;
 }
 
 export function encodeDeckConfig(value: DeckConfig): Uint8Array {
-  const w = new ProtoWriter(); if (value.id !== 0) w.writeInt64(1, value.id); if (value.name !== '') w.writeString(2, value.name);
-  if (value.mtimeSecs !== 0) w.writeInt64(3, value.mtimeSecs); if (value.usn !== 0) w.writeVarint(4, value.usn);
-  if (value.config !== null) w.writeMessage(5, encodeSettings(value.config)); return w.toBytes();
+  const w = new 协议写入器(); if (value.id !== 0) w.写入64位整数(1, value.id); if (value.name !== '') w.写入字符串(2, value.name);
+  if (value.mtimeSecs !== 0) w.写入64位整数(3, value.mtimeSecs); if (value.usn !== 0) w.写入变长整数(4, value.usn);
+  if (value.config !== null) w.写入子消息(5, encodeSettings(value.config)); return w.转为字节();
 }
 export function decodeDeckConfig(bytes: Uint8Array): DeckConfig {
-  const r = new ProtoReader(bytes); const out: DeckConfig = { id: 0, name: '', mtimeSecs: 0, usn: 0, config: null }; let tag;
-  while ((tag = r.readTag()) !== null) { switch (tag.fieldNumber) { case 1: out.id = r.readInt64(); break; case 2: out.name = r.readString(); break; case 3: out.mtimeSecs = r.readInt64(); break; case 4: out.usn = r.readInt32(); break; case 5: out.config = decodeSettings(r.readBytes()); break; default: r.skipField(tag.wireType); } }
+  const r = new 协议读取器(bytes); const out: DeckConfig = { id: 0, name: '', mtimeSecs: 0, usn: 0, config: null }; let tag;
+  while ((tag = r.读取标签()) !== null) { switch (tag.字段号) { case 1: out.id = r.读取64位整数(); break; case 2: out.name = r.读取字符串(); break; case 3: out.mtimeSecs = r.读取64位整数(); break; case 4: out.usn = r.读取32位整数(); break; case 5: out.config = decodeSettings(r.读取字节()); break; default: r.跳过字段(tag.线类型); } }
   return out;
 }
 
 export interface DeckLimits { review: number | null; new: number | null; reviewToday: number | null; newToday: number | null; reviewTodayActive: boolean; newTodayActive: boolean; desiredRetention: number | null; }
-export function encodeLimits(v: DeckLimits): ProtoWriter { const w = new ProtoWriter(); if (v.review !== null) uint(w, 1, v.review); if (v.new !== null) uint(w, 2, v.new); if (v.reviewToday !== null) uint(w, 3, v.reviewToday); if (v.newToday !== null) uint(w, 4, v.newToday); bool(w, 5, v.reviewTodayActive); bool(w, 6, v.newTodayActive); if (v.desiredRetention !== null) float(w, 7, v.desiredRetention); return w; }
-export function decodeLimits(bytes: Uint8Array): DeckLimits { const r = new ProtoReader(bytes); const out: DeckLimits = { review: null, new: null, reviewToday: null, newToday: null, reviewTodayActive: false, newTodayActive: false, desiredRetention: null }; let tag; while ((tag = r.readTag()) !== null) { switch (tag.fieldNumber) { case 1: out.review = r.readVarint(); break; case 2: out.new = r.readVarint(); break; case 3: out.reviewToday = r.readVarint(); break; case 4: out.newToday = r.readVarint(); break; case 5: out.reviewTodayActive = r.readBool(); break; case 6: out.newTodayActive = r.readBool(); break; case 7: out.desiredRetention = r.readFloat(); break; default: r.skipField(tag.wireType); } } return out; }
+export function encodeLimits(v: DeckLimits): 协议写入器 { const w = new 协议写入器(); if (v.review !== null) uint(w, 1, v.review); if (v.new !== null) uint(w, 2, v.new); if (v.reviewToday !== null) uint(w, 3, v.reviewToday); if (v.newToday !== null) uint(w, 4, v.newToday); bool(w, 5, v.reviewTodayActive); bool(w, 6, v.newTodayActive); if (v.desiredRetention !== null) float(w, 7, v.desiredRetention); return w; }
+export function decodeLimits(bytes: Uint8Array): DeckLimits { const r = new 协议读取器(bytes); const out: DeckLimits = { review: null, new: null, reviewToday: null, newToday: null, reviewTodayActive: false, newTodayActive: false, desiredRetention: null }; let tag; while ((tag = r.读取标签()) !== null) { switch (tag.字段号) { case 1: out.review = r.读取变长整数(); break; case 2: out.new = r.读取变长整数(); break; case 3: out.reviewToday = r.读取变长整数(); break; case 4: out.newToday = r.读取变长整数(); break; case 5: out.reviewTodayActive = r.读取布尔(); break; case 6: out.newTodayActive = r.读取布尔(); break; case 7: out.desiredRetention = r.读取浮点(); break; default: r.跳过字段(tag.线类型); } } return out; }
 
 export interface DeckConfigWithUseCount { config: DeckConfig; useCount: number; }
 export interface CurrentDeckInfo { name: string; configId: number; parentConfigIds: number[]; limits: DeckLimits | null; }
-function decodeConfigWithExtra(bytes: Uint8Array): DeckConfigWithUseCount { const r = new ProtoReader(bytes); const out: DeckConfigWithUseCount = { config: { id: 0, name: '', mtimeSecs: 0, usn: 0, config: null }, useCount: 0 }; let tag; while ((tag = r.readTag()) !== null) { if (tag.fieldNumber === 1) out.config = decodeDeckConfig(r.readBytes()); else if (tag.fieldNumber === 2) out.useCount = r.readVarint(); else r.skipField(tag.wireType); } return out; }
-function decodeCurrentDeck(bytes: Uint8Array): CurrentDeckInfo { const r = new ProtoReader(bytes); const out: CurrentDeckInfo = { name: '', configId: 0, parentConfigIds: [], limits: null }; let tag; while ((tag = r.readTag()) !== null) { switch (tag.fieldNumber) { case 1: out.name = r.readString(); break; case 2: out.configId = r.readInt64(); break; case 3: if (tag.wireType === WIRE_LENGTH_DELIMITED) out.parentConfigIds.push(...r.readPackedInt64()); else out.parentConfigIds.push(r.readInt64()); break; case 4: out.limits = decodeLimits(r.readBytes()); break; default: r.skipField(tag.wireType); } } return out; }
+function decodeConfigWithExtra(bytes: Uint8Array): DeckConfigWithUseCount { const r = new 协议读取器(bytes); const out: DeckConfigWithUseCount = { config: { id: 0, name: '', mtimeSecs: 0, usn: 0, config: null }, useCount: 0 }; let tag; while ((tag = r.读取标签()) !== null) { if (tag.字段号 === 1) out.config = decodeDeckConfig(r.读取字节()); else if (tag.字段号 === 2) out.useCount = r.读取变长整数(); else r.跳过字段(tag.线类型); } return out; }
+function decodeCurrentDeck(bytes: Uint8Array): CurrentDeckInfo { const r = new 协议读取器(bytes); const out: CurrentDeckInfo = { name: '', configId: 0, parentConfigIds: [], limits: null }; let tag; while ((tag = r.读取标签()) !== null) { switch (tag.字段号) { case 1: out.name = r.读取字符串(); break; case 2: out.configId = r.读取64位整数(); break; case 3: if (tag.线类型 === 线类型_长度分隔) out.parentConfigIds.push(...r.读取打包64位整数()); else out.parentConfigIds.push(r.读取64位整数()); break; case 4: out.limits = decodeLimits(r.读取字节()); break; default: r.跳过字段(tag.线类型); } } return out; }
 export interface DeckConfigsForUpdateView { allConfigs: DeckConfigWithUseCount[]; currentDeck: CurrentDeckInfo | null; defaults: DeckConfig | null; schemaModified: boolean; cardStateCustomizer: string; newCardsIgnoreReviewLimit: boolean; fsrs: boolean; applyAllParentLimits: boolean; fsrsHealthCheck: boolean; }
-export function decodeDeckConfigsForUpdate(bytes: Uint8Array): DeckConfigsForUpdateView { const r = new ProtoReader(bytes); const out: DeckConfigsForUpdateView = { allConfigs: [], currentDeck: null, defaults: null, schemaModified: false, cardStateCustomizer: '', newCardsIgnoreReviewLimit: false, fsrs: false, applyAllParentLimits: false, fsrsHealthCheck: false }; let tag; while ((tag = r.readTag()) !== null) { switch (tag.fieldNumber) { case 1: out.allConfigs.push(decodeConfigWithExtra(r.readBytes())); break; case 2: out.currentDeck = decodeCurrentDeck(r.readBytes()); break; case 3: out.defaults = decodeDeckConfig(r.readBytes()); break; case 4: out.schemaModified = r.readBool(); break; case 6: out.cardStateCustomizer = r.readString(); break; case 7: out.newCardsIgnoreReviewLimit = r.readBool(); break; case 8: out.fsrs = r.readBool(); break; case 9: out.applyAllParentLimits = r.readBool(); break; case 11: out.fsrsHealthCheck = r.readBool(); break; default: r.skipField(tag.wireType); } } return out; }
+export function decodeDeckConfigsForUpdate(bytes: Uint8Array): DeckConfigsForUpdateView { const r = new 协议读取器(bytes); const out: DeckConfigsForUpdateView = { allConfigs: [], currentDeck: null, defaults: null, schemaModified: false, cardStateCustomizer: '', newCardsIgnoreReviewLimit: false, fsrs: false, applyAllParentLimits: false, fsrsHealthCheck: false }; let tag; while ((tag = r.读取标签()) !== null) { switch (tag.字段号) { case 1: out.allConfigs.push(decodeConfigWithExtra(r.读取字节())); break; case 2: out.currentDeck = decodeCurrentDeck(r.读取字节()); break; case 3: out.defaults = decodeDeckConfig(r.读取字节()); break; case 4: out.schemaModified = r.读取布尔(); break; case 6: out.cardStateCustomizer = r.读取字符串(); break; case 7: out.newCardsIgnoreReviewLimit = r.读取布尔(); break; case 8: out.fsrs = r.读取布尔(); break; case 9: out.applyAllParentLimits = r.读取布尔(); break; case 11: out.fsrsHealthCheck = r.读取布尔(); break; default: r.跳过字段(tag.线类型); } } return out; }
 export const UPDATE_DECK_CONFIGS_MODE_NORMAL = 0; export const UPDATE_DECK_CONFIGS_MODE_APPLY_TO_CHILDREN = 1; export const UPDATE_DECK_CONFIGS_MODE_COMPUTE_ALL_PARAMS = 2;
 export interface UpdateDeckConfigsInput { targetDeckId: number; configs: DeckConfig[]; removedConfigIds: number[]; mode: number; cardStateCustomizer: string; limits: DeckLimits | null; newCardsIgnoreReviewLimit: boolean; fsrs: boolean; applyAllParentLimits: boolean; fsrsReschedule: boolean; fsrsHealthCheck: boolean; }
-export function encodeUpdateDeckConfigsRequest(req: UpdateDeckConfigsInput): Uint8Array { const w = new ProtoWriter(); if (req.targetDeckId !== 0) w.writeInt64(1, req.targetDeckId); for (const config of req.configs) w.writeBytes(2, encodeDeckConfig(config)); w.writePackedInt64(3, req.removedConfigIds); uint(w, 4, req.mode); text(w, 5, req.cardStateCustomizer); if (req.limits !== null) w.writeMessage(6, encodeLimits(req.limits)); bool(w, 7, req.newCardsIgnoreReviewLimit); bool(w, 8, req.fsrs); bool(w, 9, req.applyAllParentLimits); bool(w, 10, req.fsrsReschedule); bool(w, 11, req.fsrsHealthCheck); return w.toBytes(); }
-export function decodeUpdateDeckConfigsRequest(bytes: Uint8Array): UpdateDeckConfigsInput { const r = new ProtoReader(bytes); const out: UpdateDeckConfigsInput = { targetDeckId: 0, configs: [], removedConfigIds: [], mode: 0, cardStateCustomizer: '', limits: null, newCardsIgnoreReviewLimit: false, fsrs: false, applyAllParentLimits: false, fsrsReschedule: false, fsrsHealthCheck: false }; let tag; while ((tag = r.readTag()) !== null) { switch (tag.fieldNumber) { case 1: out.targetDeckId = r.readInt64(); break; case 2: out.configs.push(decodeDeckConfig(r.readBytes())); break; case 3: if (tag.wireType === WIRE_LENGTH_DELIMITED) out.removedConfigIds.push(...r.readPackedInt64()); else out.removedConfigIds.push(r.readInt64()); break; case 4: out.mode = r.readVarint(); break; case 5: out.cardStateCustomizer = r.readString(); break; case 6: out.limits = decodeLimits(r.readBytes()); break; case 7: out.newCardsIgnoreReviewLimit = r.readBool(); break; case 8: out.fsrs = r.readBool(); break; case 9: out.applyAllParentLimits = r.readBool(); break; case 10: out.fsrsReschedule = r.readBool(); break; case 11: out.fsrsHealthCheck = r.readBool(); break; default: r.skipField(tag.wireType); } } return out; }
+export function encodeUpdateDeckConfigsRequest(req: UpdateDeckConfigsInput): Uint8Array { const w = new 协议写入器(); if (req.targetDeckId !== 0) w.写入64位整数(1, req.targetDeckId); for (const config of req.configs) w.写入字节(2, encodeDeckConfig(config)); w.写入打包64位整数(3, req.removedConfigIds); uint(w, 4, req.mode); text(w, 5, req.cardStateCustomizer); if (req.limits !== null) w.写入子消息(6, encodeLimits(req.limits)); bool(w, 7, req.newCardsIgnoreReviewLimit); bool(w, 8, req.fsrs); bool(w, 9, req.applyAllParentLimits); bool(w, 10, req.fsrsReschedule); bool(w, 11, req.fsrsHealthCheck); return w.转为字节(); }
+export function decodeUpdateDeckConfigsRequest(bytes: Uint8Array): UpdateDeckConfigsInput { const r = new 协议读取器(bytes); const out: UpdateDeckConfigsInput = { targetDeckId: 0, configs: [], removedConfigIds: [], mode: 0, cardStateCustomizer: '', limits: null, newCardsIgnoreReviewLimit: false, fsrs: false, applyAllParentLimits: false, fsrsReschedule: false, fsrsHealthCheck: false }; let tag; while ((tag = r.读取标签()) !== null) { switch (tag.字段号) { case 1: out.targetDeckId = r.读取64位整数(); break; case 2: out.configs.push(decodeDeckConfig(r.读取字节())); break; case 3: if (tag.线类型 === 线类型_长度分隔) out.removedConfigIds.push(...r.读取打包64位整数()); else out.removedConfigIds.push(r.读取64位整数()); break; case 4: out.mode = r.读取变长整数(); break; case 5: out.cardStateCustomizer = r.读取字符串(); break; case 6: out.limits = decodeLimits(r.读取字节()); break; case 7: out.newCardsIgnoreReviewLimit = r.读取布尔(); break; case 8: out.fsrs = r.读取布尔(); break; case 9: out.applyAllParentLimits = r.读取布尔(); break; case 10: out.fsrsReschedule = r.读取布尔(); break; case 11: out.fsrsHealthCheck = r.读取布尔(); break; default: r.跳过字段(tag.线类型); } } return out; }

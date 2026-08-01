@@ -1,6 +1,3 @@
-// 导入 .apkg 链路契约测试（M6）：
-// - FileImportHelper 用系统 picker 选 .apkg，沙箱暂存与导入由 DataTransferService 负责；
-// - Index.ets 走完 选文件 → 复制 → 导入 → 刷新主页 的全链路。
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -13,40 +10,42 @@ function read(relativePath) {
   return readFileSync(projectUrl(relativePath), 'utf8');
 }
 
-const HELPER = 'entry/src/main/ets/utils/FileImportHelper.ets';
-const PAGE = 'entry/src/main/ets/pages/Index.ets';
-const SETTINGS = 'entry/src/main/ets/components/SettingsPanel.ets';
+const HELPER = 'entry/src/main/ets/utils/文件导入助手.ets';
+const PAGE = 'entry/src/main/ets/pages/首页.ets';
+const SETTINGS = 'entry/src/main/ets/components/设置面板.ets';
+const DATA_GROUP = 'entry/src/main/ets/components/settings/数据分组.ets';
 
 test('file import helper returns the system-granted URI while the transfer service owns staging', () => {
   assert.equal(existsSync(projectUrl(HELPER)), true, `${HELPER} must exist`);
   const helper = read(HELPER);
 
-  assert.match(helper, /export async function pickApkgFile/);
+  assert.match(helper, /export async function 选取Apkg文件/);
   assert.match(helper, /new picker\.DocumentViewPicker\(context\)/);
-  assert.match(helper, /export async function pickDataFile/);
-  assert.match(helper, /fileSuffixFilters = suffixes/);
+  assert.match(helper, /export async function 选取数据文件/);
+  assert.match(helper, /fileSuffixFilters = 后缀过滤/);
   assert.doesNotMatch(helper, /fileIo|copyFileSync|readSync|writeSync/);
 });
 
 test('home page reuses the DataTransfer deck-merge picker and refreshes after import', () => {
   const page = read(PAGE);
+  const transferCoord = read('entry/src/main/ets/components/home/数据迁移协调器.ets');
 
-  assert.match(page, /async importDeckFromPicker\(\): Promise<void>/);
-  assert.match(page, /pickDataFile\(context, \['\.apkg'\]\)/);
-  // B12 2026-07-22：导入拆为 stageImportFile（同步）+ runImportDeck（异步），支撑多阶段进度
-  assert.match(page, /stageImportFile\(context\.filesDir, uri\)/);
-  assert.match(page, /await runImportDeck\(stagedPath\)/);
-  assert.match(page, /await this\.loadHomeData\(\)/, 'must refresh tree after import');
-  assert.match(page, /HomeActionPanel/);
-  assert.match(page, /DataTransferPanel/);
+  assert.match(page, /async 从选择器导入牌组\(\): Promise<void>/);
+  assert.match(page, /选取数据文件\(context, \['\.apkg'\]\)/);
+  assert.match(page, /暂存导入文件\(context\.filesDir, uri\)/);
+  assert.match(page, /await 执行牌组导入\(stagedPath\)/);
+  assert.match(page, /await this\.加载主页数据\(\)/, 'must refresh tree after import');
+  assert.match(page, /主页操作面板/);
+  assert.match(transferCoord, /数据迁移面板/);
 });
 
 test('settings opens the unified data-management entry instead of a direct import row', () => {
   const settings = read(SETTINGS);
+  const dataGroup = read(DATA_GROUP);
 
-  assert.match(settings, /onImportData: \(\) => void/);
-  assert.match(settings, /onExportData: \(\) => void/);
-  assert.match(settings, /app\.string\.settings_data_management/);
+  assert.match(settings, /导入数据回调: \(\) => void/);
+  assert.match(settings, /导出数据回调: \(\) => void/);
+  assert.match(dataGroup, /app\.string\.settings_data_management/);
   assert.doesNotMatch(settings, /backup_sync_title/);
 });
 

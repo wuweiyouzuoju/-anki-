@@ -1,8 +1,7 @@
-// proto/messages 字节级测试：锁定各消息编解码与 proto 定义（Anki 26.05）一致。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ProtoWriter } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
+import { 协议写入器 } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
 import {
   decodeBackendError,
   encodeBackendInit
@@ -35,7 +34,6 @@ test('OpenCollectionRequest encodes three paths in field order', () => {
     mediaFolderPath: '/c/media',
     mediaDbPath: '/c/media.db'
   });
-  // field1 len 19, field2 len 8, field3 len 11
   assert.equal(
     hex(bytes),
     '0a 13 2f 63 2f 63 6f 6c 6c 65 63 74 69 6f 6e 2e 61 6e 6b 69 32 ' +
@@ -50,7 +48,6 @@ test('BackendInit encodes repeated langs, folder and server flag', () => {
     localeFolderPath: '/l',
     server: true
   });
-  // "zh-CN"=5B, "en"=2B, "/l"=2B, bool=1
   assert.equal(
     hex(bytes),
     '0a 05 7a 68 2d 43 4e 0a 02 65 6e 12 02 2f 6c 18 01'
@@ -58,13 +55,13 @@ test('BackendInit encodes repeated langs, folder and server flag', () => {
 });
 
 test('BackendError decodes message/kind/context and skips help/backtrace', () => {
-  const w = new ProtoWriter();
-  w.writeString(1, 'collection is already open');
-  w.writeVarint(2, 5); // DB_ERROR
-  w.writeVarint(3, 0); // optional help_page 出现但为空值也应被跳过
-  w.writeString(4, 'openCollection');
-  w.writeString(5, 'stack...');
-  const info = decodeBackendError(w.toBytes());
+  const w = new 协议写入器();
+  w.写入字符串(1, 'collection is already open');
+  w.写入变长整数(2, 5);
+  w.写入变长整数(3, 0);
+  w.写入字符串(4, 'openCollection');
+  w.写入字符串(5, 'stack...');
+  const info = decodeBackendError(w.转为字节());
   assert.equal(info.message, 'collection is already open');
   assert.equal(info.kind, 5);
   assert.equal(info.context, 'openCollection');
@@ -113,7 +110,6 @@ test('Deck roundtrips with common/normal sub-messages and reserved bytes', () =>
 });
 
 test('Deck encoding omits default-valued fields like prost', () => {
-  // 全默认牌组只带 name：只有 field2 出现在字节流中
   const bytes = encodeDeck({
     id: 0,
     name: '默认',
@@ -126,22 +122,22 @@ test('Deck encoding omits default-valued fields like prost', () => {
 });
 
 test('DeckTreeNode decodes nested children recursively', () => {
-  const child = new ProtoWriter();
-  child.writeInt64(1, 20);
-  child.writeString(2, '四级');
-  child.writeVarint(8, 3); // new_count
-  const root = new ProtoWriter();
-  root.writeInt64(1, 10);
-  root.writeString(2, '英语');
-  root.writeMessage(3, child);
-  root.writeVarint(4, 0); // level
-  root.writeVarint(6, 11); // review_count
-  root.writeVarint(7, 2); // learn_count
-  root.writeVarint(13, 100); // total_in_deck
-  root.writeVarint(14, 150); // total_including_children
-  root.writeBool(16, false);
+  const child = new 协议写入器();
+  child.写入64位整数(1, 20);
+  child.写入字符串(2, '四级');
+  child.写入变长整数(8, 3);
+  const root = new 协议写入器();
+  root.写入64位整数(1, 10);
+  root.写入字符串(2, '英语');
+  root.写入子消息(3, child);
+  root.写入变长整数(4, 0);
+  root.写入变长整数(6, 11);
+  root.写入变长整数(7, 2);
+  root.写入变长整数(13, 100);
+  root.写入变长整数(14, 150);
+  root.写入布尔(16, false);
 
-  const node = decodeDeckTreeNode(root.toBytes());
+  const node = decodeDeckTreeNode(root.转为字节());
   assert.equal(node.deckId, 10);
   assert.equal(node.name, '英语');
   assert.equal(node.reviewCount, 11);
@@ -156,60 +152,60 @@ test('DeckTreeNode decodes nested children recursively', () => {
 test('DeckTreeRequest encodes now timestamp only when non-zero', () => {
   assert.equal(encodeDeckTreeRequest(0).length, 0);
   const bytes = encodeDeckTreeRequest(1752902400);
-  const w = new ProtoWriter();
-  w.writeInt64(1, 1752902400);
-  assert.equal(hex(bytes), hex(w.toBytes()));
+  const w = new 协议写入器();
+  w.写入64位整数(1, 1752902400);
+  assert.equal(hex(bytes), hex(w.转为字节()));
 });
 
 test('GetDeckNamesRequest flags and DeckNames decoding', () => {
   assert.equal(encodeGetDeckNamesRequest(false, false).length, 0);
   assert.equal(hex(encodeGetDeckNamesRequest(true, true)), '08 01 10 01');
 
-  const entry = new ProtoWriter();
-  entry.writeInt64(1, 1);
-  entry.writeString(2, '默认');
-  const list = new ProtoWriter();
-  list.writeMessage(1, entry);
-  const names = decodeDeckNames(list.toBytes());
+  const entry = new 协议写入器();
+  entry.写入64位整数(1, 1);
+  entry.写入字符串(2, '默认');
+  const list = new 协议写入器();
+  list.写入子消息(1, entry);
+  const names = decodeDeckNames(list.转为字节());
   assert.deepEqual(names, [{ id: 1, name: '默认' }]);
 });
 
 test('OpChangesWithId / OpChangesWithCount extract scalars and skip changes', () => {
-  const w = new ProtoWriter();
-  const changes = new ProtoWriter();
-  changes.writeBool(3, true); // deck changed
-  w.writeMessage(1, changes);
-  w.writeInt64(2, 1752902400999);
-  assert.equal(decodeOpChangesWithId(w.toBytes()), 1752902400999);
+  const w = new 协议写入器();
+  const changes = new 协议写入器();
+  changes.写入布尔(3, true);
+  w.写入子消息(1, changes);
+  w.写入64位整数(2, 1752902400999);
+  assert.equal(decodeOpChangesWithId(w.转为字节()), 1752902400999);
 
-  const c = new ProtoWriter();
-  c.writeBool(1, true);
-  c.writeVarint(2, 42);
-  assert.equal(decodeOpChangesWithCount(c.toBytes()), 42);
+  const c = new 协议写入器();
+  c.写入布尔(1, true);
+  c.写入变长整数(2, 42);
+  assert.equal(decodeOpChangesWithCount(c.转为字节()), 42);
 });
 
 test('ImportAnkiPackageRequest encodes path only', () => {
   const bytes = encodeImportAnkiPackageRequest('/f/四级.apkg');
-  const w = new ProtoWriter();
-  w.writeString(1, '/f/四级.apkg');
-  assert.equal(hex(bytes), hex(w.toBytes()));
+  const w = new 协议写入器();
+  w.写入字符串(1, '/f/四级.apkg');
+  assert.equal(hex(bytes), hex(w.转为字节()));
 });
 
 test('ImportResponse tallies log buckets and found_notes', () => {
-  const note = new ProtoWriter();
-  note.writeInt64(1, 1); // NoteId 子消息字节无需真实，计数即可
-  const log = new ProtoWriter();
-  log.writeMessage(1, note); // new
-  log.writeMessage(1, note); // new
-  log.writeMessage(2, note); // updated
-  log.writeMessage(3, note); // duplicate
-  log.writeVarint(10, 99); // found_notes
-  const resp = new ProtoWriter();
-  const changes = new ProtoWriter();
-  changes.writeBool(2, true);
-  resp.writeMessage(1, changes);
-  resp.writeMessage(2, log);
+  const note = new 协议写入器();
+  note.写入64位整数(1, 1);
+  const log = new 协议写入器();
+  log.写入子消息(1, note);
+  log.写入子消息(1, note);
+  log.写入子消息(2, note);
+  log.写入子消息(3, note);
+  log.写入变长整数(10, 99);
+  const resp = new 协议写入器();
+  const changes = new 协议写入器();
+  changes.写入布尔(2, true);
+  resp.写入子消息(1, changes);
+  resp.写入子消息(2, log);
 
-  const summary = decodeImportResponse(resp.toBytes());
+  const summary = decodeImportResponse(resp.转为字节());
   assert.deepEqual(summary, { newNotes: 2, updatedNotes: 1, duplicateNotes: 1, foundNotes: 99 });
 });

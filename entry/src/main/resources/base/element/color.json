@@ -30,7 +30,7 @@
     },
     {
       "name": "text_tertiary",
-      "value": "#8A94A6"
+      "value": "#6E7685"
     },
     {
       "name": "action_primary",
@@ -50,7 +50,7 @@
     },
     {
       "name": "status_ready",
-      "value": "#258B68"
+      "value": "#238463"
     },
     {
       "name": "error_text",
@@ -58,11 +58,11 @@
     },
     {
       "name": "count_new",
-      "value": "#3974D9"
+      "value": "#366ECE"
     },
     {
       "name": "count_learning",
-      "value": "#B56A22"
+      "value": "#AC6520"
     },
     {
       "name": "count_review",
@@ -70,7 +70,7 @@
     },
     {
       "name": "deck_blue",
-      "value": "#88A8ED"
+      "value": "#748FC9"
     },
     {
       "name": "deck_purple",
@@ -78,11 +78,11 @@
     },
     {
       "name": "deck_mint",
-      "value": "#82D4BE"
+      "value": "#619F8E"
     },
     {
       "name": "deck_amber",
-      "value": "#E8C480"
+      "value": "#A2895A"
     },
     {
       "name": "deck_black",
@@ -90,7 +90,7 @@
     },
     {
       "name": "deck_red",
-      "value": "#D98484"
+      "value": "#CE7D7D"
     },
     {
       "name": "heat_0",

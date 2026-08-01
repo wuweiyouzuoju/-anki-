@@ -1,69 +1,54 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// anki.ankiweb.proto 消息编解码（Anki 26.05）。
-// 仅覆盖本项目使用的字段，与 prost 编码对齐：proto3 默认值省略。
+import { 协议读取器 } from '../core/ProtoReader';
+import { 协议写入器 } from '../core/ProtoWriter';
 
-import { ProtoReader } from '../core/ProtoReader';
-import { ProtoWriter } from '../core/ProtoWriter';
-
-/** GetAddonInfoRequest：客户端版本 + 最多 25 个 addon id */
 export interface GetAddonInfoRequest {
   clientVersion: number;
   addonIds: number[];
 }
 
-/** AddonInfo：单个 addon 的元信息 */
 export interface AddonInfo {
   id: number;
-  modified: number;       // int64
+  modified: number;
   minVersion: number;
   maxVersion: number;
 }
 
-/** GetAddonInfoResponse：addon 列表（请求里没有的 addon 不在此列表中） */
 export interface GetAddonInfoResponse {
   info: AddonInfo[];
 }
 
-/** CheckForUpdateRequest：客户端自报信息 */
 export interface CheckForUpdateRequest {
   version: number;
   buildhash: string;
   os: string;
-  installId: number;      // int64
+  installId: number;
   lastMessageId: number;
 }
 
-/** CheckForUpdateResponse：optional 字段可能不存在 */
 export interface CheckForUpdateResponse {
-  newVersion: string;      // optional，不存在时为空串
-  currentTime: number;    // int64
-  message: string;        // optional，不存在时为空串
+  newVersion: string;
+  currentTime: number;
+  message: string;
   lastMessageId: number;
 }
-
-// ---- 编码 ----
 
 export function encodeGetAddonInfoRequest(req: GetAddonInfoRequest): Uint8Array {
-  const w = new ProtoWriter();
+  const w = new 协议写入器();
   if (req.clientVersion !== 0) {
-    w.writeVarint(1, req.clientVersion);
+    w.写入变长整数(1, req.clientVersion);
   }
   if (req.addonIds.length > 0) {
-    // packed repeated uint32：field 2 wire type 2，payload 是连续 raw varint（无 tag），
-    // 与 prost 的 packed 默认编码一致。ProtoWriter.writeVarint 会写 tag，不适合拼 packed payload，
-    // 因此单独手写一份 uint32 varint 拼接。
-    w.writeBytes(2, encodePackedUint32(req.addonIds));
+    w.写入字节(2, encodePackedUint32(req.addonIds));
   }
-  return w.toBytes();
+  return w.转为字节();
 }
 
-/** 把 uint32 数组编成 packed payload（连续 varint，无 tag） */
 function encodePackedUint32(values: number[]): Uint8Array {
   const bytes: number[] = [];
   for (const v of values) {
     let n = v >= 0 ? v : 0;
-    // uint32 最大 5 字节
     while (n > 0x7f) {
       bytes.push((n & 0x7f) | 0x80);
       n >>>= 7;
@@ -74,29 +59,27 @@ function encodePackedUint32(values: number[]): Uint8Array {
 }
 
 export function encodeCheckForUpdateRequest(req: CheckForUpdateRequest): Uint8Array {
-  const w = new ProtoWriter();
+  const w = new 协议写入器();
   if (req.version !== 0) {
-    w.writeVarint(1, req.version);
+    w.写入变长整数(1, req.version);
   }
   if (req.buildhash !== '') {
-    w.writeString(2, req.buildhash);
+    w.写入字符串(2, req.buildhash);
   }
   if (req.os !== '') {
-    w.writeString(3, req.os);
+    w.写入字符串(3, req.os);
   }
   if (req.installId !== 0) {
-    w.writeInt64(4, req.installId);
+    w.写入64位整数(4, req.installId);
   }
   if (req.lastMessageId !== 0) {
-    w.writeVarint(5, req.lastMessageId);
+    w.写入变长整数(5, req.lastMessageId);
   }
-  return w.toBytes();
+  return w.转为字节();
 }
 
-// ---- 解码 ----
-
 export function decodeAddonInfo(bytes: Uint8Array): AddonInfo {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const out: AddonInfo = {
     id: 0,
     modified: 0,
@@ -104,45 +87,45 @@ export function decodeAddonInfo(bytes: Uint8Array): AddonInfo {
     maxVersion: 0
   };
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        out.id = r.readVarint();
+        out.id = r.读取变长整数();
         break;
       case 2:
-        out.modified = r.readInt64();
+        out.modified = r.读取64位整数();
         break;
       case 3:
-        out.minVersion = r.readVarint();
+        out.minVersion = r.读取变长整数();
         break;
       case 4:
-        out.maxVersion = r.readVarint();
+        out.maxVersion = r.读取变长整数();
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   return out;
 }
 
 export function decodeGetAddonInfoResponse(bytes: Uint8Array): GetAddonInfoResponse {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const out: GetAddonInfoResponse = { info: [] };
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        out.info.push(decodeAddonInfo(r.readBytes()));
+        out.info.push(decodeAddonInfo(r.读取字节()));
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   return out;
 }
 
 export function decodeCheckForUpdateResponse(bytes: Uint8Array): CheckForUpdateResponse {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const out: CheckForUpdateResponse = {
     newVersion: '',
     currentTime: 0,
@@ -150,22 +133,22 @@ export function decodeCheckForUpdateResponse(bytes: Uint8Array): CheckForUpdateR
     lastMessageId: 0
   };
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        out.newVersion = r.readString();
+        out.newVersion = r.读取字符串();
         break;
       case 2:
-        out.currentTime = r.readInt64();
+        out.currentTime = r.读取64位整数();
         break;
       case 3:
-        out.message = r.readString();
+        out.message = r.读取字符串();
         break;
       case 4:
-        out.lastMessageId = r.readVarint();
+        out.lastMessageId = r.读取变长整数();
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   return out;

@@ -1,16 +1,32 @@
-/.idea/
+# Build artifacts
 /.hvigor/
-/.worktrees/
 /build/
 /entry/build/
 /entry/.cxx/
 /entry/oh_modules/
 /oh_modules/
 /native/**/target/
-/node_modules/
 /target/
 /work/
 /outputs/
+
+# IDE
+/.idea/
+
+# Agent working files
+/.trae/
+/.agents/
+/.superpowers/
+/skills/
+
+# Temporary / debug
+/.tmp_*
+/build_log.txt
+/file
+/layout*.xml
 *.hap
 *.app
 *.log
+
+# Dependencies
+/node_modules/

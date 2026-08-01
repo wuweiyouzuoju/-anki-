@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// anki.stats 轻量消息编解码：GraphsResponse 仅提取首页热力和记忆率所需的字段。
-// 字段来源：third_party/anki/proto/anki/stats.proto（Anki 26.05）
-// 语义来源：rslib/src/stats/graphs/（reviews.count 的键为「距今天数」，0=今天；
-// retrievability.average 为 0-100 百分制，仅当存在带 FSRS 记忆状态的卡片时非零）。
-
-import { ProtoReader } from '../core/ProtoReader';
-import { ProtoWriter } from '../core/ProtoWriter';
+import { 协议读取器 } from '../core/ProtoReader';
+import { 协议写入器 } from '../core/ProtoWriter';
 
 export interface TodayCounts {
   answerCount: number;
@@ -26,7 +21,6 @@ export interface RetrievabilitySummary {
   sumByNote: number;
 }
 
-/** 单日内按卡片阶段拆分的复习计数（ReviewCountsAndTimes.Reviews）。 */
 export interface ReviewKindCounts {
   learn: number;
   relearn: number;
@@ -38,22 +32,20 @@ export interface ReviewKindCounts {
 export interface GraphsView {
   today: TodayCounts | null;
   retrievability: RetrievabilitySummary | null;
-  /** 按日复习计数：键为距今天数（0=今天，1=昨天……），与 rslib reviews.rs 分桶一致。 */
   reviewCountsByDaysAgo: Map<number, ReviewKindCounts> | null;
   fsrs: boolean;
 }
 
-/** GraphsRequest：search 固定为空（全库统计，与 rslib graph_data_for_search 的 all 分支一致）。 */
 export function encodeGraphsRequest(days: number): Uint8Array {
-  const w = new ProtoWriter();
+  const w = new 协议写入器();
   if (days > 0) {
-    w.writeVarint(2, days);
+    w.写入变长整数(2, days);
   }
-  return w.toBytes();
+  return w.转为字节();
 }
 
 function decodeToday(bytes: Uint8Array): TodayCounts {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const out: TodayCounts = {
     answerCount: 0,
     answerMillis: 0,
@@ -66,111 +58,110 @@ function decodeToday(bytes: Uint8Array): TodayCounts {
     earlyReviewCount: 0
   };
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        out.answerCount = r.readVarint();
+        out.answerCount = r.读取变长整数();
         break;
       case 2:
-        out.answerMillis = r.readVarint();
+        out.answerMillis = r.读取变长整数();
         break;
       case 3:
-        out.correctCount = r.readVarint();
+        out.correctCount = r.读取变长整数();
         break;
       case 4:
-        out.matureCorrect = r.readVarint();
+        out.matureCorrect = r.读取变长整数();
         break;
       case 5:
-        out.matureCount = r.readVarint();
+        out.matureCount = r.读取变长整数();
         break;
       case 6:
-        out.learnCount = r.readVarint();
+        out.learnCount = r.读取变长整数();
         break;
       case 7:
-        out.reviewCount = r.readVarint();
+        out.reviewCount = r.读取变长整数();
         break;
       case 8:
-        out.relearnCount = r.readVarint();
+        out.relearnCount = r.读取变长整数();
         break;
       case 9:
-        out.earlyReviewCount = r.readVarint();
+        out.earlyReviewCount = r.读取变长整数();
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   return out;
 }
 
 function decodeRetrievability(bytes: Uint8Array): RetrievabilitySummary {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const out: RetrievabilitySummary = { average: 0, sumByCard: 0, sumByNote: 0 };
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
         break;
       case 2:
-        out.average = r.readFloat();
+        out.average = r.读取浮点();
         break;
       case 3:
-        out.sumByCard = r.readFloat();
+        out.sumByCard = r.读取浮点();
         break;
       case 4:
-        out.sumByNote = r.readFloat();
+        out.sumByNote = r.读取浮点();
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   return out;
 }
 
 function decodeReviews(bytes: Uint8Array): ReviewKindCounts {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const out: ReviewKindCounts = { learn: 0, relearn: 0, young: 0, mature: 0, filtered: 0 };
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        out.learn = r.readVarint();
+        out.learn = r.读取变长整数();
         break;
       case 2:
-        out.relearn = r.readVarint();
+        out.relearn = r.读取变长整数();
         break;
       case 3:
-        out.young = r.readVarint();
+        out.young = r.读取变长整数();
         break;
       case 4:
-        out.mature = r.readVarint();
+        out.mature = r.读取变长整数();
         break;
       case 5:
-        out.filtered = r.readVarint();
+        out.filtered = r.读取变长整数();
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   return out;
 }
 
-/** map<int32, Reviews> 条目：field1=key（int32 varint，负数按补码），field2=value 子消息。 */
 function decodeReviewCountEntry(bytes: Uint8Array, out: Map<number, ReviewKindCounts>): void {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   let daysAgo: number = 0;
   let counts: ReviewKindCounts | null = null;
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        daysAgo = Number(BigInt.asIntN(32, r.readVarintBig()));
+        daysAgo = Number(BigInt.asIntN(32, r.读取大变长整数()));
         break;
       case 2:
-        counts = decodeReviews(r.readBytes());
+        counts = decodeReviews(r.读取字节());
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   if (counts !== null) {
@@ -179,23 +170,23 @@ function decodeReviewCountEntry(bytes: Uint8Array, out: Map<number, ReviewKindCo
 }
 
 function decodeReviewCountsAndTimes(bytes: Uint8Array): Map<number, ReviewKindCounts> {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const out: Map<number, ReviewKindCounts> = new Map<number, ReviewKindCounts>();
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 1:
-        decodeReviewCountEntry(r.readBytes(), out);
+        decodeReviewCountEntry(r.读取字节(), out);
         break;
       default:
-        r.skipField(tag.wireType); // field2 time 图首页不用，跳过
+        r.跳过字段(tag.线类型);
     }
   }
   return out;
 }
 
 export function decodeGraphsResponse(bytes: Uint8Array): GraphsView {
-  const r = new ProtoReader(bytes);
+  const r = new 协议读取器(bytes);
   const out: GraphsView = {
     today: null,
     retrievability: null,
@@ -203,22 +194,22 @@ export function decodeGraphsResponse(bytes: Uint8Array): GraphsView {
     fsrs: false
   };
   let tag;
-  while ((tag = r.readTag()) !== null) {
-    switch (tag.fieldNumber) {
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
       case 4:
-        out.today = decodeToday(r.readBytes());
+        out.today = decodeToday(r.读取字节());
         break;
       case 9:
-        out.reviewCountsByDaysAgo = decodeReviewCountsAndTimes(r.readBytes());
+        out.reviewCountsByDaysAgo = decodeReviewCountsAndTimes(r.读取字节());
         break;
       case 12:
-        out.retrievability = decodeRetrievability(r.readBytes());
+        out.retrievability = decodeRetrievability(r.读取字节());
         break;
       case 13:
-        out.fsrs = r.readBool();
+        out.fsrs = r.读取布尔();
         break;
       default:
-        r.skipField(tag.wireType);
+        r.跳过字段(tag.线类型);
     }
   }
   return out;

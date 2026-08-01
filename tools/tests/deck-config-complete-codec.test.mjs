@@ -5,7 +5,7 @@ import {
   decodeDeckConfig,
   encodeDeckConfig
 } from '../../entry/src/main/ets/proto/messages/DeckConfigMessages.ts';
-import { ProtoWriter } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
+import { 协议写入器 } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
 
 function completeSettings() {
   return {
@@ -50,10 +50,10 @@ function assertEverySetting(actual, expected) {
 }
 
 test('DeckConfig.Config round-trips every public field and unknown chunks', () => {
-  const unknown = new ProtoWriter();
-  unknown.writeVarint(200, 42);
+  const unknown = new 协议写入器();
+  unknown.写入变长整数(200, 42);
   const deck = { id: 1, name: 'Default', mtimeSecs: 2, usn: 3, config: completeSettings() };
-  deck.config.preserved.push(unknown.toBytes());
+  deck.config.preserved.push(unknown.转为字节());
   const decoded = decodeDeckConfig(encodeDeckConfig(deck));
   assertEverySetting(decoded.config, completeSettings());
   assert.deepEqual(decoded.config.learnSteps, [1, 10]);
@@ -70,51 +70,49 @@ test('DeckConfig.Config round-trips every public field and unknown chunks', () =
 });
 
 test('DeckConfig form rejects invalid values without partially changing settings', async () => {
-  const { DeckConfigForm } = await import('../../entry/src/main/ets/model/DeckConfigForm.ets');
+  const { 牌组配置表单 } = await import('../../entry/src/main/ets/model/牌组配置表单.ets');
   const settings = completeSettings();
-  const form = DeckConfigForm.fromSettings(settings);
-  form.learnSteps = '1 zero';
-  form.desiredRetention = '1.1';
+  const form = 牌组配置表单.从配置创建(settings);
+  form.学习步骤文本 = '1 zero';
+  form.目标保留率文本 = '1.1';
   const before = JSON.stringify(settings);
-  assert.ok(form.validate().length > 0);
-  assert.equal(form.applyToSettings(settings), false);
+  assert.ok(form.校验().length > 0);
+  assert.equal(form.应用到配置(settings), false);
   assert.equal(JSON.stringify(settings), before);
 });
 
 test('DeckConfig form retains invalid raw numeric and fractional enum edits for validation', async () => {
-  const { DeckConfigForm } = await import('../../entry/src/main/ets/model/DeckConfigForm.ets');
-  const settings = completeSettings(); const form = DeckConfigForm.fromSettings(settings);
-  form.setNumber('maximumReviewInterval', 'not-a-number');
-  form.setNumber('reviewOrder', '1.5');
-  assert.equal(form.valueText('maximumReviewInterval'), 'not-a-number');
-  assert.ok(form.validate().some((issue) => issue.key === 'maximumReviewInterval'));
-  assert.ok(form.validate().some((issue) => issue.key === 'reviewOrder'));
-  assert.equal(form.applyToSettings(settings), false);
+  const { 牌组配置表单 } = await import('../../entry/src/main/ets/model/牌组配置表单.ets');
+  const settings = completeSettings(); const form = 牌组配置表单.从配置创建(settings);
+  form.设置数值字段('maximumReviewInterval', 'not-a-number');
+  form.设置数值字段('reviewOrder', '1.5');
+  assert.equal(form.取字段文本值('maximumReviewInterval'), 'not-a-number');
+  assert.ok(form.校验().some((issue) => issue.字段键 === 'maximumReviewInterval'));
+  assert.ok(form.校验().some((issue) => issue.字段键 === 'reviewOrder'));
+  assert.equal(form.应用到配置(settings), false);
 });
 
 test('DeckConfig form retains invalid float-array input until it can be corrected', async () => {
-  const { DeckConfigForm } = await import('../../entry/src/main/ets/model/DeckConfigForm.ets');
-  const settings = completeSettings(); const form = DeckConfigForm.fromSettings(settings);
-  form.setFloatArray('fsrsParams6', '0.4 invalid 2');
-  assert.equal(form.floatArrayText('fsrsParams6'), '0.4 invalid 2');
-  assert.ok(form.validate().some((issue) => issue.key === 'fsrsParams6'));
-  assert.equal(form.applyToSettings(settings), false);
+  const { 牌组配置表单 } = await import('../../entry/src/main/ets/model/牌组配置表单.ets');
+  const settings = completeSettings(); const form = 牌组配置表单.从配置创建(settings);
+  form.设置浮点数组字段('fsrsParams6', '0.4 invalid 2');
+  assert.equal(form.取浮点数组文本('fsrsParams6'), '0.4 invalid 2');
+  assert.ok(form.校验().some((issue) => issue.字段键 === 'fsrsParams6'));
+  assert.equal(form.应用到配置(settings), false);
 });
 
 test('deck options keep five common fields visible and fold the rest into advanced settings', () => {
-  const panel = readFileSync(new URL('../../entry/src/main/ets/components/DeckOptionsPanel.ets', import.meta.url), 'utf8');
-  const advanced = readFileSync(new URL('../../entry/src/main/ets/components/AdvancedDeckOptionsPanel.ets', import.meta.url), 'utf8');
-  // 7 个分组随高级设置移入 AdvancedDeckOptionsPanel（独立全屏磨砂覆盖层）
+  const panel = readFileSync(new URL('../../entry/src/main/ets/components/牌组选项面板.ets', import.meta.url), 'utf8');
+  const advanced = readFileSync(new URL('../../entry/src/main/ets/components/高级牌组选项面板.ets', import.meta.url), 'utf8');
   for (const group of ['New', 'Lapses', 'Burying', 'Audio', 'Timer', 'FSRS', 'Advanced']) {
     assert.match(advanced, new RegExp(group, 'i'));
   }
   assert.match(panel, /deck_group_advanced_hub/);
-  // DeckOptionsPanel 入口触发 showAdvanced；7 个分组及 expanded 状态在 AdvancedDeckOptionsPanel
   assert.match(panel, /@State private showAdvanced: boolean = false/);
   assert.match(advanced, /@State private newExpanded: boolean = false/);
   assert.match(advanced, /@State private fsrsExpanded: boolean = false/);
   assert.doesNotMatch(panel, /commonExpanded|displayOrderExpanded/);
-  assert.match(panel, /FieldHelpPanel/);
+  assert.match(panel, /字段帮助面板/);
   assert.doesNotMatch(panel, /learnStepsHint/);
   assert.match(panel, /deck_learn_steps_help/);
 });

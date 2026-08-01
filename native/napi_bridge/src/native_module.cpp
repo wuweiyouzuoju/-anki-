@@ -254,7 +254,7 @@ napi_value Init(napi_env env, napi_value exports)
     return exports;
 }
 
-} // namespace
+}
 
 static napi_module jidecardsModule = {
     .nm_version = 1,

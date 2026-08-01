@@ -1,8 +1,7 @@
-// scheduler / card_rendering 消息编解码字节级测试（Anki 26.05）。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ProtoWriter } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
+import { 协议写入器 } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
 import {
   decodeQueuedCards,
   decodeSchedTimingToday,
@@ -30,50 +29,51 @@ test('GetQueuedCardsRequest encodes fetch limit and intraday flag', () => {
 });
 
 test('SchedulingStates keeps five raw state blobs for opaque round-trip', () => {
-  const w = new ProtoWriter();
-  w.writeBytes(1, new Uint8Array([0x0a, 0x01])); // current
-  w.writeBytes(2, new Uint8Array([0x0b, 0x02])); // again
-  w.writeBytes(3, new Uint8Array([0x0c, 0x03])); // hard
-  w.writeBytes(4, new Uint8Array([0x0d, 0x04])); // good
-  w.writeBytes(5, new Uint8Array([0x0e, 0x05])); // easy
+  const w = new 协议写入器();
+  w.写入字节(1, new Uint8Array([0x0a, 0x01]));
+  w.写入字节(2, new Uint8Array([0x0b, 0x02]));
+  w.写入字节(3, new Uint8Array([0x0c, 0x03]));
+  w.写入字节(4, new Uint8Array([0x0d, 0x04]));
+  w.写入字节(5, new Uint8Array([0x0e, 0x05]));
 
-  const states = decodeSchedulingStates(w.toBytes());
+  const states = decodeSchedulingStates(w.转为字节());
   assert.deepEqual([...states.current], [0x0a, 0x01]);
   assert.deepEqual([...states.easy], [0x0e, 0x05]);
 
-  // 原样回写后字节完全一致：作答/DescribeNextStates 的保真通道
-  assert.equal(hex(encodeSchedulingStates(states)), hex(w.toBytes()));
+  assert.equal(hex(encodeSchedulingStates(states)), hex(w.转为字节()));
 });
 
 test('QueuedCards decodes nested card summary, queue and states', () => {
-  const cardMsg = new ProtoWriter();
-  cardMsg.writeInt64(1, 100); // id
-  cardMsg.writeInt64(2, 200); // note_id
-  cardMsg.writeInt64(3, 300); // deck_id
-  cardMsg.writeVarint(12, 9); // reps：学习链路不需要，应被跳过
+  const cardMsg = new 协议写入器();
+  cardMsg.写入64位整数(1, 100);
+  cardMsg.写入64位整数(2, 200);
+  cardMsg.写入64位整数(3, 300);
+  cardMsg.写入变长整数(4, 2);
+  cardMsg.写入变长整数(12, 9);
 
-  const statesMsg = new ProtoWriter();
-  statesMsg.writeBytes(4, new Uint8Array([0x21])); // good
+  const statesMsg = new 协议写入器();
+  statesMsg.写入字节(4, new Uint8Array([0x21]));
 
-  const queued = new ProtoWriter();
-  queued.writeMessage(1, cardMsg);
-  queued.writeVarint(2, QUEUE_REVIEW);
-  queued.writeMessage(3, statesMsg);
-  const context = new ProtoWriter();
-  context.writeString(1, '英语');
-  queued.writeMessage(4, context); // context 应被跳过
+  const queued = new 协议写入器();
+  queued.写入子消息(1, cardMsg);
+  queued.写入变长整数(2, QUEUE_REVIEW);
+  queued.写入子消息(3, statesMsg);
+  const context = new 协议写入器();
+  context.写入字符串(1, '英语');
+  queued.写入子消息(4, context);
 
-  const resp = new ProtoWriter();
-  resp.writeMessage(1, queued);
-  resp.writeVarint(2, 7); // new_count
-  resp.writeVarint(3, 3); // learning_count
-  resp.writeVarint(4, 11); // review_count
+  const resp = new 协议写入器();
+  resp.写入子消息(1, queued);
+  resp.写入变长整数(2, 7);
+  resp.写入变长整数(3, 3);
+  resp.写入变长整数(4, 11);
 
-  const view = decodeQueuedCards(resp.toBytes());
+  const view = decodeQueuedCards(resp.转为字节());
   assert.equal(view.cards.length, 1);
   assert.equal(view.cards[0].cardId, 100);
   assert.equal(view.cards[0].noteId, 200);
   assert.equal(view.cards[0].deckId, 300);
+  assert.equal(view.cards[0].templateIdx, 2);
   assert.equal(view.cards[0].queue, QUEUE_REVIEW);
   assert.deepEqual([...view.cards[0].states.good], [0x21]);
   assert.equal(view.newCount, 7);
@@ -101,7 +101,7 @@ test('CardAnswer omits AGAIN rating and empty states (proto3 defaults)', () => {
     cardId: 1,
     currentState: new Uint8Array(0),
     newState: new Uint8Array(0),
-    rating: 0, // AGAIN
+    rating: 0,
     answeredAtMillis: 0,
     millisecondsTaken: 0
   });
@@ -110,27 +110,27 @@ test('CardAnswer omits AGAIN rating and empty states (proto3 defaults)', () => {
 
 test('CardId encodes cid field', () => {
   assert.equal(hex(encodeCardId(1752902400123)), hex((() => {
-    const w = new ProtoWriter();
-    w.writeInt64(1, 1752902400123);
-    return w.toBytes();
+    const w = new 协议写入器();
+    w.写入64位整数(1, 1752902400123);
+    return w.转为字节();
   })()));
 });
 
 test('SchedTimingToday decodes days_elapsed and next_day_at', () => {
-  const w = new ProtoWriter();
-  w.writeVarint(1, 5432);
-  w.writeInt64(2, 1752998400);
-  const timing = decodeSchedTimingToday(w.toBytes());
+  const w = new 协议写入器();
+  w.写入变长整数(1, 5432);
+  w.写入64位整数(2, 1752998400);
+  const timing = decodeSchedTimingToday(w.转为字节());
   assert.equal(timing.daysElapsed, 5432);
   assert.equal(timing.nextDayAt, 1752998400);
 });
 
 test('StringList decodes repeated vals (DescribeNextStates output)', () => {
-  const w = new ProtoWriter();
-  w.writeString(1, '1分钟');
-  w.writeString(1, '10分钟');
-  w.writeString(1, '4天');
-  assert.deepEqual(decodeStringList(w.toBytes()), ['1分钟', '10分钟', '4天']);
+  const w = new 协议写入器();
+  w.写入字符串(1, '1分钟');
+  w.写入字符串(1, '10分钟');
+  w.写入字符串(1, '4天');
+  assert.deepEqual(decodeStringList(w.转为字节()), ['1分钟', '10分钟', '4天']);
 });
 
 test('RenderExistingCardRequest encodes card_id only', () => {
@@ -138,26 +138,26 @@ test('RenderExistingCardRequest encodes card_id only', () => {
 });
 
 test('RenderCardResponse decodes mixed text/replacement nodes and flags', () => {
-  const textNode = new ProtoWriter();
-  textNode.writeString(1, '问题：');
+  const textNode = new 协议写入器();
+  textNode.写入字符串(1, '问题：');
 
-  const replMsg = new ProtoWriter();
-  replMsg.writeString(1, 'Front');
-  replMsg.writeString(2, '世界');
-  replMsg.writeString(3, 'cloze:Front');
-  replMsg.writeString(3, 'hint');
-  const replNode = new ProtoWriter();
-  replNode.writeMessage(2, replMsg);
+  const replMsg = new 协议写入器();
+  replMsg.写入字符串(1, 'Front');
+  replMsg.写入字符串(2, '世界');
+  replMsg.写入字符串(3, 'cloze:Front');
+  replMsg.写入字符串(3, 'hint');
+  const replNode = new 协议写入器();
+  replNode.写入子消息(2, replMsg);
 
-  const resp = new ProtoWriter();
-  resp.writeMessage(1, textNode);
-  resp.writeMessage(1, replNode);
-  resp.writeMessage(2, textNode); // answer 侧复用同一节点即可验证解码
-  resp.writeString(3, '.card { font-size: 20px; }');
-  resp.writeBool(4, true);
-  resp.writeBool(5, false);
+  const resp = new 协议写入器();
+  resp.写入子消息(1, textNode);
+  resp.写入子消息(1, replNode);
+  resp.写入子消息(2, textNode);
+  resp.写入字符串(3, '.card { font-size: 20px; }');
+  resp.写入布尔(4, true);
+  resp.写入布尔(5, false);
 
-  const rendered = decodeRenderCardResponse(resp.toBytes());
+  const rendered = decodeRenderCardResponse(resp.转为字节());
   assert.equal(rendered.questionNodes.length, 2);
   assert.equal(rendered.questionNodes[0].text, '问题：');
   assert.equal(rendered.questionNodes[0].replacement, null);

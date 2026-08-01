@@ -1,14 +1,9 @@
-// 检查数据库链路契约测试（T5）：
-// - CollectionService 只经 BackendSession 走 BACKEND_COLLECTION(3) 的 CHECK_DATABASE(6)；
-// - CheckDatabaseResponse 解码器字段符合 collection.proto（repeated string problems = 1）；
-// - SettingsPanel「检查数据库」入口真实调用 checkDatabase()，busy 防重入，
-//   结果（通过/问题列表）与错误透传均走面板内状态行。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { COLLECTION_METHOD, SERVICE } from '../../entry/src/main/ets/backend/ServiceIds.ts';
+import { 集合方法, 服务号 } from '../../entry/src/main/ets/backend/服务索引.ts';
 import { decodeCheckDatabaseResponse } from '../../entry/src/main/ets/proto/messages/CollectionMessages.ts';
-import { ProtoWriter } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
+import { 协议写入器 } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
 
 function projectUrl(relativePath) {
   return new URL(`../../${relativePath}`, import.meta.url);
@@ -18,32 +13,32 @@ function read(relativePath) {
   return readFileSync(projectUrl(relativePath), 'utf8');
 }
 
-const COLLECTION_SERVICE = 'entry/src/main/ets/backend/CollectionService.ts';
-const SETTINGS_PANEL = 'entry/src/main/ets/components/SettingsPanel.ets';
+const COLLECTION_SERVICE = 'entry/src/main/ets/backend/集合服务.ts';
+const SETTINGS_PANEL = 'entry/src/main/ets/components/设置面板.ets';
 const STRINGS = 'entry/src/main/resources/base/element/string.json';
 
 test('check database uses collection service id 3 and method index 6', () => {
-  assert.equal(SERVICE.BACKEND_COLLECTION, 3, 'collection service id');
-  assert.equal(COLLECTION_METHOD.CHECK_DATABASE, 6, 'CheckDatabase method index');
+  assert.equal(服务号.后端集合, 3, 'collection service id');
+  assert.equal(集合方法.检查数据库, 6, 'CheckDatabase method index');
 });
 
-test('collection service wraps checkDatabase through BackendSession only', () => {
+test('collection service wraps checkDatabase through 后端会话 only', () => {
   const service = read(COLLECTION_SERVICE);
 
-  assert.match(service, /BackendSession\.getInstance\(\)/);
-  assert.doesNotMatch(service, /new BackendClient/, 'must go through BackendSession');
+  assert.match(service, /后端会话\.获取实例\(\)/);
+  assert.doesNotMatch(service, /new 后端客户端/, 'must go through 后端会话');
 
-  assert.match(service, /async checkDatabase\(\): Promise<string\[\]>/);
-  assert.match(service, /SERVICE\.BACKEND_COLLECTION, COLLECTION_METHOD\.CHECK_DATABASE, new Uint8Array\(0\)/,
+  assert.match(service, /async 检查数据库\(\): Promise<string\[\]>/);
+  assert.match(service, /服务号\.后端集合, 集合方法\.检查数据库, new Uint8Array\(0\)/,
     'empty request body, generic.Empty');
-  assert.match(service, /decodeCheckDatabaseResponse\(response\)/);
+  assert.match(service, /decodeCheckDatabaseResponse\(响应字节\)/);
 });
 
 test('check database decoder reads repeated problems, empty wire means pass', () => {
-  const w = new ProtoWriter();
-  w.writeString(1, '卡片表存在孤儿行');
-  w.writeString(1, '复习日志时间戳异常');
-  assert.deepEqual(decodeCheckDatabaseResponse(w.toBytes()), ['卡片表存在孤儿行', '复习日志时间戳异常']);
+  const w = new 协议写入器();
+  w.写入字符串(1, '卡片表存在孤儿行');
+  w.写入字符串(1, '复习日志时间戳异常');
+  assert.deepEqual(decodeCheckDatabaseResponse(w.转为字节()), ['卡片表存在孤儿行', '复习日志时间戳异常']);
 
   assert.deepEqual(decodeCheckDatabaseResponse(new Uint8Array(0)), [],
     'no problems on the wire means the check passed');
@@ -52,33 +47,33 @@ test('check database decoder reads repeated problems, empty wire means pass', ()
 test('settings panel wires check database entry to the service with busy guard', () => {
   const panel = read(SETTINGS_PANEL);
 
-  assert.match(panel, /import \{ CollectionService \} from '\.\.\/backend\/CollectionService'/);
-  assert.match(panel, /await this\.collectionService\.checkDatabase\(\)/,
+  assert.match(panel, /import \{ 集合服务 \} from '\.\.\/backend\/集合服务'/);
+  assert.match(panel, /await this\.集合服务实例\.检查数据库\(\)/,
     'entry really calls the service');
-  assert.match(panel, /this\.runCheckDatabase\(\);/, 'row taps into the handler');
+  assert.match(panel, /this\.执行数据库检查\(\);/, 'row taps into the handler');
 
-  assert.match(panel, /if \(this\.checkDbBusy\) \{[\s\S]*?return;/, 'reentrancy guard in handler');
-  assert.match(panel, /\.enabled\(!this\.checkDbBusy\)/, 'row disabled while busy');
-  assert.match(panel, /this\.checkDbBusy \? \$r\('app\.string\.check_db_running'\)/,
+  assert.match(panel, /if \(this\.数据库检查中\) \{[\s\S]*?return;/, 'reentrancy guard in handler');
+  assert.match(panel, /\.enabled\(!this\.数据库检查中\)/, 'row disabled while busy');
+  assert.match(panel, /this\.数据库检查中 \? \$r\('app\.string\.check_db_running'\)/,
     'busy state visible on the row');
 });
 
 test('settings panel renders pass, problems and error outcomes', () => {
   const panel = read(SETTINGS_PANEL);
 
-  assert.match(panel, /if \(this\.checkDbError !== ''\)/, 'error branch first');
-  assert.match(panel, /Text\(this\.checkDbError\)/, 'error message passed through');
-  const handler = panel.match(/runCheckDatabase\(\): Promise<void> \{[\s\S]*?\n  \}/);
+  assert.match(panel, /if \(this\.数据库错误信息 !== ''\)/, 'error branch first');
+  assert.match(panel, /Text\(this\.数据库错误信息\)/, 'error message passed through');
+  const handler = panel.match(/执行数据库检查\(\): Promise<void> \{[\s\S]*?\n  \}/);
   assert.notEqual(handler, null);
-  assert.match(handler[0], /this\.checkDbError = error instanceof Error \? error\.message : `\$\{error\}`;/,
+  assert.match(handler[0], /this\.数据库错误信息 = error instanceof Error \? error\.message : `\$\{error\}`;/,
     'failure surfaces raw backend message');
-  assert.match(handler[0], /finally \{\s*this\.checkDbBusy = false;/, 'busy always released');
+  assert.match(handler[0], /finally \{\s*this\.数据库检查中 = false;/, 'busy always released');
 
-  assert.match(panel, /this\.checkDbProblems\.length === 0/);
+  assert.match(panel, /this\.数据库问题列表\.length === 0/);
   assert.match(panel, /\$r\('app\.string\.check_db_passed'\)/, 'empty problems means pass');
-  assert.match(panel, /\$r\('app\.string\.check_db_problems', this\.checkDbProblems\.length\)/,
+  assert.match(panel, /\$r\('app\.string\.check_db_problems', this\.数据库问题列表\.length\)/,
     'problem count listed');
-  assert.match(panel, /ForEach\(this\.checkDbProblems\.slice\(0, 3\)/,
+  assert.match(panel, /ForEach\(this\.数据库问题列表\.slice\(0, 3\)/,
     'problem content summary capped at first entries');
 });
 

@@ -12,9 +12,9 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { resourceManager } from '@kit.LocalizationKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { applySystemBars } from '../utils/ThemeController';
-import { applyColorTheme } from '../utils/ColorThemeManager';
-import { ColorTheme, DEFAULT_COLOR_THEME, normalizeColorTheme } from '../model/ColorTheme';
+import { 应用系统栏样式 } from '../utils/主题控制器';
+import { 应用颜色主题 } from '../utils/颜色主题管理器';
+import { 颜色主题, 默认颜色主题, 规范化颜色主题 } from '../model/颜色主题';
 
 const DOMAIN: number = 0x4342;
 
@@ -59,16 +59,13 @@ export default class EntryAbility extends UIAbility {
     this.publishSystemDarkMode(isDark);
     const activeThemeMode: string | undefined = AppStorage.get<string>('themeMode');
     if (activeThemeMode === undefined || activeThemeMode === 'system') {
-      applySystemBars(this.context, isDark);
+      应用系统栏样式(this.context, isDark);
     }
-    // 系统深浅色变化时颜色主题的浅色/深色套也要同步刷新。
-    // AppStorage 中 colorTheme 由 Index.restoreColorTheme 在启动时写入；
-    // 若 Index 尚未挂载（极端时序），用默认主题兜底。
     const storedTheme: string | undefined = AppStorage.get<string>('colorTheme');
-    const theme: ColorTheme = storedTheme === undefined
-      ? DEFAULT_COLOR_THEME
-      : normalizeColorTheme(storedTheme);
-    applyColorTheme(theme, isDark);
+    const theme: 颜色主题 = storedTheme === undefined
+      ? 默认颜色主题
+      : 规范化颜色主题(storedTheme);
+    应用颜色主题(theme, isDark);
   }
 
   private retryLoadContent(windowStage: window.WindowStage, remainingAttempts: number): void {
@@ -77,25 +74,25 @@ export default class EntryAbility extends UIAbility {
       return;
     }
     setTimeout(() => {
-      windowStage.loadContent('pages/Index', (error: BusinessError) => {
+      windowStage.loadContent('pages/首页', (error: BusinessError) => {
         if (error.code) {
           hilog.error(DOMAIN, 'jidecards', 'Retry failed to load main page: %{public}d', error.code);
           this.retryLoadContent(windowStage, remainingAttempts - 1);
           return;
         }
-        applySystemBars(this.context, this.effectiveDarkMode());
+        应用系统栏样式(this.context, this.effectiveDarkMode());
       });
     }, 1000);
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    windowStage.loadContent('pages/Index', (error: BusinessError) => {
+    windowStage.loadContent('pages/首页', (error: BusinessError) => {
       if (error.code) {
         hilog.error(DOMAIN, 'jidecards', 'Unable to load main page: %{public}d', error.code);
         this.retryLoadContent(windowStage, 1);
         return;
       }
-      applySystemBars(this.context, this.effectiveDarkMode());
+      应用系统栏样式(this.context, this.effectiveDarkMode());
     });
   }
 

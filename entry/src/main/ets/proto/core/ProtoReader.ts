@@ -1,181 +1,162 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Protobuf wire format 读取器（proto3）。
-// 规范来源：https://protobuf.dev/programming-guides/encoding/
-// int64/uint64 超过 Number.MAX_SAFE_INTEGER 时抛错——Anki 的 id/时间戳远小于此，
-// 真遇到说明数据异常，宁可显式失败也不静默丢精度。
+import { UTF8解码 } from './utf8';
+import { 线类型_定长32, 线类型_定长64, 线类型_长度分隔, 线类型_变长整数 } from './ProtoWriter';
 
-import { utf8Decode } from './utf8';
-import { WIRE_FIXED32, WIRE_FIXED64, WIRE_LENGTH_DELIMITED, WIRE_VARINT } from './ProtoWriter';
-
-export interface ProtoTag {
-  fieldNumber: number;
-  wireType: number;
+export interface 协议标签 {
+  字段号: number;
+  线类型: number;
 }
 
-export class ProtoReader {
-  private pos = 0;
-  private readonly bytes: Uint8Array;
+export class 协议读取器 {
+  private 位置 = 0;
+  private readonly 字节流: Uint8Array;
 
-  constructor(bytes: Uint8Array) {
-    this.bytes = bytes;
+  constructor(字节流: Uint8Array) {
+    this.字节流 = 字节流;
   }
 
-  get done(): boolean {
-    return this.pos >= this.bytes.length;
+  get 已读完(): boolean {
+    return this.位置 >= this.字节流.length;
   }
 
-  /** 当前读取位置（配合 sliceFrom 截取字段原始字节，用于保真回写） */
-  get offset(): number {
-    return this.pos;
+  get 当前位置(): number {
+    return this.位置;
   }
 
-  /** 截取 [start, 当前位置) 的原始字节（含 tag），原样保留未建模字段 */
-  sliceFrom(start: number): Uint8Array {
-    return this.bytes.slice(start, this.pos);
+  截取片段(起点: number): Uint8Array {
+    return this.字节流.slice(起点, this.位置);
   }
 
-  private readByte(): number {
-    if (this.pos >= this.bytes.length) {
+  private 读取单字节(): number {
+    if (this.位置 >= this.字节流.length) {
       throw new Error('proto: unexpected end of input');
     }
-    return this.bytes[this.pos++];
+    return this.字节流[this.位置++];
   }
 
-  readTag(): ProtoTag | null {
-    if (this.done) {
+  读取标签(): 协议标签 | null {
+    if (this.已读完) {
       return null;
     }
-    const key = this.readVarintBig();
-    const wireType = Number(key & 0x7n);
-    const fieldNumber = Number(key >> 3n);
-    if (fieldNumber <= 0) {
+    const 键 = this.读取大变长整数();
+    const 线类型 = Number(键 & 0x7n);
+    const 字段号 = Number(键 >> 3n);
+    if (字段号 <= 0) {
       throw new Error('proto: invalid field number 0');
     }
-    return { fieldNumber, wireType };
+    return { 字段号, 线类型 };
   }
 
-  readVarintBig(): bigint {
-    let result = 0n;
-    let shift = 0n;
+  读取大变长整数(): bigint {
+    let 结果 = 0n;
+    let 位移 = 0n;
     for (let i = 0; i < 10; i++) {
-      const b = this.readByte();
-      result |= BigInt(b & 0x7f) << shift;
+      const b = this.读取单字节();
+      结果 |= BigInt(b & 0x7f) << 位移;
       if ((b & 0x80) === 0) {
-        return result;
+        return 结果;
       }
-      shift += 7n;
+      位移 += 7n;
     }
     throw new Error('proto: varint exceeds 10 bytes');
   }
 
-  /** varint → number，超出安全整数范围抛错 */
-  readVarint(): number {
-    const value = this.readVarintBig();
-    if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new Error(`proto: varint ${value} exceeds safe integer range`);
+  读取变长整数(): number {
+    const 值 = this.读取大变长整数();
+    if (值 > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`proto: varint ${值} exceeds safe integer range`);
     }
-    return Number(value);
+    return Number(值);
   }
 
-  /** int64：按二进制补码解释 */
-  readInt64(): number {
-    const unsigned = this.readVarintBig();
-    const signed = BigInt.asIntN(64, unsigned);
-    if (signed > BigInt(Number.MAX_SAFE_INTEGER) || signed < BigInt(-Number.MAX_SAFE_INTEGER)) {
-      throw new Error(`proto: int64 ${signed} exceeds safe integer range`);
+  读取64位整数(): number {
+    const 无符号 = this.读取大变长整数();
+    const 有符号 = BigInt.asIntN(64, 无符号);
+    if (有符号 > BigInt(Number.MAX_SAFE_INTEGER) || 有符号 < BigInt(-Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`proto: int64 ${有符号} exceeds safe integer range`);
     }
-    return Number(signed);
+    return Number(有符号);
   }
 
-  /**
-   * int32：按二进制补码解释。protobuf 中 int32 负数（如 Anki usn=-1）会被 prost
-   * 编码成 10 字节 varint（先 sign-extend 到 64 位再编码），不能直接用 readVarint
-   * 读取——否则会因值超过 Number.MAX_SAFE_INTEGER 抛错。这里读完 varint 后用
-   * BigInt.asIntN(32, ...) 截到 32 位有符号整数即可。
-   */
-  readInt32(): number {
-    const unsigned = this.readVarintBig();
-    const signed = BigInt.asIntN(32, unsigned);
-    if (signed > BigInt(2147483647) || signed < BigInt(-2147483648)) {
-      throw new Error(`proto: int32 ${signed} out of range`);
+  读取32位整数(): number {
+    const 无符号 = this.读取大变长整数();
+    const 有符号 = BigInt.asIntN(32, 无符号);
+    if (有符号 > BigInt(2147483647) || 有符号 < BigInt(-2147483648)) {
+      throw new Error(`proto: int32 ${有符号} out of range`);
     }
-    return Number(signed);
+    return Number(有符号);
   }
 
-  readBool(): boolean {
-    return this.readVarint() !== 0;
+  读取布尔(): boolean {
+    return this.读取变长整数() !== 0;
   }
 
-  /** float（wire type 5，小端 32 位） */
-  readFloat(): number {
-    if (this.pos + 4 > this.bytes.length) {
+  读取浮点(): number {
+    if (this.位置 + 4 > this.字节流.length) {
       throw new Error('proto: unexpected end of input');
     }
-    const buf = new Uint8Array(4);
-    buf.set(this.bytes.slice(this.pos, this.pos + 4));
-    this.pos += 4;
-    return new Float32Array(buf.buffer)[0];
+    const 缓冲 = new Uint8Array(4);
+    缓冲.set(this.字节流.slice(this.位置, this.位置 + 4));
+    this.位置 += 4;
+    return new Float32Array(缓冲.buffer)[0];
   }
 
-  /** packed repeated int64（wire type 2 载荷） */
-  readPackedInt64(): number[] {
-    const payload = new ProtoReader(this.readBytes());
-    const out: number[] = [];
-    while (!payload.done) {
-      out.push(payload.readInt64());
+  读取打包64位整数(): number[] {
+    const 载荷 = new 协议读取器(this.读取字节());
+    const 输出: number[] = [];
+    while (!载荷.已读完) {
+      输出.push(载荷.读取64位整数());
     }
-    return out;
+    return 输出;
   }
 
-  /** packed repeated float（wire type 2 载荷，小端 32 位） */
-  readPackedFloat(): number[] {
-    const payload = new ProtoReader(this.readBytes());
-    const out: number[] = [];
-    while (!payload.done) {
-      out.push(payload.readFloat());
+  读取打包浮点(): number[] {
+    const 载荷 = new 协议读取器(this.读取字节());
+    const 输出: number[] = [];
+    while (!载荷.已读完) {
+      输出.push(载荷.读取浮点());
     }
-    return out;
+    return 输出;
   }
 
-  readBytes(): Uint8Array {
-    const length = this.readVarint();
-    if (this.pos + length > this.bytes.length) {
+  读取字节(): Uint8Array {
+    const 长度 = this.读取变长整数();
+    if (this.位置 + 长度 > this.字节流.length) {
       throw new Error('proto: length-delimited field exceeds input');
     }
-    const out = this.bytes.slice(this.pos, this.pos + length);
-    this.pos += length;
-    return out;
+    const 输出 = this.字节流.slice(this.位置, this.位置 + 长度);
+    this.位置 += 长度;
+    return 输出;
   }
 
-  readString(): string {
-    return utf8Decode(this.readBytes());
+  读取字符串(): string {
+    return UTF8解码(this.读取字节());
   }
 
-  /** 跳过未知字段，保证向前兼容（新版 Anki 加字段不崩） */
-  skipField(wireType: number): void {
-    switch (wireType) {
-      case WIRE_VARINT:
-        this.readVarintBig();
+  跳过字段(线类型: number): void {
+    switch (线类型) {
+      case 线类型_变长整数:
+        this.读取大变长整数();
         return;
-      case WIRE_FIXED64:
-        this.advance(8);
+      case 线类型_定长64:
+        this.前进(8);
         return;
-      case WIRE_LENGTH_DELIMITED:
-        this.readBytes();
+      case 线类型_长度分隔:
+        this.读取字节();
         return;
-      case WIRE_FIXED32:
-        this.advance(4);
+      case 线类型_定长32:
+        this.前进(4);
         return;
       default:
-        throw new Error(`proto: unsupported wire type ${wireType}`);
+        throw new Error(`proto: unsupported wire type ${线类型}`);
     }
   }
 
-  private advance(count: number): void {
-    if (this.pos + count > this.bytes.length) {
+  private 前进(数量: number): void {
+    if (this.位置 + 数量 > this.字节流.length) {
       throw new Error('proto: unexpected end of input');
     }
-    this.pos += count;
+    this.位置 += 数量;
   }
 }

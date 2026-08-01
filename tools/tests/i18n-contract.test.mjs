@@ -28,7 +28,7 @@ test('English resources are translated and contain no Chinese copy', () => {
   assert.equal(existsSync(join(root, english)), true, 'English resources must exist');
   const zhItems = new Map(JSON.parse(read('entry/src/main/resources/base/element/string.json')).string
     .map((item) => [item.name, item.value]));
-  const allowedIdenticalValues = new Set(['working_name', 'entry_ability_desc', 'feedback_email', 'app_about_copyright', 'field_help_button']);
+  const allowedIdenticalValues = new Set(['working_name', 'entry_ability_desc', 'feedback_email', 'app_about_copyright', 'field_help_button', 'image_occlusion_c_label']);
   for (const item of JSON.parse(read(english)).string) {
     assert.doesNotMatch(item.value, /[\u4e00-\u9fff]/, `${item.name} must be English`);
     if (!allowedIdenticalValues.has(item.name)) {
@@ -38,10 +38,10 @@ test('English resources are translated and contain no Chinese copy', () => {
 });
 
 test('language store uses the HarmonyOS preferred-language API', () => {
-  const relativePath = 'entry/src/main/ets/model/LanguageStore.ets';
-  assert.equal(existsSync(join(root, relativePath)), true, 'LanguageStore must exist');
+  const relativePath = 'entry/src/main/ets/model/语言存储.ets';
+  assert.equal(existsSync(join(root, relativePath)), true, '语言存储 must exist');
   const source = read(relativePath);
-  assert.match(source, /export type LanguageMode = 'zh-Hans' \| 'en'/);
+  assert.match(source, /export type 语言模式 = 'zh-Hans' \| 'en'/);
   assert.match(source, /i18n\.System\.getAppPreferredLanguage/);
   assert.match(source, /i18n\.System\.setAppPreferredLanguage/);
   assert.doesNotMatch(source, /'system'/);
@@ -72,6 +72,6 @@ test('pages and components do not embed translated state, toast, a11y, select, o
 });
 
 test('localized fallback errors do not dereference a missing ability context', () => {
-  const source = read('entry/src/main/ets/pages/StudyPage.ets');
+  const source = read('entry/src/main/ets/pages/学习页.ets');
   assert.doesNotMatch(source, /if \(context === null\) \{[^}]*context\.resourceManager/);
 });

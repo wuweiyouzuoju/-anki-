@@ -1,15 +1,7 @@
-// 埋藏/暂停 + 完成页契约测试（T3）：
-// - SchedulerService 只经 BackendSession 走 BACKEND_SCHEDULER(13) 的 11/12/13/14 方法索引；
-// - StudyPage 提供「埋藏/暂停」次级入口：BURY_USER（明天再见）/SUSPEND（手动恢复前不再出现），
-//   与上游 reviewer.py bury_current_card/suspend_current_card 语义一致，成功后直接取下一张；
-// - 完成页接 congratsInfo 真实数据（剩余学习卡/今日上限提示/恢复埋藏入口）；
-// - CongratsInfo 只有布尔标记、不给卡片 id，恢复必须走 UnburyDeck(deckId, ALL)
-//   （同桌面 overview.py on_unbury），不能走按 id 的 RestoreBuriedAndSuspendedCards；
-// - congratsInfo 失败降级为静态完成文案，不进入错误态。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { SCHEDULER_METHOD, SERVICE } from '../../entry/src/main/ets/backend/ServiceIds.ts';
+import { 调度器方法, 服务号 } from '../../entry/src/main/ets/backend/服务索引.ts';
 import {
   BURY_SUSPEND_MODE_BURY_USER,
   BURY_SUSPEND_MODE_SUSPEND,
@@ -24,106 +16,104 @@ function read(relativePath) {
   return readFileSync(projectUrl(relativePath), 'utf8');
 }
 
-const SCHEDULER_SERVICE = 'entry/src/main/ets/backend/SchedulerService.ts';
-const STUDY_PAGE = 'entry/src/main/ets/pages/StudyPage.ets';
+const SCHEDULER_SERVICE = 'entry/src/main/ets/backend/调度器服务.ts';
+const STUDY_PAGE = 'entry/src/main/ets/pages/学习页.ets';
 const STRINGS = 'entry/src/main/resources/base/element/string.json';
 
 test('scheduler method indexes map to CongratsInfo/Restore/UnburyDeck/BuryOrSuspend 11/12/13/14', () => {
-  assert.equal(SERVICE.BACKEND_SCHEDULER, 13, 'scheduler service id');
-  assert.equal(SCHEDULER_METHOD.CONGRATS_INFO, 11);
-  assert.equal(SCHEDULER_METHOD.RESTORE_BURIED_AND_SUSPENDED, 12);
-  assert.equal(SCHEDULER_METHOD.UNBURY_DECK, 13);
-  assert.equal(SCHEDULER_METHOD.BURY_OR_SUSPEND, 14);
+  assert.equal(服务号.后端调度器, 13, 'scheduler service id');
+  assert.equal(调度器方法.完成页信息, 11);
+  assert.equal(调度器方法.恢复埋藏与暂停, 12);
+  assert.equal(调度器方法.按牌组恢复埋藏, 13);
+  assert.equal(调度器方法.埋藏或暂停, 14);
 });
 
 test('bury/suspend mode constants match scheduler.proto (SUSPEND=0, BURY_USER=2, UNBURY ALL=0)', () => {
-  // 上游 pylib/anki/scheduler/base.py：手动 bury_cards → BURY_USER；suspend_cards → SUSPEND
   assert.equal(BURY_SUSPEND_MODE_SUSPEND, 0);
   assert.equal(BURY_SUSPEND_MODE_BURY_USER, 2);
   assert.equal(UNBURY_MODE_ALL, 0);
 });
 
-test('scheduler service wraps bury/suspend, unbury, restore and congrats through BackendSession only', () => {
+test('scheduler service wraps bury/suspend, unbury, restore and congrats through 后端会话 only', () => {
   const service = read(SCHEDULER_SERVICE);
 
-  assert.match(service, /BackendSession\.getInstance\(\)/);
-  assert.doesNotMatch(service, /new BackendClient/, 'must go through BackendSession');
+  assert.match(service, /后端会话\.获取实例\(\)/);
+  assert.doesNotMatch(service, /new 后端客户端/, 'must go through 后端会话');
 
-  assert.match(service, /async buryOrSuspendCards\(cardId: number, mode: number\): Promise<void>/);
-  assert.match(service, /encodeBuryOrSuspendCardsRequest\(\[cardId\], \[\], mode\)/,
+  assert.match(service, /async 埋藏或暂停卡片\(卡片ID: number, 模式: number\): Promise<void>/);
+  assert.match(service, /encodeBuryOrSuspendCardsRequest\(\[卡片ID\], \[\], 模式\)/,
     'single card id, no note ids');
-  assert.match(service, /SERVICE\.BACKEND_SCHEDULER, SCHEDULER_METHOD\.BURY_OR_SUSPEND, request/);
+  assert.match(service, /服务号\.后端调度器, 调度器方法\.埋藏或暂停, 请求字节/);
 
-  assert.match(service, /async unburyDeck\(deckId: number, mode: number\): Promise<void>/);
-  assert.match(service, /encodeUnburyDeckRequest\(deckId, mode\)/);
-  assert.match(service, /SERVICE\.BACKEND_SCHEDULER, SCHEDULER_METHOD\.UNBURY_DECK, request/);
+  assert.match(service, /async 按牌组恢复埋藏\(牌组ID: number, 模式: number\): Promise<void>/);
+  assert.match(service, /encodeUnburyDeckRequest\(牌组ID, 模式\)/);
+  assert.match(service, /服务号\.后端调度器, 调度器方法\.按牌组恢复埋藏, 请求字节/);
 
-  assert.match(service, /async restoreBuriedAndSuspendedCards\(cardIds: number\[\]\): Promise<void>/);
-  assert.match(service, /encodeCardIds\(cardIds\)/);
-  assert.match(service, /SERVICE\.BACKEND_SCHEDULER, SCHEDULER_METHOD\.RESTORE_BURIED_AND_SUSPENDED, request/);
+  assert.match(service, /async 恢复埋藏与暂停的卡片\(卡片ID列表: number\[\]\): Promise<void>/);
+  assert.match(service, /encodeCardIds\(卡片ID列表\)/);
+  assert.match(service, /服务号\.后端调度器, 调度器方法\.恢复埋藏与暂停, 请求字节/);
 
-  assert.match(service, /async congratsInfo\(\): Promise<CongratsInfo>/);
-  assert.match(service, /SERVICE\.BACKEND_SCHEDULER, SCHEDULER_METHOD\.CONGRATS_INFO, new Uint8Array\(0\)/);
-  assert.match(service, /decodeCongratsInfo\(response\)/);
+  assert.match(service, /async 获取完成页信息\(\): Promise<CongratsInfo>/);
+  assert.match(service, /服务号\.后端调度器, 调度器方法\.完成页信息, new Uint8Array\(0\)/);
+  assert.match(service, /decodeCongratsInfo\(响应字节\)/);
 });
 
 test('study page bury/suspend entries use upstream reviewer semantics and refetch next card', () => {
   const page = read(STUDY_PAGE);
 
-  // 次级操作行：问题/答案两态均可见
-  assert.match(page, /if \(this\.phase === 'question' \|\| this\.phase === 'answer'\) \{[\s\S]*?app\.string\.study_bury[\s\S]*?app\.string\.study_suspend/,
+  assert.match(page, /if \(this\.阶段 === 'question' \|\| this\.阶段 === 'answer'\) \{[\s\S]*?app\.string\.study_bury[\s\S]*?app\.string\.study_suspend/,
     'bury/suspend row visible in both question and answer phases');
-  assert.match(page, /this\.buryOrSuspendCurrent\(BURY_SUSPEND_MODE_BURY_USER\)/,
+  assert.match(page, /this\.埋藏或暂停当前卡\(BURY_SUSPEND_MODE_BURY_USER\)/,
     'manual bury maps to BURY_USER (see you tomorrow)');
-  assert.match(page, /this\.buryOrSuspendCurrent\(BURY_SUSPEND_MODE_SUSPEND\)/,
+  assert.match(page, /this\.埋藏或暂停当前卡\(BURY_SUSPEND_MODE_SUSPEND\)/,
     'suspend maps to SUSPEND');
 
-  const body = page.match(/buryOrSuspendCurrent\(mode: number\): Promise<void> \{[\s\S]*?\n  \}/);
+  const body = page.match(/埋藏或暂停当前卡\(mode: number\): Promise<void> \{[\s\S]*?\n  \}/);
   assert.notEqual(body, null);
-  assert.match(body[0], /if \(this\.answering \|\| this\.currentCard === null\)/,
+  assert.match(body[0], /if \(this\.评分中 \|\| this\.当前卡片 === null\)/,
     'bury/suspend reuses reentrancy guard');
-  assert.match(body[0], /await this\.schedulerService\.buryOrSuspendCards\(this\.currentCard\.cardId, mode\);\s*await this\.loadNextCard\(\);/,
+  assert.match(body[0], /await this\.调度器服务实例\.埋藏或暂停卡片\(this\.当前卡片\.cardId, mode\);\s*await this\.加载下一张卡\(\);/,
     'card leaves today queue, next card fetched immediately');
-  assert.match(body[0], /this\.phase = 'error';/,
+  assert.match(body[0], /this\.阶段 = 'error';/,
     'bury/suspend failure surfaces through existing error state');
 });
 
 test('done page fetches congrats info when queue empties and degrades silently on failure', () => {
   const page = read(STUDY_PAGE);
 
-  assert.match(page, /queued\.cards\.length === 0[\s\S]*?await this\.loadCongratsInfo\(\);/,
+  assert.match(page, /queued\.cards\.length === 0[\s\S]*?await this\.加载完成页信息\(\);/,
     'congrats info fetched on entering done phase');
-  assert.match(page, /this\.congratsLoaded = false;[\s\S]*?getQueuedCards/,
+  assert.match(page, /this\.完成页数据已加载 = false;[\s\S]*?获取队首卡片/,
     'stale congrats cleared before every refetch');
 
-  const body = page.match(/loadCongratsInfo\(\): Promise<void> \{[\s\S]*?\n  \}/);
+  const body = page.match(/加载完成页信息\(\): Promise<void> \{[\s\S]*?\n  \}/);
   assert.notEqual(body, null);
-  assert.match(body[0], /await this\.schedulerService\.congratsInfo\(\)/);
+  assert.match(body[0], /await this\.调度器服务实例\.获取完成页信息\(\)/);
   assert.match(body[0], /info\.secsUntilNextLearn < SECONDS_PER_DAY/,
     'learn-remaining hint suppressed when next learn card is >=1 day away (upstream buildNextLearnMsg)');
-  assert.match(body[0], /this\.congratsBuried = info\.haveSchedBuried \|\| info\.haveUserBuried/);
-  assert.match(body[0], /catch \(error\) \{\s*this\.congratsLoaded = false;/,
+  assert.match(body[0], /this\.完成页有埋藏 = info\.haveSchedBuried \|\| info\.haveUserBuried/);
+  assert.match(body[0], /catch \(error\) \{\s*this\.完成页数据已加载 = false;/,
     'failure degrades to static finish copy');
-  assert.doesNotMatch(body[0], /this\.phase = 'error'/,
+  assert.doesNotMatch(body[0], /this\.阶段 = 'error'/,
     'congrats failure must not surface as error page');
 });
 
 test('done page renders real congrats data and deck-scoped unbury entry', () => {
   const page = read(STUDY_PAGE);
 
-  assert.match(page, /\$r\('app\.string\.study_congrats_learn_remaining', this\.congratsLearnRemaining, this\.congratsNextLearnMinutes\)/);
-  assert.match(page, /if \(this\.congratsReviewRemaining\) \{[\s\S]*?study_congrats_review_limit/);
-  assert.match(page, /if \(this\.congratsNewRemaining\) \{[\s\S]*?study_congrats_new_limit/);
-  assert.match(page, /if \(this\.congratsBuried\) \{[\s\S]*?Button\(\$r\('app\.string\.study_unbury'\)\)/);
-  assert.match(page, /this\.restoreBuried\(\);/);
+  assert.match(page, /\$r\('app\.string\.study_congrats_learn_remaining', this\.完成页学习剩余, this\.完成页下张学习分钟\)/);
+  assert.match(page, /if \(this\.完成页复习受限\) \{[\s\S]*?study_congrats_review_limit/);
+  assert.match(page, /if \(this\.完成页新卡受限\) \{[\s\S]*?study_congrats_new_limit/);
+  assert.match(page, /if \(this\.完成页有埋藏\) \{[\s\S]*?Button\(\$r\('app\.string\.study_unbury'\)\)/);
+  assert.match(page, /this\.恢复埋藏\(\);/);
 
-  const body = page.match(/restoreBuried\(\): Promise<void> \{[\s\S]*?\n  \}/);
+  const body = page.match(/恢复埋藏\(\): Promise<void> \{[\s\S]*?\n  \}/);
   assert.notEqual(body, null);
-  assert.match(body[0], /await this\.schedulerService\.unburyDeck\(this\.deckId, UNBURY_MODE_ALL\);\s*await this\.loadNextCard\(\);/,
+  assert.match(body[0], /await this\.调度器服务实例\.按牌组恢复埋藏\(this\.牌组ID, UNBURY_MODE_ALL\);\s*await this\.加载下一张卡\(\);/,
     'CongratsInfo exposes no card ids, so restore is deck-scoped like desktop overview, then refetch');
-  assert.match(body[0], /this\.phase = 'error';/);
+  assert.match(body[0], /this\.阶段 = 'error';/);
 
-  assert.doesNotMatch(page, /restoreBuriedAndSuspendedCards\(/,
+  assert.doesNotMatch(page, /恢复埋藏与暂停的卡片\(/,
     'id-based restore is not usable from the congrats page (no ids available)');
 });
 

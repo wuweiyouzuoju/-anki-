@@ -77,13 +77,10 @@ impl BackendRegistry {
     }
 
     pub fn insert<B: RawBackend>(&self, backend: B) -> u32 {
-        // 锁中毒时返回无效句柄 0，由 FFI 层转成错误码，绝不在 FFI 边界 panic。
         let mut backends = match self.backends.lock() {
             Ok(backends) => backends,
             Err(_) => return 0,
         };
-        // 句柄 0 保留为“无效”，可用句柄共 u32::MAX 个。耗尽时直接失败，
-        // 避免 next_handle 回绕后在已满的表中无限扫描。
         if backends.len() >= u32::MAX as usize {
             return 0;
         }
@@ -246,7 +243,6 @@ pub unsafe extern "C" fn anki_backend_open(
     {
         return match catch_unwind(AssertUnwindSafe(|| anki::backend::init_backend(init))) {
             Ok(Ok(backend)) => {
-                // 注册也可能 panic（如内部锁状态异常），同样必须关在 catch_unwind 里。
                 let registered = catch_unwind(AssertUnwindSafe(|| {
                     global_backends().insert(AnkiBackend(backend))
                 }));

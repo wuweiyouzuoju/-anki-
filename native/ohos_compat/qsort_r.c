@@ -1,8 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//
-// OHOS musl declares GNU qsort_r() through zstd's feature detection but the
-// API 12 NDK does not export it. Keep this portable, re-entrant implementation
-// local to the native module until the dependency recognizes __OHOS__.
 
 #include <stddef.h>
 
@@ -35,7 +31,6 @@ static void sift_down(unsigned char *base, size_t start, size_t count,
     }
 }
 
-/* 仅供本模块内部静态链接使用；隐藏符号避免与未来 NDK 导出的 qsort_r 冲突。 */
 __attribute__((visibility("hidden")))
 void qsort_r(void *base, size_t count, size_t size,
     jidecards_comparator compare, void *context)

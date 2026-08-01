@@ -7,18 +7,18 @@ function read(relativePath) {
   return readFileSync(new URL(`../../${relativePath}`, import.meta.url), 'utf8');
 }
 
-test('About explains the Anki relationship and independent project status', () => {
-  const panel = read('entry/src/main/ets/components/SettingsPanel.ets');
+test('Licenses panel explains the Anki core relationship and app overview', () => {
+  const panel = read('entry/src/main/ets/components/许可证面板.ets');
 
-  for (const key of ['app_about_title', 'app_about_summary', 'app_about_anki_notice', 'app_about_license_notice']) {
+  for (const key of ['licenses_overview_section', 'licenses_overview_body', 'licenses_third_anki', 'licenses_app_body']) {
     assert.match(panel, new RegExp(`app\\.string\\.${key}`));
   }
 });
 
-test('About keeps local-data backup reminder and stays free of heavy legal wording', () => {
-  const panel = read('entry/src/main/ets/components/SettingsPanel.ets');
+test('About keeps copyright and licenses entry, stays free of heavy legal wording', () => {
+  const panel = read('entry/src/main/ets/components/设置面板.ets');
 
-  for (const key of ['app_about_data_notice', 'app_about_copyright', 'licenses_title']) {
+  for (const key of ['app_about_title', 'app_about_copyright', 'licenses_title']) {
     assert.match(panel, new RegExp(`app\\.string\\.${key}`));
   }
   assert.doesNotMatch(panel, /Copyright ©/);
@@ -27,21 +27,22 @@ test('About keeps local-data backup reminder and stays free of heavy legal wordi
 });
 
 test('open-source entry opens a real legal surface instead of an unavailable stub', () => {
-  const panel = read('entry/src/main/ets/components/SettingsPanel.ets');
-  const page = read('entry/src/main/ets/pages/Index.ets');
+  const panel = read('entry/src/main/ets/components/设置面板.ets');
+  const page = read('entry/src/main/ets/pages/首页.ets');
 
-  assert.match(panel, /onOpenLicenses/);
-  assert.match(page, /LicensesPanel\(\{/);
+  assert.match(panel, /打开许可证回调/);
+  assert.match(page, /许可证面板\(\{/);
   assert.doesNotMatch(page, /license_loading/);
   assert.doesNotMatch(panel, /非官方 AGPL-3\.0-or-later 派生项目/);
 });
 
 test('licenses panel carries AGPL wording, source placeholder and third-party notices', () => {
-  const panelPath = 'entry/src/main/ets/components/LicensesPanel.ets';
+  const panelPath = 'entry/src/main/ets/components/许可证面板.ets';
   const panel = read(panelPath);
 
   for (const key of [
-    'licenses_title', 'licenses_app_section', 'licenses_app_body',
+    'licenses_title', 'licenses_overview_section', 'licenses_overview_body',
+    'licenses_app_section', 'licenses_app_body',
     'licenses_source_section', 'licenses_source_body',
     'licenses_rights_section', 'licenses_rights_body',
     'licenses_third_section', 'licenses_third_anki', 'licenses_third_rust',
@@ -54,7 +55,8 @@ test('licenses panel carries AGPL wording, source placeholder and third-party no
   const strings = JSON.parse(read('entry/src/main/resources/base/element/string.json')).string;
   const values = strings.map((item) => `${item.name}=${item.value}`).join('\n');
   assert.match(values, /AGPL-3\.0-or-later/);
-  assert.match(values, /jidecards contributors/);
+  assert.match(values, /wuweiyouzuoju/);
+  assert.match(values, /本应用内核基于 Anki 26.05 开源 Rust Core 实现/);
   assert.match(values, /【待填写】/);
   assert.match(values, /Ankitects Pty Ltd/);
   assert.match(values, /github\.com\/ankitects\/anki/);
