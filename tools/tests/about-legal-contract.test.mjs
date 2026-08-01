@@ -57,7 +57,7 @@ test('licenses panel carries AGPL wording, source placeholder and third-party no
   assert.match(values, /AGPL-3\.0-or-later/);
   assert.match(values, /wuweiyouzuoju/);
   assert.match(values, /本应用内核基于 Anki 26.05 开源 Rust Core 实现/);
-  assert.match(values, /【待填写】/);
+  assert.match(values, /github\.com\/wuweiyouzuoju\/jidecards-anki-harmonyos/);
   assert.match(values, /Ankitects Pty Ltd/);
   assert.match(values, /github\.com\/ankitects\/anki/);
   assert.match(values, /按“现状”提供/);

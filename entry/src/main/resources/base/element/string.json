@@ -529,7 +529,7 @@
     },
     {
       "name": "licenses_source_body",
-      "value": "本应用的完整对应源代码（含构建脚本与第三方组件清单）随每个发布版本一同提供。开源仓库地址：【待填写】。（此占位须在正式发布前替换为实际仓库地址。）"
+      "value": "本应用的完整对应源代码（含构建脚本与第三方组件清单）随每个发布版本一同提供。开源仓库地址：https://github.com/wuweiyouzuoju/jidecards-anki-harmonyos 。"
     },
     {
       "name": "licenses_rights_section",
