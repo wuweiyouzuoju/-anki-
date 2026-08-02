@@ -21,7 +21,8 @@
 
 # Temporary / debug
 /.tmp_*
-/build_log.txt
+/hap-check-tmp/
+build_log.txt
 /file
 /layout*.xml
 *.hap
