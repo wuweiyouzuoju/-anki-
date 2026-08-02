@@ -1,6 +1,6 @@
 # jidecards
 
-jidecards 是一个基于 HarmonyOS 的 Anki 卡片学习客户端，复用 Anki 的 Rust 后端。最新正式版可在华为应用市场（AppGallery）搜索"jidecards"下载安装。
+jidecards 是一个基于 HarmonyOS 的 Anki 卡片学习客户端，复用 Anki 的 Rust 后端。最新正式版可在华为应用市场（AppGallery）搜索"记得卡片"下载安装。
 
 本项目与 Ankitects、AnkiWeb、AnkiDroid 无关，也未获得其认可。
 
