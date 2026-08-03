@@ -34,13 +34,16 @@ import {
   decodeDeckAndNotetype,
   decodeNote,
   decodeNoteFieldsCheckResponse,
+  decodeUpdateNotesResponse,
   encodeAddNoteRequest,
   encodeDefaultsForAddingRequest,
   encodeNote,
-  encodeNoteId
+  encodeNoteId,
+  encodeUpdateNotesRequest
 } from '../proto/messages/NoteMessages';
 import { encodeNotetypeId } from '../proto/messages/NotetypeMessages';
 import { NoteFieldsCheckState } from '../proto/messages/NoteMessages';
+import type { OpChanges } from '../proto/messages/CollectionMessages';
 
 export type 笔记字段校验键 =
   'add_note_empty_error' |
@@ -93,6 +96,19 @@ export class 笔记服务 {
     const 响应 = await this.会话.调用(
       服务号.后端笔记, 笔记方法.获取笔记, encodeNoteId(笔记ID));
     return decodeNote(响应);
+  }
+
+  /**
+   * 更新笔记（批量）。调后端 UpdateNotes RPC，返回各实体变更标记（OpChanges）。
+   *
+   * Invariants: skipUndoEntry=false 保留撤销栈（与 Anki 桌面端默认一致）；
+   *             调用方负责先做字段校验（参考 添加笔记 的 NoteFieldsCheck 流程）。
+   * Extension Points: 浏览编辑区 T7 单条编辑时调 更新笔记([note], false)。
+   */
+  async 更新笔记(notes: EditableNote[], skipUndoEntry: boolean = false): Promise<OpChanges> {
+    const 响应 = await this.会话.调用(
+      服务号.后端笔记, 笔记方法.更新笔记, encodeUpdateNotesRequest(notes, skipUndoEntry));
+    return decodeUpdateNotesResponse(响应);
   }
 
   async 添加笔记(笔记: EditableNote, 牌组ID: number): Promise<number> {

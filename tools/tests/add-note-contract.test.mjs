@@ -16,6 +16,7 @@ test('Anki 26.05 exposes the Notes and Notetypes service indexes used by add not
   assert.match(ids, /新建笔记:\s*0/);
   assert.match(ids, /添加笔记:\s*1/);
   assert.match(ids, /添加默认值:\s*3/);
+  assert.match(ids, /更新笔记:\s*5/);
   assert.match(ids, /获取笔记:\s*6/);
   assert.match(ids, /笔记字段校验:\s*11/);
   assert.match(ids, /export const 笔记类型方法\s*=\s*\{/);
@@ -28,10 +29,13 @@ test('notes and notetypes codecs cover Anki add-note request and dynamic field m
   const notetypes = read('entry/src/main/ets/proto/messages/NotetypeMessages.ts');
   for (const symbol of [
     'EditableNote', 'encodeNote', 'decodeNote', 'encodeAddNoteRequest', 'decodeAddNoteResponse',
-    'encodeDefaultsForAddingRequest', 'decodeDeckAndNotetype', 'decodeNoteFieldsCheckResponse'
+    'encodeDefaultsForAddingRequest', 'decodeDeckAndNotetype', 'decodeNoteFieldsCheckResponse',
+    'encodeUpdateNotesRequest'
   ]) {
     assert.match(notes, new RegExp(`export (?:function|interface|enum) ${symbol}`));
   }
+  // decodeUpdateNotesResponse 是 re-export 别名（export { decodeOpChanges as decodeUpdateNotesResponse }）
+  assert.match(notes, /export\s*\{[^}]*decodeOpChanges\s+as\s+decodeUpdateNotesResponse[^}]*\}\s*from\s*['"]\.\/CollectionMessages['"]/);
   assert.match(notes, /MISSING_CLOZE/);
   assert.match(notes, /NOTETYPE_NOT_CLOZE/);
   assert.match(notes, /FIELD_NOT_CLOZE/);
@@ -111,6 +115,73 @@ test('every public add-note codec has a callable runtime implementation', async 
   name.写入字符串(2, 'Basic');
   names.写入子消息(1, name);
   assert.deepEqual(notetypes.decodeNotetypeNames(names.转为字节()), [{ id: 6, name: 'Basic' }]);
+});
+
+// T1.5（浏览编辑区 T7 前置）：UpdateNotesRequest 编解码往返 + 与 CardsMessages.encodeUpdateCardsRequest 同构。
+// Proto 来源：anki/proto/anki/notes.proto UpdateNotesRequest { repeated Note notes = 1; bool skip_undo_entry = 2; }
+test('encodeUpdateNotesRequest roundtrips repeated Note + skip_undo_entry like CardsMessages', async () => {
+  const notes = await import('../../entry/src/main/ets/proto/messages/NoteMessages.ts');
+  const collection = await import('../../entry/src/main/ets/proto/messages/CollectionMessages.ts');
+  const { 协议读取器 } = await import('../../entry/src/main/ets/proto/core/ProtoReader.ts');
+
+  const note1 = {
+    id: 100, guid: 'g1', notetypeId: 7, mtimeSecs: 1700000000, usn: 42,
+    tags: ['vocab'], fields: ['front', 'back']
+  };
+  const note2 = {
+    id: 200, guid: 'g2', notetypeId: 7, mtimeSecs: 1700000001, usn: 42,
+    tags: [], fields: ['hello', 'world']
+  };
+
+  // 1. 默认 skipUndoEntry=false：不写字段 2
+  const defaultBytes = notes.encodeUpdateNotesRequest([note1, note2]);
+  const r1 = new 协议读取器(defaultBytes);
+  let seenNotes = 0;
+  let seenSkipUndo = false;
+  let tag;
+  while ((tag = r1.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      seenNotes++;
+      const noteBytes = r1.读取字节();
+      const decoded = notes.decodeNote(noteBytes);
+      if (seenNotes === 1) {
+        assert.deepEqual(decoded, note1);
+      } else if (seenNotes === 2) {
+        assert.deepEqual(decoded, note2);
+      }
+    } else if (tag.字段号 === 2) {
+      seenSkipUndo = r1.读取布尔();
+    } else {
+      r1.跳过字段(tag.线类型);
+    }
+  }
+  assert.equal(seenNotes, 2, '两个 Note 都应嵌入为字段 1');
+  assert.equal(seenSkipUndo, false, '默认 skipUndoEntry=false 不写字段 2');
+
+  // 2. skipUndoEntry=true：写字段 2 bool=true
+  const skipBytes = notes.encodeUpdateNotesRequest([note1], true);
+  const r2 = new 协议读取器(skipBytes);
+  let skipValue = false;
+  let noteCount = 0;
+  while ((tag = r2.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      noteCount++;
+      r2.读取字节();
+    } else if (tag.字段号 === 2) {
+      skipValue = r2.读取布尔();
+    } else {
+      r2.跳过字段(tag.线类型);
+    }
+  }
+  assert.equal(noteCount, 1);
+  assert.equal(skipValue, true, 'skipUndoEntry=true 应写字段 2 bool=true');
+
+  // 3. 空数组：合法空请求
+  assert.equal(notes.encodeUpdateNotesRequest([]).length, 0, '空 notes 数组应产生空请求');
+
+  // 4. decodeUpdateNotesResponse 是 decodeOpChanges 别名（re-export）
+  assert.equal(notes.decodeUpdateNotesResponse, collection.decodeOpChanges,
+    'decodeUpdateNotesResponse 应是 decodeOpChanges 的别名');
 });
 
 test('add note services validate field state before creating the note in the selected deck', () => {

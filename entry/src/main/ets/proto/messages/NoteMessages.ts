@@ -197,3 +197,24 @@ export function decodeNoteFieldsCheckResponse(bytes: Uint8Array): NoteFieldsChec
   }
   return { state };
 }
+
+/**
+ * 编码 UpdateNotesRequest：repeated Note notes = 1, bool skip_undo_entry = 2。
+ * 与 CardsMessages.encodeUpdateCardsRequest 同构（repeated 子消息 + bool skip_undo_entry）。
+ *
+ * Invariants: notes 为空数组时仍编码合法空请求（后端按 0 笔记处理）。
+ * Extension Points: 浏览编辑区 T7 单条编辑时调 encodeUpdateNotesRequest([note], false)。
+ */
+export function encodeUpdateNotesRequest(notes: EditableNote[], skipUndoEntry: boolean = false): Uint8Array {
+  const writer = new 协议写入器();
+  for (const note of notes) {
+    writer.写入字节(1, encodeNote(note));
+  }
+  if (skipUndoEntry) {
+    writer.写入布尔(2, true);
+  }
+  return writer.转为字节();
+}
+
+// UpdateNotes 返回 collection.OpChanges，复用 CollectionMessages.decodeOpChanges，不重复实现。
+export { decodeOpChanges as decodeUpdateNotesResponse } from './CollectionMessages';

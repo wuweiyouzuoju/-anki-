@@ -51,7 +51,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 模块 | 路径 | 关键不变量 |
 |---|---|---|
 | ArkUI 页面 | `entry/src/main/ets/pages/` | NavPathStack(非 router)；StudyPage phase 状态机 loading→question→answer→done/error；切换卡片时必须回到 loading；BrowserPage phase 状态机 loading→list→error |
-| 浏览页组件 | `entry/src/main/ets/components/browser/` | 搜索框(TextInput+模式切换) + 卡片表格(List+多选+空态)；回调上抛不直接调 Service |
+| 浏览页组件 | `entry/src/main/ets/components/browser/` | 搜索框(TextInput+模式切换) + 卡片表格(List+多选+空态) + 浏览编辑区(Stack+if 弹层纯展示)；回调上抛不直接调 Service |
 | Service 层 | `entry/src/main/ets/backend/` | 不持有 UI 状态；经 BackendSession 单例；失败抛 BackendError |
 | Proto 编解码 | `entry/src/main/ets/proto/` | 纯函数；proto3 optional 用 null；**SchedulingStates raw passthrough 字节级保真** |
 | BackendSession | `entry/src/main/ets/backend/后端会话.ts` | 单例；幂等打开；`closeCollection` vs `markCollectionConsumed` 不可混用 |
@@ -81,7 +81,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 修改"给我好评"逻辑 | `components/设置面板.ets` 的 `处理好评失败` + `跳转应用市场详情页` | commentManager.showCommentDialog 失败（含 1021500006-9 全部分支）统一回退 DeepLink `store://appgallery.huawei.com/app/detail?id=com.jide.kapian`；不再用 promptAction.showDialog（实测 Promise 静默挂起） |
 | 修改"学习完成好评引导" | `pages/首页.ets` 的 `检查学习完成标记` + `components/好评引导对话框.ets` + `utils/好评引导.ets` + `model/好评引导存储.ets` | 学习页完成学习（展示时刻毫秒 > 0）写 `AppStorage('studyJustFinished', true)`；首页 `开始学习` onPop 调 `检查学习完成标记` 读标记 → preferences 查「只弹一次」→ 标记 → 弹 `好评引导对话框`。`打开应用内好评` 复用设置面板同款 commentManager + DeepLink 降级 |
 | 升级版本号 | `AppScope/app.json5` 的 versionCode + versionName | versionCode 递增；提交应用市场前需真机回归 + decisions.md 记录 |
-| 修改浏览页 | `pages/浏览页.ets` + `components/browser/{搜索框,卡片表格}.ets` + `backend/搜索服务.ts` | phase 状态机 loading→list→error；搜索串由后端构建搜索串生成（前端不拼字符串）；行数据懒加载（浏览器行按ID） |
+| 修改浏览页 | `pages/浏览页.ets` + `components/browser/{搜索框,卡片表格,浏览编辑区}.ets` + `backend/{搜索服务,笔记服务,笔记类型服务,卡片服务}.ts` | phase 状态机 loading→list→error；搜索串由后端构建搜索串生成（前端不拼字符串）；行数据懒加载（浏览器行按ID）；T7 行点击弹 浏览编辑区 编辑笔记字段/标签，Cards 模式经 卡片服务.获取卡片 拿 noteId 再查笔记；浏览编辑区纯展示层不直接调 Service，onSave 回调上抛由父级落盘 |
 | 新增浏览器列 | `proto/messages/SearchMessages.ts` 的 BrowserColumn 接口 + 后端 全部浏览器列 RPC 返回 | 列 key 来自 Anki 后端预定义；手机端默认显示 Question+Deck+Due 三列（长按表头配置） |
 
 ## 关键设计决策

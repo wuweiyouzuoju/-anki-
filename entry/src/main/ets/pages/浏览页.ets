@@ -8,7 +8,7 @@
 // 卡片/笔记浏览器（对标 Anki Browser）。手机端单栏布局：
 // 顶部条（返回 + 标题 + Cards/Notes 切换）+ 搜索框 + 结果列表。
 // 阶段 1 MVP：可搜索 + 查看只读列表。
-// 阶段 2 起在列表行点击后用 bindsheet 弹出详情编辑区。
+// 阶段 2：列表行点击后用 Stack+if 弹层打开 浏览编辑区 编辑笔记字段/标签。
 //
 // @输入
 // pageDeckId：可选牌组 ID（空=全库浏览）
@@ -29,7 +29,7 @@
 // @Extension Points
 // - T4 搜索框组件将替换内联 TextInput
 // - T5 卡片表格组件将替换内联 List
-// - T7 详情编辑区将以 bindsheet 形式接入
+// - T7 详情编辑区已接入（Stack+if 弹层），后续可扩展批量操作栏（T8）
 //
 // @副作用
 // 通过 搜索服务 调用后端 RPC，读取 Anki collection。
@@ -38,6 +38,9 @@
 import { common } from '@kit.AbilityKit';
 import { 后端会话 } from '../backend/后端会话';
 import { 搜索服务 } from '../backend/搜索服务';
+import { 笔记服务 } from '../backend/笔记服务';
+import { 笔记类型服务 } from '../backend/笔记类型服务';
+import { 卡片服务 } from '../backend/卡片服务';
 import type {
   BrowserColumn,
   BrowserRow,
@@ -47,13 +50,18 @@ import type {
 import {
   makeParsableTextNode
 } from '../proto/messages/SearchMessages';
+import type { EditableNote } from '../proto/messages/NoteMessages';
+import type { Card } from '../proto/messages/CardsMessages';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { CustomTransition } from '../utils/自定义转场';
 import { 统一加载态 } from '../components/common/统一加载态';
 import { 统一错误态 } from '../components/common/统一错误态';
 import { 搜索框 } from '../components/browser/搜索框';
 import { 卡片表格, 浏览行数据 } from '../components/browser/卡片表格';
+import { 浏览编辑区 } from '../components/browser/浏览编辑区';
 import { 颜色键 } from '../model/颜色主题';
+import { 加载主题模式 } from '../model/主题存储';
+import { 解析是否深色, 主题模式 } from '../model/主题设置';
 
 /** 浏览页阶段状态机：loading=加载中，list=列表展示，error=出错 */
 type 浏览阶段 = 'loading' | 'list' | 'error';
@@ -74,6 +82,9 @@ export struct 浏览页 {
   /** 页面栈：返回主页时 pop */
   pathStack: NavPathStack = new NavPathStack();
   private readonly 搜索服务实例: 搜索服务 = new 搜索服务();
+  private readonly 笔记服务实例: 笔记服务 = new 笔记服务();
+  private readonly 笔记类型服务实例: 笔记类型服务 = new 笔记类型服务();
+  private readonly 卡片服务实例: 卡片服务 = new 卡片服务();
 
   @State private 阶段: 浏览阶段 = 'loading';
   @State private 错误详情: string = '';
@@ -84,6 +95,20 @@ export struct 浏览页 {
   @State private 列定义: BrowserColumn[] = [];
   /** NavDestination 透明度（由 customNavContentTransition 回调控制，实现淡入淡出转场）。 */
   @State private 转场透明度: number = 1;
+
+  // T7 浏览编辑区状态：行点击后懒加载笔记 + 字段名，弹层内编辑字段/标签，保存调 更新笔记
+  @State private 显示编辑区: boolean = false;
+  @State private 编辑区字段名列表: string[] = [];
+  @State private 编辑区初始字段值: string[] = [];
+  @State private 编辑区初始标签: string = '';
+  @State private 编辑区错误: string = '';
+  @State private 编辑区忙碌: boolean = false;
+  // 当前正在编辑的笔记（保存时复用 id/guid/notetypeId/mtime/usn，仅 fields/tags 来自弹层）
+  @State private 编辑区当前笔记: EditableNote | null = null;
+
+  // 主题模式：编辑区 isDark 判断用（与 学习页/添加笔记页 同语义）
+  @State private 主题模式值: 主题模式 = 'system';
+  @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
 
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景色: string = '#2F5FD0';
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
@@ -100,7 +125,31 @@ export struct 浏览页 {
         this.转场透明度 = isExit ? 0 : 1;
       }
     );
+    // 加载主题模式用于编辑区深色判断；失败回退 'system'，不阻塞浏览流程
+    try {
+      this.主题模式值 = await 加载主题模式();
+    } catch (_错误) {
+      this.主题模式值 = 'system';
+    }
     await this.执行搜索();
+  }
+
+  /** 暗色模式判断：主题模式值=system 时跟随系统，否则按显式选择。与 学习页/添加笔记页 同语义。 */
+  private 是否深色(): boolean {
+    return 解析是否深色(this.主题模式值, this.系统暗黑模式);
+  }
+
+  /** 读取本地化文案，context 不可用时回退空串。 */
+  private 取本地化文案(资源: Resource): string {
+    const 上下文: common.UIAbilityContext | null = this.取能力上下文();
+    if (上下文 === null) {
+      return '';
+    }
+    try {
+      return 上下文.resourceManager.getStringSync(资源.id);
+    } catch (_错误) {
+      return '';
+    }
   }
 
   aboutToDisappear(): void {
@@ -251,9 +300,119 @@ export struct 浏览页 {
     this.执行搜索();
   }
 
-  /** 行点击：阶段 1 仅占位，阶段 2 将打开 bindsheet 详情编辑区。 */
-  private 行点击(行ID: number): void {
-    // T7 详情编辑区将在此接入
+  // ========================================================
+  // @块ID UI-PAGE-BROWSER-003
+  // @名称 行点击
+  //
+  // @作用
+  // 行点击后懒加载笔记 + 笔记类型字段名，弹出 浏览编辑区 进行字段/标签编辑。
+  // - Notes 模式：行ID 即 noteId，直接调 笔记服务.获取笔记
+  // - Cards 模式：行ID 是 cardId，先调 卡片服务.获取卡片 拿 noteId，再调 笔记服务.获取笔记
+  //
+  // @输入
+  // 行ID: 当前行 ID（语义随 浏览模式值 变化）
+  //
+  // @输出
+  // 成功 → 设置 编辑区当前笔记 / 字段名列表 / 初始字段值 / 初始标签 / 显示编辑区=true
+  // 失败 → 在 编辑区错误 显示加载失败文案并打开弹层（让用户感知错误）
+  //
+  // @业务规则
+  // Cards 模式下需多一跳卡片查询，但 UI 仍只展示笔记字段（与 Anki 桌面端一致）。
+  // 加载期间不禁用列表（只设 编辑区忙碌），用户可关闭弹层或重试。
+  //
+  // @副作用
+  // 调后端 获取卡片 / 获取笔记 / 获取笔记类型；读 Anki collection。
+  // ========================================================
+  private async 行点击(行ID: number): Promise<void> {
+    this.编辑区忙碌 = true;
+    this.编辑区错误 = '';
+    this.编辑区当前笔记 = null;
+    this.编辑区字段名列表 = [];
+    this.编辑区初始字段值 = [];
+    this.编辑区初始标签 = '';
+    this.显示编辑区 = true;
+    try {
+      // 1. 拿到 noteId：Notes 模式直接用，Cards 模式经卡片查询
+      let noteId: number = 行ID;
+      if (this.浏览模式值 === 'cards') {
+        const card: Card = await this.卡片服务实例.获取卡片(行ID);
+        noteId = card.noteId;
+      }
+      // 2. 拉笔记（必须先拿到 notetypeId 才能查字段名）
+      const note: EditableNote = await this.笔记服务实例.获取笔记(noteId);
+      const notetypeView = await this.笔记类型服务实例.获取笔记类型(note.notetypeId);
+      this.编辑区当前笔记 = note;
+      this.编辑区字段名列表 = notetypeView.fieldNames;
+      this.编辑区初始字段值 = note.fields.slice();
+      this.编辑区初始标签 = note.tags.join(' ');
+    } catch (错误) {
+      this.编辑区错误 = this.取本地化文案($r('app.string.browser_detail_load_error'));
+      console.info(`BrowserPage: 行点击加载笔记失败 行ID=${行ID} 模式=${this.浏览模式值} 错误=${错误}`);
+    } finally {
+      this.编辑区忙碌 = false;
+    }
+  }
+
+  // ========================================================
+  // @块ID UI-PAGE-BROWSER-004
+  // @名称 保存编辑
+  //
+  // @作用
+  // 浏览编辑区 onSave 回调：用 编辑区当前笔记 的 id/guid/notetypeId/mtime/usn + 弹层传入的
+  // fields/tags 构造 EditableNote，调 笔记服务.更新笔记 落盘。成功后关闭弹层并刷新当前行。
+  //
+  // @输入
+  // fields: 编辑后的字段值数组
+  // tags: 编辑后的标签数组
+  //
+  // @输出
+  // 成功 → 返回 true，关闭弹层，触发 执行搜索 刷新列表
+  // 失败 → 返回 false，在 编辑区错误 显示保存失败文案（草稿保留）
+  //
+  // @业务规则
+  // - skipUndoEntry=false 保留撤销栈（与 Anki 桌面端默认一致）
+  // - 编辑区当前笔记 为 null 时直接返回 false（不应发生，兜底）
+  // - 字段值数组长度不足 字段名列表 时用空串补齐（防御性）
+  //
+  // @副作用
+  // 调后端 更新笔记；成功后调 执行搜索 重新加载列表。
+  // ========================================================
+  private async 保存编辑(fields: string[], tags: string[]): Promise<boolean> {
+    const 原笔记: EditableNote | null = this.编辑区当前笔记;
+    if (原笔记 === null) {
+      return false;
+    }
+    this.编辑区忙碌 = true;
+    this.编辑区错误 = '';
+    try {
+      // 字段值长度对齐字段名（防御性：弹层未填齐时补空串）
+      const 字段数: number = this.编辑区字段名列表.length;
+      const 字段值: string[] = fields.slice();
+      while (字段值.length < 字段数) {
+        字段值.push('');
+      }
+      const 更新后: EditableNote = {
+        id: 原笔记.id,
+        guid: 原笔记.guid,
+        notetypeId: 原笔记.notetypeId,
+        mtimeSecs: 原笔记.mtimeSecs,
+        usn: 原笔记.usn,
+        tags,
+        fields: 字段值
+      };
+      await this.笔记服务实例.更新笔记([更新后], false);
+      // 关闭弹层 + 刷新列表（让用户看到新字段值）
+      this.显示编辑区 = false;
+      this.编辑区当前笔记 = null;
+      await this.执行搜索();
+      return true;
+    } catch (错误) {
+      this.编辑区错误 = this.取本地化文案($r('app.string.browser_detail_save_error'));
+      console.info(`BrowserPage: 保存笔记失败 noteId=${原笔记.id} 错误=${错误}`);
+      return false;
+    } finally {
+      this.编辑区忙碌 = false;
+    }
   }
 
   /** 返回主页。 */
@@ -288,46 +447,69 @@ export struct 浏览页 {
 
   build() {
     NavDestination() {
-      Column() {
-        this.顶部条()
+      Stack() {
+        Column() {
+          this.顶部条()
 
-        // 搜索框组件（TextInput + Cards/Notes 模式切换）
-        搜索框({
-          搜索文本: this.搜索文本,
-          浏览模式值: this.浏览模式值,
-          主色按钮背景色: this.主色按钮背景色,
-          onSearch: (文本: string): void => { this.提交搜索(文本); },
-          onModeChange: (模式: string): void => { this.切换模式(模式 as 浏览模式); }
-        })
-          .padding({ left: 应用尺寸.间距_16, right: 应用尺寸.间距_16, top: 应用尺寸.间距_8,
-            bottom: 应用尺寸.间距_8 })
+          // 搜索框组件（TextInput + Cards/Notes 模式切换）
+          搜索框({
+            搜索文本: this.搜索文本,
+            浏览模式值: this.浏览模式值,
+            主色按钮背景色: this.主色按钮背景色,
+            onSearch: (文本: string): void => { this.提交搜索(文本); },
+            onModeChange: (模式: string): void => { this.切换模式(模式 as 浏览模式); }
+          })
+            .padding({ left: 应用尺寸.间距_16, right: 应用尺寸.间距_16, top: 应用尺寸.间距_8,
+              bottom: 应用尺寸.间距_8 })
 
-        if (this.阶段 === 'loading') {
-          统一加载态({
-            文案: $r('app.string.browser_loading')
-          })
+          if (this.阶段 === 'loading') {
+            统一加载态({
+              文案: $r('app.string.browser_loading')
+            })
+          }
+          if (this.阶段 === 'error') {
+            统一错误态({
+              文案: this.错误详情 !== '' ? this.错误详情 : $r('app.string.browser_search_error'),
+              onRetry: (): void => { this.执行搜索(); }
+            })
+          }
+          if (this.阶段 === 'list') {
+            // 卡片表格组件（扁平列表 + 多选 + 空态 + 懒加载）
+            卡片表格({
+              行列表: this.行列表,
+              结果总数: this.结果ID列表.length,
+              已加载行数: this.行列表.length,
+              onRowClick: (行ID: number): void => { this.行点击(行ID); },
+              onLongPress: (): void => {},
+              onLoadMore: (): void => { this.加载更多(); }
+            })
+          }
         }
-        if (this.阶段 === 'error') {
-          统一错误态({
-            文案: this.错误详情 !== '' ? this.错误详情 : $r('app.string.browser_search_error'),
-            onRetry: (): void => { this.执行搜索(); }
-          })
-        }
-        if (this.阶段 === 'list') {
-          // 卡片表格组件（扁平列表 + 多选 + 空态 + 懒加载）
-          卡片表格({
-            行列表: this.行列表,
-            结果总数: this.结果ID列表.length,
-            已加载行数: this.行列表.length,
-            onRowClick: (行ID: number): void => { this.行点击(行ID); },
-            onLongPress: (): void => {},
-            onLoadMore: (): void => { this.加载更多(); }
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.页面底色微染值)
+
+        // T7 浏览编辑区弹层：Stack + if 控制挂载/卸载（与 添加笔记页.ets 的 字段帮助面板/图片遮罩编辑器 同机制）
+        if (this.显示编辑区) {
+          浏览编辑区({
+            isDark: this.是否深色(),
+            busy: this.编辑区忙碌,
+            errorMessage: this.编辑区错误,
+            fieldNames: this.编辑区字段名列表,
+            initialFieldValues: this.编辑区初始字段值,
+            initialTags: this.编辑区初始标签,
+            onCancel: (): void => {
+              this.显示编辑区 = false;
+              this.编辑区当前笔记 = null;
+            },
+            onSave: (fields: string[], tags: string[]): Promise<boolean> => {
+              return this.保存编辑(fields, tags);
+            }
           })
         }
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.页面底色微染值)
     }
     .hideTitleBar(true)
     .opacity(this.转场透明度)

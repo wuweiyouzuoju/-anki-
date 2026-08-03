@@ -480,3 +480,69 @@ test('browser_* i18n keys exist and align between zh-Hans and en_US', () => {
   assert.deepEqual(missingInZh, [], `zh-Hans missing browser_* keys: ${missingInZh.join(', ')}`);
   assert.equal(zhKeys.size, enKeys.size, 'browser_* key count must match between zh and en');
 });
+
+// ============================================================
+// D. T7 浏览编辑区接线契约
+// 浏览页必须导入并使用 浏览编辑区 + 笔记服务.更新笔记 + 笔记类型服务.获取笔记类型；
+// 编辑区组件必须保留 onCancel/onSave 回调签名与 isDark/busy/errorMessage/fieldNames
+// /initialFieldValues/initialTags 六个 @Prop。修改这些字段名会破坏接线。
+// ============================================================
+
+test('BrowserPage wires T7 edit panel: imports 浏览编辑区 + 笔记服务 + 笔记类型服务 + 卡片服务', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  assert.match(page, /import\s+\{[^}]*浏览编辑区[^}]*\}\s*from\s*['"][^'"]*浏览编辑区['"]/);
+  assert.match(page, /import\s+\{[^}]*笔记服务[^}]*\}\s*from\s*['"][^'"]*笔记服务['"]/);
+  assert.match(page, /import\s+\{[^}]*笔记类型服务[^}]*\}\s*from\s*['"][^'"]*笔记类型服务['"]/);
+  assert.match(page, /import\s+\{[^}]*卡片服务[^}]*\}\s*from\s*['"][^'"]*卡片服务['"]/);
+  assert.match(page, /import\s+type\s+\{[^}]*EditableNote[^}]*\}\s*from\s*['"][^'"]*NoteMessages['"]/);
+});
+
+test('BrowserPage 行点击 loads note via 笔记服务.获取笔记 and field names via 笔记类型服务.获取笔记类型', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  assert.match(page, /private\s+async\s+行点击\s*\(/);
+  assert.match(page, /this\.笔记服务实例\.获取笔记\s*\(/);
+  assert.match(page, /this\.笔记类型服务实例\.获取笔记类型\s*\(/);
+  assert.match(page, /this\.卡片服务实例\.获取卡片\s*\(/);
+  // Cards 模式经 card.noteId 跳到 noteId
+  assert.match(page, /card\.noteId/);
+});
+
+test('BrowserPage 保存编辑 calls 笔记服务.更新笔记 with skipUndoEntry=false and refreshes list', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  assert.match(page, /private\s+async\s+保存编辑\s*\(/);
+  assert.match(page, /this\.笔记服务实例\.更新笔记\s*\(\s*\[[^\]]+\]\s*,\s*false\s*\)/);
+  // 保存成功后关闭弹层 + 重新搜索
+  assert.match(page, /this\.显示编辑区\s*=\s*false/);
+  assert.match(page, /this\.执行搜索\s*\(\s*\)/);
+});
+
+test('BrowserPage build renders 浏览编辑区 conditionally on 显示编辑区', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  assert.match(page, /if\s*\(this\.显示编辑区\)\s*\{/);
+  assert.match(page, /浏览编辑区\s*\(\s*\{/);
+  // 接线必备 @Prop 与回调
+  assert.match(page, /isDark:\s*this\.是否深色\s*\(\s*\)/);
+  assert.match(page, /fieldNames:\s*this\.编辑区字段名列表/);
+  assert.match(page, /initialFieldValues:\s*this\.编辑区初始字段值/);
+  assert.match(page, /initialTags:\s*this\.编辑区初始标签/);
+  // onSave 回调最终调 this.保存编辑（箭头函数体跨行，用 [\s\S] 非贪婪匹配）
+  assert.match(page, /onSave:[\s\S]*?this\.保存编辑/);
+});
+
+test('浏览编辑区 component preserves T7 presentation-only invariants', () => {
+  const panel = read('entry/src/main/ets/components/browser/浏览编辑区.ets');
+  // 纯展示层：不直接调后端
+  assert.doesNotMatch(panel, /后端会话|笔记服务|笔记类型服务|\.run\(/);
+  // 必备 @Prop 与回调签名
+  assert.match(panel, /@Prop\s+isDark:\s*boolean/);
+  assert.match(panel, /@Prop\s+busy:\s*boolean/);
+  assert.match(panel, /@Prop\s+errorMessage:\s*string/);
+  assert.match(panel, /@Prop\s+fieldNames:\s*string\[\]/);
+  assert.match(panel, /@Prop\s+initialFieldValues:\s*string\[\]/);
+  assert.match(panel, /@Prop\s+initialTags:\s*string/);
+  assert.match(panel, /onCancel:\s*\(\)\s*=>\s*void/);
+  assert.match(panel, /onSave:\s*\(fields:\s*string\[\],\s*tags:\s*string\[\]\)\s*=>\s*Promise<boolean>/);
+  // 草稿保留：aboutToAppear 从 initialFieldValues/initialTags 拷贝到内部状态
+  assert.match(panel, /this\.fieldValues\s*=\s*this\.initialFieldValues\.slice/);
+  assert.match(panel, /this\.tags\s*=\s*this\.initialTags/);
+});

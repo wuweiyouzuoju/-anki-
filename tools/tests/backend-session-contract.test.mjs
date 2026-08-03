@@ -55,9 +55,10 @@ test('method ids match the generated backend.rs dispatch table', () => {
     导入Anki包: 2, 导出Anki包: 4
   });
   // Type-in-the-Answer 翻面拉取笔记字段：笔记方法.获取笔记=6 + 笔记类型方法.获取笔记类型=6
+  // 浏览编辑区 T7 保存修改：笔记方法.更新笔记=5（UpdateNotes RPC，返回 OpChanges）
   assert.deepEqual({ ...笔记方法 }, {
     新建笔记: 0, 添加笔记: 1, 添加默认值: 3,
-    获取笔记: 6, 笔记字段校验: 11
+    更新笔记: 5, 获取笔记: 6, 笔记字段校验: 11
   });
   assert.deepEqual({ ...笔记类型方法 }, { 获取笔记类型: 6, 获取笔记类型名列表: 8 });
 });
