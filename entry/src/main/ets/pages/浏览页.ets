@@ -47,6 +47,7 @@ import { 统计服务 } from '../backend/统计服务';
 import type {
   BrowserColumn,
   BrowserRow,
+  FindAndReplaceRequest,
   SearchRequest,
   SortOrder
 } from '../proto/messages/SearchMessages';
@@ -68,6 +69,7 @@ import { 卡片表格, 浏览行数据 } from '../components/browser/卡片表�
 import { 浏览编辑区 } from '../components/browser/浏览编辑区';
 import { 批量操作栏 } from '../components/browser/批量操作栏';
 import { 卡片信息 } from '../components/browser/卡片信息';
+import { 查找替换对话框 } from '../components/browser/查找替换对话框';
 import { 颜色键 } from '../model/颜色主题';
 import { 加载主题模式 } from '../model/主题存储';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
@@ -144,6 +146,11 @@ export struct 浏览页 {
   @State private 显示挂起确认: boolean = false;
   @State private 显示删除确认: boolean = false;
   @State private 牌组树: DeckTreeNode | null = null;
+
+  // T9 查找替换状态：顶部条按钮触发弹层，支持仅选中笔记或全部笔记两种范围
+  @State private 显示查找替换: boolean = false;
+  @State private 查找替换忙碌: boolean = false;
+  @State private 查找替换错误: string = '';
 
   // 主题模式：编辑区 isDark 判断用（与 学习页/添加笔记页 同语义）
   @State private 主题模式值: 主题模式 = 'system';
@@ -742,6 +749,83 @@ export struct 浏览页 {
     this.卡片信息错误 = '';
   }
 
+  /**
+   * T9 执行查找替换：调 搜索服务.查找并替换。
+   * nids 解析：
+   * - 仅选中=true：cards 模式经 卡片服务.获取卡片 把 cardId 转 noteId 后去重；notes 模式直接用选中ID
+   * - 仅选中=false：nids 留空，后端对全部笔记生效
+   * 成功后关闭弹层 + toast 提示替换数 + 重新搜索刷新列表。
+   */
+  private async 执行查找替换(
+    查找: string,
+    替换: string,
+    字段名: string,
+    正则: boolean,
+    区分大小写: boolean,
+    仅选中: boolean
+  ): Promise<boolean> {
+    this.查找替换忙碌 = true;
+    this.查找替换错误 = '';
+    try {
+      let nids: number[] = [];
+      if (仅选中) {
+        nids = await this.解析选中为笔记ID();
+        if (nids.length === 0) {
+          this.查找替换错误 = this.取本地化文案($r('app.string.browser_find_no_notes_error'));
+          return false;
+        }
+      }
+      const 请求: FindAndReplaceRequest = {
+        nids,
+        search: 查找,
+        replacement: 替换,
+        regex: 正则,
+        matchCase: 区分大小写,
+        fieldName: 字段名
+      };
+      const 替换数 = await this.搜索服务实例.查找并替换(请求);
+      this.显示查找替换 = false;
+      // 刷新列表以反映替换后的字段变化
+      await this.执行搜索();
+      // 成功提示（%d 替换为实际数）
+      const 模板 = this.取本地化文案($r('app.string.browser_find_success'));
+      const 消息 = 模板.replace('%d', String(替换数));
+      try {
+        this.getUIContext().getPromptAction().showToast({ message: 消息 });
+      } catch (_错误) {
+        // toast 失败不影响主流程
+      }
+      return true;
+    } catch (错误) {
+      this.查找替换错误 = this.取本地化文案($r('app.string.browser_find_error'));
+      console.info(`BrowserPage: 查找替换失败 错误=${错误}`);
+      return false;
+    } finally {
+      this.查找替换忙碌 = false;
+    }
+  }
+
+  /**
+   * 解析选中ID为笔记ID：notes 模式直接返回，cards 模式逐个调 卡片服务.获取卡片 取 noteId 后去重。
+   * 供 T9 查找替换"仅选中笔记"范围使用。
+   */
+  private async 解析选中为笔记ID(): Promise<number[]> {
+    if (this.浏览模式值 === 'notes') {
+      return this.选中ID列表.slice();
+    }
+    // cards 模式：逐个 cardId → card.noteId，去重
+    const noteIdSet: Set<number> = new Set<number>();
+    for (const 卡片ID of this.选中ID列表) {
+      try {
+        const card: Card = await this.卡片服务实例.获取卡片(卡片ID);
+        noteIdSet.add(card.noteId);
+      } catch (错误) {
+        console.info(`BrowserPage: 解析笔记ID失败 cardId=${卡片ID} 错误=${错误}`);
+      }
+    }
+    return Array.from(noteIdSet);
+  }
+
   /** 返回主页。 */
   private 返回(): void {
     this.pathStack.pop();
@@ -749,7 +833,7 @@ export struct 浏览页 {
 
   @Builder
   private 顶部条() {
-    // 操作层：返回按钮(左) + 牌组选择器(右)，去掉居中"浏览"标题
+    // 操作层：返回按钮(左) + 查找替换按钮 + 牌组选择器(右)
     Row() {
       Button($r('app.string.study_back'))
         .height(应用尺寸.按钮高度)
@@ -758,6 +842,19 @@ export struct 浏览页 {
         .fontColor($r('app.color.text_primary'))
         .backgroundColor($r('app.color.surface_card'))
         .onClick((): void => this.返回())
+
+      // T9 查找替换入口：点击弹出对话框，支持仅选中笔记或全部笔记两种范围
+      Button($r('app.string.browser_action_find_replace'))
+        .height(应用尺寸.按钮高度)
+        .padding({ left: 应用尺寸.间距_12, right: 应用尺寸.间距_12 })
+        .fontSize(应用尺寸.字号_按钮)
+        .fontColor($r('app.color.text_primary'))
+        .backgroundColor($r('app.color.surface_card'))
+        .enabled(this.阶段 === 'list')
+        .onClick((): void => {
+          this.查找替换错误 = '';
+          this.显示查找替换 = true;
+        })
 
       Blank()
 
@@ -886,6 +983,30 @@ export struct 浏览页 {
               : this.卡片信息错误,
             onClose: (): void => {
               this.关闭卡片信息();
+            }
+          })
+        }
+
+        // T9 查找替换弹层：顶部条按钮触发，支持仅选中笔记或全部笔记两种范围
+        if (this.显示查找替换) {
+          查找替换对话框({
+            isDark: this.是否深色(),
+            busy: this.查找替换忙碌,
+            errorMessage: this.查找替换错误,
+            有选中笔记: this.选中ID列表.length > 0,
+            onCancel: (): void => {
+              this.显示查找替换 = false;
+              this.查找替换错误 = '';
+            },
+            onExecute: (
+              查找: string,
+              替换: string,
+              字段名: string,
+              正则: boolean,
+              区分大小写: boolean,
+              仅选中: boolean
+            ): Promise<boolean> => {
+              return this.执行查找替换(查找, 替换, 字段名, 正则, 区分大小写, 仅选中);
             }
           })
         }

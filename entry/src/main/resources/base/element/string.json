@@ -1210,6 +1210,25 @@
     { "name": "browser_sidebar_title", "value": "筛选" },
     { "name": "browser_sidebar_decks", "value": "牌组" },
     { "name": "browser_sidebar_tags", "value": "标签" },
-    { "name": "browser_sidebar_saved_searches", "value": "已保存搜索" }
+    { "name": "browser_sidebar_saved_searches", "value": "已保存搜索" },
+    { "name": "browser_find_title", "value": "查找替换" },
+    { "name": "browser_find_find", "value": "查找内容" },
+    { "name": "browser_find_find_placeholder", "value": "输入查找内容" },
+    { "name": "browser_find_replace_with", "value": "替换为" },
+    { "name": "browser_find_replace_placeholder", "value": "输入替换内容" },
+    { "name": "browser_find_field", "value": "字段名（空=所有字段）" },
+    { "name": "browser_find_field_placeholder", "value": "如 Front / Tags" },
+    { "name": "browser_find_regex", "value": "正则表达式" },
+    { "name": "browser_find_match_case", "value": "区分大小写" },
+    { "name": "browser_find_scope", "value": "应用范围" },
+    { "name": "browser_find_scope_selected", "value": "仅选中笔记" },
+    { "name": "browser_find_scope_all", "value": "全部笔记" },
+    { "name": "browser_find_execute", "value": "替换" },
+    { "name": "browser_find_running", "value": "替换中…" },
+    { "name": "browser_find_cancel", "value": "取消" },
+    { "name": "browser_find_empty_error", "value": "请输入查找内容" },
+    { "name": "browser_find_error", "value": "查找替换失败" },
+    { "name": "browser_find_no_notes_error", "value": "没有可替换的笔记" },
+    { "name": "browser_find_success", "value": "已替换 %d 篇笔记" }
   ]
 }

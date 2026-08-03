@@ -626,6 +626,25 @@
     { "name": "browser_sidebar_title", "value": "Filter" },
     { "name": "browser_sidebar_decks", "value": "Decks" },
     { "name": "browser_sidebar_tags", "value": "Tags" },
-    { "name": "browser_sidebar_saved_searches", "value": "Saved Searches" }
+    { "name": "browser_sidebar_saved_searches", "value": "Saved Searches" },
+    { "name": "browser_find_title", "value": "Find & Replace" },
+    { "name": "browser_find_find", "value": "Find" },
+    { "name": "browser_find_find_placeholder", "value": "Enter search text" },
+    { "name": "browser_find_replace_with", "value": "Replace with" },
+    { "name": "browser_find_replace_placeholder", "value": "Enter replacement" },
+    { "name": "browser_find_field", "value": "Field (empty = all fields)" },
+    { "name": "browser_find_field_placeholder", "value": "e.g. Front / Tags" },
+    { "name": "browser_find_regex", "value": "Regex" },
+    { "name": "browser_find_match_case", "value": "Match case" },
+    { "name": "browser_find_scope", "value": "Scope" },
+    { "name": "browser_find_scope_selected", "value": "Selected notes only" },
+    { "name": "browser_find_scope_all", "value": "All notes" },
+    { "name": "browser_find_execute", "value": "Replace" },
+    { "name": "browser_find_running", "value": "Replacing..." },
+    { "name": "browser_find_cancel", "value": "Cancel" },
+    { "name": "browser_find_empty_error", "value": "Please enter search text" },
+    { "name": "browser_find_error", "value": "Find & replace failed" },
+    { "name": "browser_find_no_notes_error", "value": "No notes to replace" },
+    { "name": "browser_find_success", "value": "Replaced in %d note(s)" }
   ]
 }

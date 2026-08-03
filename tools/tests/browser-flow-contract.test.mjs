@@ -912,3 +912,112 @@ test('T11 i18n keys exist in both base and en_US string.json', () => {
   }
 });
 
+// ============================================================
+// H. T9 查找替换（Find & Replace）
+// 浏览页.ets 顶部条按钮触发对话框，调用 搜索服务.查找并替换 RPC。
+// 范围支持"仅选中笔记"（cards 模式 cardId→noteId 转换 + 去重）或"全部笔记"（nids 空）。
+// ============================================================
+
+test('BrowserPage wires T9 find&replace: imports 查找替换对话框 + FindAndReplaceRequest', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  assert.match(page, /import\s+\{\s*查找替换对话框\s*\}\s*from\s*['"][^'"]*查找替换对话框['"]/);
+  assert.match(page, /import\s+type\s+\{[^}]*FindAndReplaceRequest[^}]*\}\s*from\s*['"][^'"]*SearchMessages['"]/);
+});
+
+test('BrowserPage has T9 state + methods', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  // 3 个 @State：显示 / 忙碌 / 错误
+  assert.match(page, /@State\s+private\s+显示查找替换:\s*boolean/);
+  assert.match(page, /@State\s+private\s+查找替换忙碌:\s*boolean/);
+  assert.match(page, /@State\s+private\s+查找替换错误:\s*string/);
+  // 2 个方法：执行查找替换 + 解析选中为笔记ID
+  assert.match(page, /private\s+async\s+执行查找替换\s*\(/);
+  assert.match(page, /private\s+async\s+解析选中为笔记ID\s*\(\s*\):\s*Promise<number\[\]>/);
+  // 执行查找替换调用 搜索服务.查找并替换
+  assert.match(page, /this\.搜索服务实例\.查找并替换\s*\(/);
+});
+
+test('BrowserPage top bar has T9 find&replace entry button', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  // 顶部条含 查找替换 按钮（i18n key 复用 browser_action_find_replace）
+  assert.match(page, /Button\s*\(\s*\$r\('app\.string\.browser_action_find_replace'\)\s*\)/);
+  // 点击设 显示查找替换 = true
+  assert.match(page, /this\.显示查找替换\s*=\s*true/);
+});
+
+test('BrowserPage build renders 查找替换对话框 conditionally on 显示查找替换', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  assert.match(page, /if\s*\(this\.显示查找替换\)\s*\{/);
+  assert.match(page, /查找替换对话框\s*\(\s*\{/);
+  assert.match(page, /isDark:\s*this\.是否深色\s*\(\s*\)/);
+  assert.match(page, /busy:\s*this\.查找替换忙碌/);
+  assert.match(page, /errorMessage:\s*this\.查找替换错误/);
+  assert.match(page, /有选中笔记:\s*this\.选中ID列表\.length\s*>\s*0/);
+  // onExecute 回调上抛 执行查找替换
+  assert.match(page, /this\.执行查找替换\s*\(/);
+});
+
+test('查找替换对话框 component preserves T9 presentation-only invariants', () => {
+  const panel = read('entry/src/main/ets/components/browser/查找替换对话框.ets');
+  // 纯展示层：不直接调后端
+  assert.doesNotMatch(panel, /后端会话|搜索服务|笔记服务|卡片服务|\.会话\.调用\s*\(/);
+  // 必备 @Prop 与回调签名
+  assert.match(panel, /@Prop\s+isDark:\s*boolean/);
+  assert.match(panel, /@Prop\s+busy:\s*boolean/);
+  assert.match(panel, /@Prop\s+errorMessage:\s*string/);
+  assert.match(panel, /@Prop\s+有选中笔记:\s*boolean/);
+  assert.match(panel, /onCancel:\s*\(\)\s*=>\s*void/);
+  assert.match(panel, /onExecute:\s*\(/);
+  // 6 个输入参数：查找/替换/字段名/正则/区分大小写/仅选中
+  assert.match(panel, /查找:\s*string/);
+  assert.match(panel, /替换:\s*string/);
+  assert.match(panel, /字段名:\s*string/);
+  assert.match(panel, /正则:\s*boolean/);
+  assert.match(panel, /区分大小写:\s*boolean/);
+  assert.match(panel, /仅选中:\s*boolean/);
+  // 标题与按钮文案走 i18n
+  assert.match(panel, /app\.string\.browser_find_title/);
+  assert.match(panel, /app\.string\.browser_find_execute/);
+  assert.match(panel, /app\.string\.browser_find_cancel/);
+  // 查找内容为空本地拦截
+  assert.match(panel, /this\.查找文本\s*===\s*''/);
+  assert.match(panel, /app\.string\.browser_find_empty_error/);
+  // 正则 / 区分大小写 / 范围 三组选项都走 i18n
+  assert.match(panel, /app\.string\.browser_find_regex/);
+  assert.match(panel, /app\.string\.browser_find_match_case/);
+  assert.match(panel, /app\.string\.browser_find_scope/);
+  assert.match(panel, /app\.string\.browser_find_scope_selected/);
+  assert.match(panel, /app\.string\.browser_find_scope_all/);
+});
+
+test('T9 i18n keys exist in both base and en_US string.json', () => {
+  const zh = read('entry/src/main/resources/base/element/string.json');
+  const en = read('entry/src/main/resources/en_US/element/string.json');
+  const keys = [
+    'browser_find_title',
+    'browser_find_find',
+    'browser_find_find_placeholder',
+    'browser_find_replace_with',
+    'browser_find_replace_placeholder',
+    'browser_find_field',
+    'browser_find_field_placeholder',
+    'browser_find_regex',
+    'browser_find_match_case',
+    'browser_find_scope',
+    'browser_find_scope_selected',
+    'browser_find_scope_all',
+    'browser_find_execute',
+    'browser_find_running',
+    'browser_find_cancel',
+    'browser_find_empty_error',
+    'browser_find_error',
+    'browser_find_no_notes_error',
+    'browser_find_success'
+  ];
+  for (const k of keys) {
+    assert.match(zh, new RegExp(`"name":\\s*"${k}"`), `base missing ${k}`);
+    assert.match(en, new RegExp(`"name":\\s*"${k}"`), `en_US missing ${k}`);
+  }
+});
+
+
