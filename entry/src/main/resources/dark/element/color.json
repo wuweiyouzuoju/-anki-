@@ -49,6 +49,10 @@
       "value": "#3D4A5E"
     },
     {
+      "name": "divider",
+      "value": "#2A3442"
+    },
+    {
       "name": "status_ready",
       "value": "#55C69A"
     },

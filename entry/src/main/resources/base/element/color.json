@@ -30,7 +30,7 @@
     },
     {
       "name": "text_tertiary",
-      "value": "#6E7685"
+      "value": "#5A6478"
     },
     {
       "name": "action_primary",
@@ -49,6 +49,10 @@
       "value": "#C4CDDB"
     },
     {
+      "name": "divider",
+      "value": "#E4E8EF"
+    },
+    {
       "name": "status_ready",
       "value": "#238463"
     },
@@ -62,7 +66,7 @@
     },
     {
       "name": "count_learning",
-      "value": "#AC6520"
+      "value": "#A05D1C"
     },
     {
       "name": "count_review",

@@ -31,6 +31,7 @@ import { UPDATE_DECK_CONFIGS_MODE_NORMAL } from '../proto/messages/DeckConfigMes
 import { 牌组配置表单, 校验问题 } from '../model/牌组配置表单';
 import { 牌组选项编辑 } from '../model/牌组选项编辑';
 import { 学习页, 学习页参数 } from './学习页';
+import { 浏览页, 浏览页参数 } from './浏览页';
 import { 构建月历, 月历数据 } from '../model/日历模型';
 import { 构建主页快照 } from '../model/主页快照映射器';
 import type { GraphsView } from '../proto/messages/StatsMessages';
@@ -67,6 +68,8 @@ import { 可见牌组行, 平铺牌组树 } from '../model/牌组层级';
 import { 检查节流标记, 获取节流奖励 } from '../utils/操作节流';
 import { 欢迎弹窗 } from '../components/欢迎弹窗';
 import { 是否已展示欢迎弹窗, 标记已展示欢迎弹窗 } from '../model/欢迎弹窗存储';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
+import { CustomTransition } from '../utils/自定义转场';
 
 /** 窄屏详情页推栈参数：牌组 id 经 param 传递，页面内按 id 取最新快照数据 */
 interface 牌组详情页参数 {
@@ -731,6 +734,15 @@ struct 首页 {
         this.加载主页数据();
         this.检查学习完成标记();
       }
+    });
+  }
+
+  /** 打开浏览页（全库浏览，不限定牌组）。 */
+  private 打开浏览页(): void {
+    const params: 浏览页参数 = {};
+    this.页面栈.pushPath({
+      name: 'BrowserPage',
+      param: params
     });
   }
 
@@ -1509,6 +1521,83 @@ struct 首页 {
   }
 
   // ========================================================
+  // @块ID UI-PAGE-HOME-016-TRANSITION
+  // @名称 Navigation 自定义转场回调
+  //
+  // @作用
+  // 配合 .customNavContentTransition 实现 NavDestination 推栈的淡入淡出转场，
+  // 替代系统默认左右平移（AppGallery 评价要求：禁止左右平移，使用淡入淡出）。
+  // 时长按设备物理英寸分档（200/250/300ms），曲线用弹簧曲线。
+  //
+  // @输入
+  // from: 转场起始页 NavContentInfo
+  // to: 转场目的页 NavContentInfo
+  // operation: PUSH / POP
+  //
+  // @输出
+  // 返回 NavigationAnimatedTransition 让系统执行自定义动画；
+  // from/to 任一 index=-1（首页）返回 undefined 走系统默认。
+  //
+  // @业务规则
+  // 通过 CustomTransition 单例查找 from/to 注册的 opacity 设置回调，
+  // 在 animateTo 内调用起点→终点回调，触发淡入淡出。
+  // 动画结束后必须调 proxy.finishTransition()，否则 timeout(1200ms) 后系统强制结束。
+  //
+  // @Invariants
+  // - 首页推栈（from.index === -1）必须返回 undefined，避免与系统首页转场冲突
+  // - 时长与曲线必须取自 取全屏转场时长/曲线，保证按设备尺寸分档
+  //
+  // @副作用
+  // 调用 from/to NavDestination 注册的 opacity 设置回调（修改其 @State 透明度）。
+  // ========================================================
+  private 自定义转场回调(from: NavContentInfo, to: NavContentInfo,
+    operation: NavigationOperation): NavigationAnimatedTransition | undefined {
+    // 首页推栈走系统默认转场
+    if (from.index === -1 || to.index === -1) {
+      return undefined;
+    }
+    const isPush: boolean = operation === NavigationOperation.PUSH;
+    const 转场时长: number = 取全屏转场时长();
+    const 转场曲线: ICurve = 取全屏转场曲线();
+    // 用 from.name / to.name 作为 key 查找 CustomTransition 注册的回调
+    // name 是 NavPathStack pushPath 时传的 'StudyPage' / 'AddNotePage'，比 navDestinationId 稳定
+    // NavContentInfo.name 类型为 string | undefined，未命名时回退空串查不到回调走系统转场
+    const fromName: string = from.name ?? '';
+    const toName: string = to.name ?? '';
+    return {
+      timeout: 1200,
+      transition: (transitionProxy: NavigationTransitionProxy): void => {
+        const from起点 = CustomTransition.getInstance().取起点回调(fromName);
+        const from终点 = CustomTransition.getInstance().取终点回调(fromName);
+        const to起点 = CustomTransition.getInstance().取起点回调(toName);
+        const to终点 = CustomTransition.getInstance().取终点回调(toName);
+        // 设置 opacity 起点值：进入方从 0 淡入，退出方从 1 起始
+        if (from起点 !== null) {
+          from起点(isPush, true);
+        }
+        if (to起点 !== null) {
+          to起点(isPush, false);
+        }
+        this.getUIContext()?.animateTo({
+          duration: 转场时长,
+          curve: 转场曲线,
+          onFinish: (): void => {
+            transitionProxy.finishTransition();
+          }
+        }, (): void => {
+          // 设置 opacity 终点值：进入方淡入到 1；退出方淡出到 0
+          if (from终点 !== null) {
+            from终点(isPush, true);
+          }
+          if (to终点 !== null) {
+            to终点(isPush, false);
+          }
+        });
+      }
+    };
+  }
+
+  // ========================================================
   // @块ID UI-PAGE-HOME-017
   // @名称 页面映射
   //
@@ -1537,6 +1626,12 @@ struct 首页 {
         pathStack: this.页面栈
       })
     }
+    if (name === 'BrowserPage') {
+      浏览页({
+        pageDeckId: (param as 浏览页参数).deckId ?? '',
+        pathStack: this.页面栈
+      })
+    }
     if (name === 'AddNotePage') {
       添加笔记页({
         pageDeckId: (param as 添加笔记页参数).deckId ?? '',
@@ -1554,6 +1649,9 @@ struct 首页 {
           主页顶部工具栏({
             on设置点击: (): void => {
               this.显示设置 = true;
+            },
+            on浏览点击: (): void => {
+              this.打开浏览页();
             },
             on创建牌组点击: (): void => {
               this.显示主页操作 = true;
@@ -1917,7 +2015,7 @@ struct 首页 {
               this.显示欢迎弹窗 = false;
             }
           })
-            .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
+            .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
         }
 
         // AnkiWeb 资源引导弹窗：首次启动展示一次，挂载在最顶层确保覆盖其他弹窗
@@ -1995,7 +2093,7 @@ struct 首页 {
           .width('100%')
           .height('100%')
           .alignContent(Alignment.Center)
-          .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
+          .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
         }
       }
       .width('100%')
@@ -2006,5 +2104,6 @@ struct 首页 {
     .hideTitleBar(true)
     .mode(NavigationMode.Stack)
     .navDestination(this.页面映射)
+    .customNavContentTransition(this.自定义转场回调)
   }
 }

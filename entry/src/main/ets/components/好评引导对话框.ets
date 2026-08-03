@@ -36,6 +36,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
 import { 打开应用内好评 } from '../utils/好评引导';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
 @Component
 export struct 好评引导对话框 {
@@ -113,7 +114,7 @@ export struct 好评引导对话框 {
         .onClick(() => {
           // 点遮罩不关闭：强制用户点按钮确认，避免误触跳过引导
         })
-        .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       Column({ space: 应用尺寸.间距_12 }) {
         Text($r('app.string.rate_guide_title'))
@@ -173,9 +174,9 @@ export struct 好评引导对话框 {
       .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
       .transition(TransitionEffect.asymmetric(
         TransitionEffect.opacity(0).combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))
-          .animation({ curve: Curve.EaseOut, duration: 200 }),
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
         TransitionEffect.opacity(0).combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-          .animation({ curve: Curve.EaseIn, duration: 160 })
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
       ))
     }
     .width('100%')

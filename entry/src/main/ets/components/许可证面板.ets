@@ -32,6 +32,7 @@
 
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
 @Component
 export struct 许可证面板 {
@@ -82,7 +83,7 @@ export struct 许可证面板 {
           this.onClose();
         })
         // 过渡仅动 opacity/translate/scale 合成属性，不触发布局（思路参考：华为官方 TransitionEffect 示例）
-        .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       Column({ space: 应用尺寸.间距_12 }) {
         Row() {
@@ -143,12 +144,10 @@ export struct 许可证面板 {
       })
       .transition(TransitionEffect.asymmetric(
         TransitionEffect.opacity(0)
-          .combine(TransitionEffect.translate({ y: 24 }))
           .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-          .animation({ curve: Curve.EaseOut, duration: 240 }),
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
         TransitionEffect.opacity(0)
-          .combine(TransitionEffect.translate({ y: 16 }))
-          .animation({ curve: Curve.EaseIn, duration: 180 })
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
       ))
     }
     .width('100%')

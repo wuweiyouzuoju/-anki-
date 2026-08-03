@@ -40,6 +40,7 @@ import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
 @Component
 export struct AnkiWeb引导对话框 {
@@ -88,7 +89,7 @@ export struct AnkiWeb引导对话框 {
         .onClick(() => {
           // 点遮罩不关闭：强制用户点「我已了解」确认
         })
-        .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       Column({ space: 应用尺寸.间距_12 }) {
         Text($r('app.string.ankiweb_guide_title'))
@@ -155,9 +156,9 @@ export struct AnkiWeb引导对话框 {
       .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
       .transition(TransitionEffect.asymmetric(
         TransitionEffect.opacity(0).combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))
-          .animation({ curve: Curve.EaseOut, duration: 200 }),
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
         TransitionEffect.opacity(0).combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-          .animation({ curve: Curve.EaseIn, duration: 160 })
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
       ))
     }
     .width('100%')

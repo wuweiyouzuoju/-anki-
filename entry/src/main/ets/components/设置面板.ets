@@ -22,6 +22,7 @@ import { 数据分组 } from './settings/数据分组';
 import { 同步分组 } from './settings/同步分组';
 import { 术语分组 } from './settings/术语分组';
 import { 字段帮助面板 } from './字段帮助面板';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
 // 分组头部 的按引用传参载体：@Builder 按值参数会被快照，@State 变化不重跑 builder，
 // 三角形不转（数据库检查/关于分组曾因此不旋转）；ArkTS 要求字面量对应显式 interface。
@@ -627,7 +628,7 @@ export struct 设置面板 {
         .onClick(() => {
           this.关闭回调();
         })
-        .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       List({ space: 12 }) {
         // 标题栏
@@ -846,12 +847,10 @@ export struct 设置面板 {
       })
       .transition(TransitionEffect.asymmetric(
         TransitionEffect.opacity(0)
-          .combine(TransitionEffect.translate({ y: 24 }))
           .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-          .animation({ curve: Curve.EaseOut, duration: 240 }),
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
         TransitionEffect.opacity(0)
-          .combine(TransitionEffect.translate({ y: 16 }))
-          .animation({ curve: Curve.EaseIn, duration: 180 })
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
       ))
 
       // FSRS 子分组 ⓘ 上抛的说明浮层：放在根 Stack 顶层，

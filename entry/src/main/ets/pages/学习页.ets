@@ -46,7 +46,8 @@ import { 加载学习布局模式, 学习布局模式 } from '../model/学习布
 import { 加载主题模式 } from '../model/主题存储';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
 import { 颜色键 } from '../model/颜色主题';
-// KeyCode 枚举：用于 onKeyPreIme 键盘事件判断（API 12+）。物理键盘/蓝牙键盘/2in1 设备内置键盘事件统一派发。
+import { CustomTransition } from '../utils/自定义转场';
+// KeyCode 枚举：用于 onKeyPreIme 键盘事件判断（API 12+）。物理键盘/蓝牙键盘/2in1 设备统一派发。
 import { KeyCode } from '@kit.InputKit';
 
 /** 与上游 buildNextLearnMsg 一致：下一张学习卡 >=1 天后到期时，完成页不再提示学习卡 */
@@ -129,10 +130,25 @@ export struct 学习页 {
   @State private 拼写组合: boolean = true;
   @State private 拼写填空: boolean = false;
   @State private 拼写卡片序号: number = 0;
+  /** NavDestination 透明度（由 customNavContentTransition 回调控制，实现淡入淡出转场）。 */
+  @State private 转场透明度: number = 1;
 
   async aboutToAppear(): Promise<void> {
     this.牌组ID = this.pageDeckId === '' ? 0 : parseInt(this.pageDeckId);
     this.牌组名 = this.pageDeckName;
+    // 注册自定义转场回调：首页 Navigation.customNavContentTransition 通过此 name 查找回调，
+    // 在 animateTo 内调用起点/终点回调修改 转场透明度，实现淡入淡出（替代系统默认左右平移）。
+    // key 用 'StudyPage'（NavPathStack pushPath 时传的 name，与 from.name / to.name 一致）。
+    CustomTransition.getInstance().注册NavParam('StudyPage',
+      (isPush: boolean, isExit: boolean): void => {
+        // 起点：进入方从 0 开始淡入；退出方从 1 起始（保持显示，淡出由终点回调控制）
+        this.转场透明度 = isExit ? 1 : 0;
+      },
+      (isPush: boolean, isExit: boolean): void => {
+        // 终点：进入方淡入到 1；退出方淡出到 0（pop 时退出方被卸载，opacity 无关紧要）
+        this.转场透明度 = isExit ? 0 : 1;
+      }
+    );
     // 布局模式与主题并行加载，避免阻塞 启动会话；任一失败回退默认值。
     try {
       this.主题模式值 = await 加载主题模式();
@@ -157,6 +173,8 @@ export struct 学习页 {
     // 页面销毁释放原生播放器与 TTS 引擎（fire-and-forget，不等释放完成）
     this.声音播放器实例.释放();
     this.TTS播放器实例.释放();
+    // 注销自定义转场回调，避免内存泄漏与野回调
+    CustomTransition.getInstance().注销NavParam('StudyPage');
   }
 
   /** 评分按钮兜底文案（后端 DescribeNextStates 异常时可用），启动时从资源读一次 */
@@ -1376,5 +1394,6 @@ export struct 学习页 {
       })
     }
     .hideTitleBar(true)
+    .opacity(this.转场透明度)
   }
 }

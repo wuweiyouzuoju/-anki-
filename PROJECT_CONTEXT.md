@@ -50,7 +50,8 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 
 | 模块 | 路径 | 关键不变量 |
 |---|---|---|
-| ArkUI 页面 | `entry/src/main/ets/pages/` | NavPathStack(非 router)；StudyPage phase 状态机 loading→question→answer→done/error；切换卡片时必须回到 loading |
+| ArkUI 页面 | `entry/src/main/ets/pages/` | NavPathStack(非 router)；StudyPage phase 状态机 loading→question→answer→done/error；切换卡片时必须回到 loading；BrowserPage phase 状态机 loading→list→error |
+| 浏览页组件 | `entry/src/main/ets/components/browser/` | 搜索框(TextInput+模式切换) + 卡片表格(List+多选+空态)；回调上抛不直接调 Service |
 | Service 层 | `entry/src/main/ets/backend/` | 不持有 UI 状态；经 BackendSession 单例；失败抛 BackendError |
 | Proto 编解码 | `entry/src/main/ets/proto/` | 纯函数；proto3 optional 用 null；**SchedulingStates raw passthrough 字节级保真** |
 | BackendSession | `entry/src/main/ets/backend/后端会话.ts` | 单例；幂等打开；`closeCollection` vs `markCollectionConsumed` 不可混用 |
@@ -74,10 +75,14 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 排查 NAPI 错误 | `native/napi_bridge/src/native_module.cpp` + `backend/错误类型.ts` | `nativeStatus=3` 是 BACKEND_ERROR；`nativeStatus=4` 是 NATIVE_FATAL |
 | 排查 Rust panic | `native/rsharmony/src/lib.rs` | `call_with_registry` 用 catch_unwind 包裹；BackendRegistry 是全局 OnceLock |
 | 修改媒体渲染 | `utils/{声音播放器,TTS播放器,媒体响应助手}.ets` + `model/学习卡片HTML构建器.ets` | 媒体经 `https://jidecards-media.local/` 自建域名 |
+| 修改全屏转场（NavDestination/弹窗） | `utils/转场时长.ets`（分档时长 + 弹簧曲线）+ `utils/自定义转场.ets`（NavDestination opacity 回调注册表）+ `pages/首页.ets` 的 `customNavContentTransition` 回调 | 时长按物理英寸分档（<8.5→200ms / 8.5-12→250ms / >12→300ms）；曲线统一 `curves.springCurve(0, 228, 22, 1)`；首页推栈（from/to index=-1）必须返回 undefined 走系统默认；`proxy.finishTransition()` 必须调，否则 1200ms timeout 后 UI 卡住 |
+| 修改色彩对比度 | `resources/{base,dark}/element/color.json` + `model/颜色主题.ets` + `model/色阶生成.ets`（导出 WCAG 函数） | 文字档 ≥4.5:1，图标/标题档 ≥3:1；改 token 必须同时改 base + dark 避免深色模式反转；`色阶生成.ets` 的 `对比度(a,b)` 可直接调用验算 |
 | 新增 Anki backend 方法 | `backend/服务索引.ts` 加 SERVICE/METHOD 常量 | **升级 Anki 版本时必须重新提取本表** |
 | 修改"给我好评"逻辑 | `components/设置面板.ets` 的 `处理好评失败` + `跳转应用市场详情页` | commentManager.showCommentDialog 失败（含 1021500006-9 全部分支）统一回退 DeepLink `store://appgallery.huawei.com/app/detail?id=com.jide.kapian`；不再用 promptAction.showDialog（实测 Promise 静默挂起） |
 | 修改"学习完成好评引导" | `pages/首页.ets` 的 `检查学习完成标记` + `components/好评引导对话框.ets` + `utils/好评引导.ets` + `model/好评引导存储.ets` | 学习页完成学习（展示时刻毫秒 > 0）写 `AppStorage('studyJustFinished', true)`；首页 `开始学习` onPop 调 `检查学习完成标记` 读标记 → preferences 查「只弹一次」→ 标记 → 弹 `好评引导对话框`。`打开应用内好评` 复用设置面板同款 commentManager + DeepLink 降级 |
 | 升级版本号 | `AppScope/app.json5` 的 versionCode + versionName | versionCode 递增；提交应用市场前需真机回归 + decisions.md 记录 |
+| 修改浏览页 | `pages/浏览页.ets` + `components/browser/{搜索框,卡片表格}.ets` + `backend/搜索服务.ts` | phase 状态机 loading→list→error；搜索串由后端构建搜索串生成（前端不拼字符串）；行数据懒加载（浏览器行按ID） |
+| 新增浏览器列 | `proto/messages/SearchMessages.ts` 的 BrowserColumn 接口 + 后端 全部浏览器列 RPC 返回 | 列 key 来自 Anki 后端预定义；手机端默认显示 Question+Deck+Due 三列（长按表头配置） |
 
 ## 关键设计决策
 
@@ -102,6 +107,9 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 新增 i18n key | `resources/base/element/string.json` + `resources/en_US/element/string.json` 同步加 key（数量+名称必须对齐，英文不能含中文）+ 调用点用 `$r` 或 `localized` / `localizedFmt` | `theme_color_*` / `about_rate_*`（含 `%s` / `%1$s` 占位符时用 `localizedFmt(resource, args)`） |
 | 新增设置入口（应用内系统弹窗） | `components/设置面板.ets` aboutGroupContent 内加行 + 对应私有方法 | `处理好评()` 调 `commentManager.showCommentDialog`（@kit.AppGalleryKit）+ Deep Linking 降级；按错误码分支处理（1021500006-9）；**不要用 promptAction.showDialog** |
 | 新增"首次完成 X 触发弹窗"引导 | 三件套：`components/<X>引导对话框.ets`(磨砂遮罩+surface_card) + `model/<X>引导存储.ets`(preferences「只弹一次」) + 触发点写 AppStorage 标记 + 首页 onPop 检查标记 | `AnkiWeb引导对话框`(首次启动) / `好评引导对话框`(首次完成学习)：参考 `显示AnkiWeb引导一次` 与 `检查学习完成标记` 的「先标记再弹窗」模式 |
+| 新增 NavDestination 自定义转场 | (1) `pages/<X>页.ets` 的 NavDestination 加 `@State 转场透明度: number = 1` + `.opacity(this.转场透明度)` (2) `aboutToAppear` 调 `CustomTransition.getInstance().注册NavParam('<PageName>', 起点回调, 终点回调)`（起点设 opacity=0 进入/1 退出，终点设目标值）(3) `aboutToDisappear` 调 `注销NavParam('<PageName>')` (4) `pages/首页.ets` 的 `自定义转场回调` 已统一处理，无需改 | `pages/学习页.ets`('StudyPage') / `pages/添加笔记页.ets`('AddNotePage')：参考其 aboutToAppear 注册 + aboutToDisappear 注销模式；**key 必须与 NavPathStack pushPath 时的 name 一致**（首页.ets:1555 用 `from.name ?? ''` 查找） |
+| 新增全屏弹窗/面板 | `components/<X>面板.ets` 内 `Stack` 的遮罩 Column 与主面板 Column 都加 `.transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))`；如需 scale 入场用 `TransitionEffect.asymmetric` + `.combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))` | `components/好评引导对话框.ets`（OPACITY + scale 0.92）/ `components/牌组定制面板.ets`（纯 OPACITY）：禁止左右平移/上下位移/单帧切换 |
+| 新增浏览页侧边栏节点 | `components/browser/浏览侧边栏.ets`（阶段 4 T6）+ `搜索服务.连接搜索节点` / `搜索服务.替换搜索节点` | 树形展示牌组/标签/已保存搜索；点击节点触发 onSearchWithNode；长按切追加 AND/OR 语义 |
 
 ## 项目特有的坑
 
@@ -119,6 +127,8 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 - **`closeCollection()` vs `markCollectionConsumed()`**：export 后 collection 已被后端消费，调 CLOSE 会失败，只能切本地 state
 - **旧索引目录 `.ai-index/` 已废弃**：readable-indexed-code 规则改用语义检索（SearchCodebase），`.ai-index/` 可删除但保留无害
 - **没有 docs/architecture.md 与 DEVELOPMENT_PLAN.md**：jidecards01 未引 docs 目录，架构详情需读 `往期淘汰作品/jidecards/docs/architecture.md`（注意部分过期：声称 12 backend 文件实际 16+；声称存在 SERVICE_EXTENSION_GUIDE.md 实际无）
+- **hvigor PackageHap 阶段 `spawn java ENOENT`**：本机 `java` 不在系统 PATH，需先 `$env:JAVA_HOME="C:\Program Files\Huawei\DevEco Studio\jbr"; $env:PATH="$env:JAVA_HOME\bin;$env:PATH"` 再跑 hvigorw。否则 CompileArkTS 通过但 PackageHap 失败，错误信息看似与代码相关实则环境问题
+- **`NavContentInfo.name` 类型是 `string | undefined` 不是 `string`**：API 23 起 from/to 的 name 可能为 undefined（未命名场景），赋给 string 变量会触发 `10605999 ArkTS Compiler Error`。需用 `from.name ?? ''` 兜底
 
 ## 待办
 

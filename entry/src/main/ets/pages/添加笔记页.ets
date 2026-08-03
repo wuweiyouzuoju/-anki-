@@ -25,6 +25,7 @@ import { 图片遮罩编辑器 } from '../components/图片遮罩编辑器';
 import { 从图库选取图片 } from '../utils/文件导入助手';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
+import { CustomTransition } from '../utils/自定义转场';
 import type { EditableNote } from '../proto/messages/NoteMessages';
 import type { NotetypeNameId, NotetypeView } from '../proto/messages/NotetypeMessages';
 
@@ -129,11 +130,24 @@ export struct 添加笔记页 {
   @StorageProp(颜色键.主色按钮按下) private 主色按钮按下色: string = '#1E4FB8';
   // ⓘ 圆形按钮背景色（淡蓝容器色，配 动作主色 深蓝字符）
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
+  /** NavDestination 透明度（由 customNavContentTransition 回调控制，实现淡入淡出转场）。 */
+  @State private 转场透明度: number = 1;
 
   async aboutToAppear(): Promise<void> {
     this.牌组ID = this.pageDeckId === '' ? 0 : parseInt(this.pageDeckId);
     this.牌组名 = this.pageDeckName;
     this.牌组选项 = this.pageDeckOptions;
+    // 注册自定义转场回调：首页 Navigation.customNavContentTransition 通过此 name 查找回调，
+    // 在 animateTo 内调用起点/终点回调修改 转场透明度，实现淡入淡出（替代系统默认左右平移）。
+    // key 用 'AddNotePage'（NavPathStack pushPath 时传的 name，与 from.name / to.name 一致）。
+    CustomTransition.getInstance().注册NavParam('AddNotePage',
+      (isPush: boolean, isExit: boolean): void => {
+        this.转场透明度 = isExit ? 1 : 0;
+      },
+      (isPush: boolean, isExit: boolean): void => {
+        this.转场透明度 = isExit ? 0 : 1;
+      }
+    );
     // 加载主题模式用于图片遮罩编辑器的深色判断；失败回退默认 'system'，不阻塞建卡流程。
     try {
       this.主题模式值 = await 加载主题模式();
@@ -141,6 +155,11 @@ export struct 添加笔记页 {
       this.主题模式值 = 'system';
     }
     await this.加载初始数据();
+  }
+
+  aboutToDisappear(): void {
+    // 注销自定义转场回调，避免内存泄漏与野回调
+    CustomTransition.getInstance().注销NavParam('AddNotePage');
   }
 
   /** 暗色模式判断：主题模式值=system 时跟随系统，否则按显式选择。与 学习页.ets 同语义。 */
@@ -1236,6 +1255,7 @@ export struct 添加笔记页 {
     .height('100%')
     }
     .hideTitleBar(true)
+    .opacity(this.转场透明度)
   }
 
   /** T3.7：保存按钮可用条件——ImageOcclusion 模式要求已选图 + 至少 1 个遮罩；其他模式与原逻辑一致。 */

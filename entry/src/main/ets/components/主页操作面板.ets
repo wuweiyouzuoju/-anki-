@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { 应用尺寸 } from '../utils/应用尺寸';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
 // ========================================================
 // @块ID COMP-HOME-ACTION-001
@@ -69,14 +70,12 @@ export struct 主页操作面板 {
       .onClick(() => {
         // 阻断点击穿透到遮罩
       })
-      // 从触发按钮处向下轻推入场（思路参考：华为官方 TransitionEffect 示例）
+      // 淡入淡出过渡（评价要求：禁止上下位移，改为纯 OPACITY）
       .transition(TransitionEffect.asymmetric(
         TransitionEffect.opacity(0)
-          .combine(TransitionEffect.translate({ y: -12 }))
-          .animation({ curve: Curve.EaseOut, duration: 200 }),
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
         TransitionEffect.opacity(0)
-          .combine(TransitionEffect.translate({ y: -8 }))
-          .animation({ curve: Curve.EaseIn, duration: 160 })
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
       ))
     }
     .width('100%')

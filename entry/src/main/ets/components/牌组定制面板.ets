@@ -45,6 +45,7 @@ import { 应用尺寸 } from '../utils/应用尺寸';
 import { 牌组汇总, 牌组色调, 牌组显示名 } from '../model/主页模型';
 import { 从图库选取图片 } from '../utils/文件导入助手';
 import { 颜色键 } from '../model/颜色主题';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
 /** 面板提交时携带的背景图动作。 */
 export type 牌组背景动作 = 'keep' | 'remove' | 'replace';
@@ -251,7 +252,7 @@ export struct 牌组定制面板 {
         })
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         .onClick(() => { if (!this.busy && !this.裁剪模式) this.onClose(); })
-        .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       // ---- 主面板 ----
       Column({ space: 应用尺寸.间距_12 }) {
@@ -453,12 +454,10 @@ export struct 牌组定制面板 {
       })
       .transition(TransitionEffect.asymmetric(
         TransitionEffect.opacity(0)
-          .combine(TransitionEffect.translate({ y: 24 }))
           .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-          .animation({ curve: Curve.EaseOut, duration: 240 }),
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
         TransitionEffect.opacity(0)
-          .combine(TransitionEffect.translate({ y: 16 }))
-          .animation({ curve: Curve.EaseIn, duration: 180 })
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
       ))
 
       // ---- 顶层：裁剪模式覆盖层（仅 裁剪模式=true 时显示）----
@@ -533,9 +532,9 @@ export struct 牌组定制面板 {
         .transition(TransitionEffect.asymmetric(
           TransitionEffect.opacity(0)
             .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-            .animation({ curve: Curve.EaseOut, duration: 200 }),
+            .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
           TransitionEffect.opacity(0)
-            .animation({ curve: Curve.EaseIn, duration: 150 })
+            .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
         ))
       }
     }
