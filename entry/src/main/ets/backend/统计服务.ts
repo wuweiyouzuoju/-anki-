@@ -27,8 +27,8 @@
 
 import { 后端会话 } from './后端会话';
 import { 服务号, 统计方法 } from './服务索引';
-import type { GraphsView } from '../proto/messages/StatsMessages';
-import { decodeGraphsResponse, encodeGraphsRequest } from '../proto/messages/StatsMessages';
+import type { CardStatsView, GraphsView } from '../proto/messages/StatsMessages';
+import { decodeCardStatsResponse, decodeGraphsResponse, encodeCardIdRequest, encodeGraphsRequest } from '../proto/messages/StatsMessages';
 
 export class 统计服务 {
   private readonly 会话: 后端会话 = 后端会话.获取实例();
@@ -42,5 +42,16 @@ export class 统计服务 {
     const 响应字节: Uint8Array = await this.会话.调用(
       服务号.后端统计, 统计方法.图表, 请求字节);
     return decodeGraphsResponse(响应字节);
+  }
+
+  /**
+   * 拉取单卡完整统计（T11 卡片信息用）。含调度信息 + 复习历史。
+   * 调 stats.proto 方法 0 CardStats(CardId) → CardStatsResponse。
+   */
+  async 获取卡片统计(卡片ID: number): Promise<CardStatsView> {
+    const 请求字节: Uint8Array = encodeCardIdRequest(卡片ID);
+    const 响应字节: Uint8Array = await this.会话.调用(
+      服务号.后端统计, 统计方法.卡片统计, 请求字节);
+    return decodeCardStatsResponse(响应字节);
   }
 }

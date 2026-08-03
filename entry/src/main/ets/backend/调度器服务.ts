@@ -114,6 +114,17 @@ export class 调度器服务 {
   }
 
   /**
+   * 批量埋藏或暂停卡片（浏览页 T8 批量操作栏用）。
+   * 与单卡版同 RPC，只是 cardIds 传数组；encodeBuryOrSuspendCardsRequest 已支持 packed repeated int64。
+   * 模式 取 BURY_SUSPEND_MODE_*（SUSPEND=0 / BURY_SCHED=1 / BURY_USER=2）。
+   */
+  async 批量埋藏或暂停卡片(卡片ID列表: number[], 模式: number): Promise<void> {
+    const 请求字节: Uint8Array = encodeBuryOrSuspendCardsRequest(卡片ID列表, [], 模式);
+    await this.会话.调用(
+      服务号.后端调度器, 调度器方法.埋藏或暂停, 请求字节);
+  }
+
+  /**
    * 按牌组恢复被埋藏的卡片（模式 取 UNBURY_MODE_*）。
    * CongratsInfo 只给 haveSchedBuried/haveUserBuried 标记、不给卡片 id，
    * 因此完成页的「恢复」只能按牌组维度恢复，与桌面 overview 的 unbury 一致。

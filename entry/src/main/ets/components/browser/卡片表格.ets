@@ -35,12 +35,14 @@
 
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 统一空态 } from '../common/统一空态';
+import { BrowserRowColor } from '../../proto/messages/SearchMessages';
 import type { BrowserCell } from '../../proto/messages/SearchMessages';
 
-/** 单行展示数据：卡片/笔记 ID + 后端返回的单元格 */
+/** 单行展示数据：卡片/笔记 ID + 后端返回的单元格 + 行颜色提示（标志/挂起等） */
 export interface 浏览行数据 {
   id: number;
   cells: BrowserCell[];
+  color: BrowserRowColor;
 }
 
 @Component
@@ -51,10 +53,24 @@ export struct 卡片表格 {
   onRowClick: (id: number) => void = (): void => {};
   onLongPress: () => void = (): void => {};
   onLoadMore: () => void = (): void => {};
+  /** T11 卡片信息：非多选模式下点击行右侧 info 按钮触发 */
+  onInfoClick: (id: number) => void = (): void => {};
+  /** T8 批量操作栏：选中ID集合变化时上抛（数组快照），宿主据此显示/隐藏批量操作栏 */
+  onSelectionChange: (选中IDs: number[]) => void = (): void => {};
+  /** T8 批量操作栏：多选模式切换时上抛（true=进入多选，false=退出） */
+  onMultiSelectChange: (多选: boolean) => void = (): void => {};
+  /** T8 批量操作栏：宿主完成批量操作后翻转此信号（+1），触发组件内部清空选中并退出多选 */
+  @Prop @Watch('当退出多选信号变化') 退出多选信号: number = 0;
 
   @State private 多选模式: boolean = false;
   @State private 选中ID集合: Set<number> = new Set<number>();
   @State private 加载中: boolean = false;
+
+  /** 退出多选信号变化时清空内部选中（宿主已清自己的，这里同步组件内部状态）。 */
+  private 当退出多选信号变化(): void {
+    this.多选模式 = false;
+    this.选中ID集合 = new Set<number>();
+  }
 
   /** 取行第一列文本作为主文案（Question 列，空则回退 #id）。 */
   private 取行主文案(行: 浏览行数据): string {
@@ -70,6 +86,25 @@ export struct 卡片表格 {
       return '';
     }
     return 行.cells[1].text || '';
+  }
+
+  /** 行标志色：根据 BrowserRowColor 返回色条颜色，无标志返回透明。 */
+  private 取行标志色(行: 浏览行数据): string {
+    switch (行.color) {
+      case BrowserRowColor.COLOR_FLAG_RED: return '#D92D20';
+      case BrowserRowColor.COLOR_FLAG_ORANGE: return '#D97A1C';
+      case BrowserRowColor.COLOR_FLAG_GREEN: return '#238463';
+      case BrowserRowColor.COLOR_FLAG_BLUE: return '#2F5FD0';
+      case BrowserRowColor.COLOR_FLAG_PINK: return '#D9408F';
+      case BrowserRowColor.COLOR_FLAG_TURQUOISE: return '#1CA7A0';
+      case BrowserRowColor.COLOR_FLAG_PURPLE: return '#7B2CBF';
+      default: return 'transparent';
+    }
+  }
+
+  /** 行是否挂起（COLOR_SUSPENDED），用于行背景变灰。 */
+  private 是否挂起行(行: 浏览行数据): boolean {
+    return 行.color === BrowserRowColor.COLOR_SUSPENDED;
   }
 
   /** 多选模式下取选中计数文案（browser_select_count，替换 %d）。 */
@@ -95,6 +130,8 @@ export struct 卡片表格 {
     }
     this.多选模式 = true;
     this.选中ID集合 = new Set<number>([id]);
+    this.onMultiSelectChange(true);
+    this.onSelectionChange([id]);
     this.onLongPress();
   }
 
@@ -107,12 +144,15 @@ export struct 卡片表格 {
       新集合.delete(id);
     }
     this.选中ID集合 = 新集合;
+    this.onSelectionChange(Array.from(新集合));
   }
 
   /** 退出多选模式，清空选中。 */
   private 退出多选(): void {
     this.多选模式 = false;
     this.选中ID集合 = new Set<number>();
+    this.onMultiSelectChange(false);
+    this.onSelectionChange([]);
   }
 
   @Builder
@@ -173,7 +213,7 @@ export struct 卡片表格 {
                 Column({ space: 应用尺寸.间距_2 }) {
                   Text(this.取行主文案(行))
                     .fontSize(应用尺寸.字号_正文)
-                    .fontColor($r('app.color.text_primary'))
+                    .fontColor(this.是否挂起行(行) ? $r('app.color.text_secondary') : $r('app.color.text_primary'))
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .width('100%')
@@ -189,22 +229,45 @@ export struct 卡片表格 {
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
+
+                // T11 卡片信息按钮：非多选模式下显示，点击触发 onInfoClick
+                // hitTestBehavior(Block) 阻止点击事件冒泡到行 onClick（ClickEvent 无 stopPropagation）
+                if (!this.多选模式) {
+                  Text('ⓘ')
+                    .fontSize(应用尺寸.字号_正文)
+                    .fontColor($r('app.color.text_secondary'))
+                    .padding({
+                      left: 应用尺寸.间距_8,
+                      right: 应用尺寸.间距_4,
+                      top: 应用尺寸.间距_4,
+                      bottom: 应用尺寸.间距_4
+                    })
+                    .hitTestBehavior(HitTestMode.Block)
+                    .onClick((): void => {
+                      this.onInfoClick(行.id);
+                    })
+                }
               }
               .width('100%')
               .padding({
                 left: 应用尺寸.间距_16,
                 right: 应用尺寸.间距_16,
-                top: 应用尺寸.间距_12,
-                bottom: 应用尺寸.间距_12
+                top: 应用尺寸.间距_8,
+                bottom: 应用尺寸.间距_8
               })
-              .backgroundColor($r('app.color.surface_page'))
+              .backgroundColor(this.是否挂起行(行) ? $r('app.color.surface_card') : $r('app.color.surface_page'))
+              // 有标志时加 4px 左边框作色条（不增加子元素，不影响布局高度）
+              .border(this.取行标志色(行) !== 'transparent' ? {
+                width: { left: 4 },
+                color: { left: this.取行标志色(行) }
+              } : { width: 0 })
               .onClick((): void => this.处理行点击(行.id))
               .gesture(
                 LongPressGesture()
                   .onAction((): void => this.处理长按(行.id))
               )
             }
-          }, (行: 浏览行数据): string => `${行.id}`)
+          }, (行: 浏览行数据): string => `${行.id}-${行.color}`)
         }
         .width('100%')
         .layoutWeight(1)
@@ -224,6 +287,6 @@ export struct 卡片表格 {
       }
     }
     .width('100%')
-    .height('100%')
+    .layoutWeight(1)
   }
 }
