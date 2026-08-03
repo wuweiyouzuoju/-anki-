@@ -4,20 +4,47 @@ import { 加载FSRS开启状态, 设置FSRS开启状态 } from '../../model/FSRS
 import { 设置面板色板_取, 设置面板色板 } from '../../utils/设置面板配色';
 import { 颜色键 } from '../../model/颜色主题';
 
+// ========================================================
+// @块ID UI-SCHEDULER-001
+// @名称 FSRS 调度器分组
+//
+// @作用
+// 提供 FSRS 调度器开关 + 说明小字 + 错误提示。
+// 状态自管：是否启用FSRS / FSRS操作中 / FSRS错误信息；aboutToAppear 拉取后端当前值。
+// 乐观更新 UI，失败回滚并提示（与原 SettingsPanel 同语义）。
+//
+// @输入
+// 是否深色：当前是否深色模式（影响色板取值）。
+// 是否展开：本分组是否展开。
+// 切换展开回调 / 打开说明回调：父组件注入；打开说明回调 上抛 标题 + 正文 Resource。
+//
+// @输出
+// 渲染 FSRS 调度器分组卡片；用户切换开关时持久化并更新状态。
+//
+// @副作用
+// 调用 加载FSRS开启状态 / 设置FSRS开启状态 读写后端；
+// 切换失败时回滚 UI 并显示错误信息。
+// ========================================================
 @Component
 export struct 调度器分组 {
   @Prop 是否深色: boolean = false;
   @Prop 是否展开: boolean = false;
   切换展开回调: () => void = (): void => {};
+  // ⓘ 按钮上抛：由父组件 SettingsPanel 统一渲染 FieldHelpPanel 浮层，避免嵌在分组卡片内
   打开说明回调: (标题: Resource, 正文: Resource) => void = (_标题: Resource, _正文: Resource): void => {};
 
+  // @StorageLink 让本组件在 主色按钮背景 变化时立即重渲染；解析主色按钮背景() 直接引用此字段，
+  // 让 FSRS 选中态主色在颜色主题切换瞬间同步更新（与 外观分组 同款机制）。
   @StorageLink(颜色键.主色按钮背景) private 主色按钮背景链接: string = '';
+  // B12-Y5 2026-07-29 修复 Bug 1：@StorageProp('themeMode') 让主题模式切换直接触发重 build，
+  // 不依赖 @Prop 是否深色 传播（aurora 主题 主色按钮背景 深浅色相同，@StorageLink 可能不触发）。
   @StorageProp('themeMode') private 主题模式监听: string = 'system';
 
   @State private 是否启用FSRS: boolean | null = null;
   @State private FSRS操作中: boolean = false;
   @State private FSRS错误信息: string = '';
 
+  /** 面板打开时拉取 FSRS 当前状态与后端同步。失败时保留 null，UI 显示"读取失败"。 */
   async aboutToAppear(): Promise<void> {
     await this.刷新FSRS状态();
   }
@@ -31,6 +58,22 @@ export struct 调度器分组 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-SCHEDULER-002
+  // @名称 切换 FSRS 开关
+  //
+  // @作用
+  // 切换 FSRS 开关：乐观更新 UI，失败时回滚并提示。防重入避免快速连击。
+  //
+  // @输入
+  // 值：用户切换后的目标开关状态。
+  //
+  // @输出
+  // 更新 是否启用FSRS / FSRS操作中 / FSRS错误信息；失败时回滚到先前状态。
+  //
+  // @副作用
+  // 调用 设置FSRS开启状态 持久化到后端。
+  // ========================================================
   private async 切换FSRS开关(值: boolean): Promise<void> {
     if (this.FSRS操作中 || this.是否启用FSRS === null) {
       return;
@@ -53,6 +96,7 @@ export struct 调度器分组 {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id);
   }
 
+  /** 按钮背景专用主色（配 #FFFFFF 文字 ≥ 4.5:1）。2.1.4.1 深色模式修复。 */
   private 解析主色按钮背景(): string {
     return this.主色按钮背景链接 !== '' ? this.主色按钮背景链接 : 设置面板色板_取(this.是否深色).主色按钮背景;
   }
@@ -64,6 +108,7 @@ export struct 调度器分组 {
         .fontSize(14)
         .fontWeight(FontWeight.Medium)
         .fontColor(设置面板色板_取(this.是否深色).次文字)
+      // 展开时才显示 ⓘ 按钮，点击弹出说明面板（替代原内联说明小字）
       if (this.是否展开) {
         Button($r('app.string.field_help_button'))
           .type(ButtonType.Normal)
@@ -96,6 +141,9 @@ export struct 调度器分组 {
 
       if (this.是否展开) {
         Column() {
+          // FSRS 开关行：label + Toggle。说明文字已移到 分组头部 的 ⓘ 按钮弹层中。
+          // 注意：Toggle 的 isOn 必须用 $$ 双向绑定到 @State，否则开关不响应点击。
+          // 但本场景需要乐观更新 + 失败回滚，所以改用单向绑定 + onChange 手动控制。
           Row() {
             Text($r('app.string.settings_fsrs_label'))
               .fontSize(15)

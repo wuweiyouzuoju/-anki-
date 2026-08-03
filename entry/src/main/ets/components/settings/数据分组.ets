@@ -3,6 +3,26 @@
 import { 设置面板色板, 设置面板色板_取 } from '../../utils/设置面板配色';
 import { 颜色键 } from '../../model/颜色主题';
 
+// ========================================================
+// @块ID UI-DATA-GROUP-001
+// @名称 数据管理分组
+//
+// @作用
+// 渲染「导出/导入数据」+「已隐藏牌组」两个入口行；点击上抛回调，由父组件打开对应面板。
+// 纯回调传递，无内部状态；点「导出/导入数据」由父组件打开 DataTransferPanel，
+// 用户在面板内 Select 下拉切换 exportDeck / exportPersonalData / importDeck / importPersonalData 四种模式。
+//
+// @输入
+// 是否深色：当前是否深色模式（影响色板取值）。
+// 是否展开：本分组是否展开。
+// 切换展开回调 / 点击导出导入回调 / 点击已隐藏牌组回调：父组件注入。
+//
+// @输出
+// 渲染数据管理分组卡片；用户点击行时触发对应回调。
+//
+// @副作用
+// 无（点击行为由父组件处理）。
+// ========================================================
 @Component
 export struct 数据分组 {
   @Prop 是否深色: boolean = false;
@@ -11,6 +31,7 @@ export struct 数据分组 {
   点击导出导入回调: () => void = (): void => {};
   点击已隐藏牌组回调: () => void = (): void => {};
 
+  // @StorageProp 触发颜色主题切换时重 build，让 设置面板色板_取(是否深色).主色 即时变化
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
 
   private 取本地化文本(资源: Resource): string {
@@ -43,6 +64,7 @@ export struct 数据分组 {
 
       if (this.是否展开) {
         Column() {
+          // 导出/导入数据行（合并原「导入数据」+「导出数据」两行；点开 DataTransferPanel 后用户在 Select 下拉切换四种模式）
           Row() {
             Column({ space: 2 }) {
               Text($r('app.string.settings_export_import_data'))
@@ -64,6 +86,7 @@ export struct 数据分组 {
             this.点击导出导入回调();
           })
 
+          // 已隐藏牌组行
           Row() {
             Column({ space: 2 }) {
               Text($r('app.string.hidden_decks_entry'))

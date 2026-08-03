@@ -1,5 +1,36 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID MODEL-DECK-CONFIG-FORM-001
+// @名称 牌组配置表单
+//
+// @作用
+// 牌组配置（DeckConfigSettings）的 UI 编辑表单与校验器。
+// 把 proto 层的数字 / 数组型配置项转换为字符串文本供 UI 绑定，
+// 维护原始编辑缓冲与无效键集合，提供统一校验入口与回写入口。
+//
+// @输入
+// DeckConfigSettings（来自 proto 层）作为初始来源；
+// UI 层通过 set* 系列方法写入文本值。
+//
+// @输出
+// 校验问题（ValidationIssue）列表；
+// applyToSettings 成功时把合并后的配置写回目标 DeckConfigSettings。
+//
+// @业务规则
+// 公开文本字段为 UI 文本态（字符串），与 proto 字段同名但类型不同，
+// 改名后通过中文名显式区分（如 学习步骤文本 vs proto.learnSteps）。
+// 所有以 keyof DeckConfigSettings 为键的字符串字面量（'learnSteps' / 'newPerDay' 等）
+// 必须保留 proto 字段名，因为它们用于索引 proto 类型。
+// i18n 消息键（deck_*_validation_error）保留英文。
+//
+// @副作用
+// 无。本类只在内存中维护草稿，不直接读写数据库或 preferences。
+//
+// @注意
+// @Observed 类的字段中文化后，UI 绑定调用方需同步更新（由主代理统一处理）。
+// ========================================================
+
 import { emptyDeckConfigSettings } from '../proto/messages/DeckConfigMessages';
 import type { DeckConfigSettings } from '../proto/messages/DeckConfigMessages';
 

@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// 复习流程链路契约测试（M7）：
+// - 调度器服务/卡片渲染服务 只经 后端会话 走正确服务/方法索引；
+// - 学习卡片HTML构建器 为纯函数：节点流 → HTML，媒体相对路径重写到自建域名；
+// - 学习页.ets 走完整链路（取卡→渲染→文案→评分→下一张），Web 组件配置防跨域；
+// - 首页.ets 通过 Navigation + NavPathStack 跳转 学习页（API 12 推荐写法，替代废弃 router）。
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -60,6 +65,7 @@ test('card rendering service wraps RenderExistingCard and ExtractAvTags', () => 
 });
 
 test('deck id encoder matches decks.DeckId wire format', () => {
+  // did=300 (varint 0xAC 0x02)，tag = field1 << 3 | 0 = 0x08
   assert.deepEqual(Array.from(encodeDeckId(300)), [0x08, 0xAC, 0x02]);
   assert.deepEqual(Array.from(encodeDeckId(0)), [], 'proto3 default omitted');
 });
@@ -135,6 +141,7 @@ test('extract av tags wire format round-trips sound files in order', () => {
   assert.equal(out.text, 'stripped text');
   assert.deepEqual(out.soundFiles, ['a.mp3', 'b.ogg']);
 
+  // 请求侧：questionSide=false 为 proto3 默认，不写字段
   assert.deepEqual(Array.from(encodeExtractAvTagsRequest('', false)), []);
 });
 
@@ -156,6 +163,8 @@ test('study page plays card audio through native SoundPlayer', () => {
   assert.match(page, /声音播放器实例\.重播\(\)/, 'replay button wired');
   assert.match(page, /aboutToDisappear\(\)[\s\S]*?声音播放器实例\.释放\(\)/, 'player released on page exit');
   assert.doesNotMatch(page, /mediaPlayGestureAccess/, 'web audio scheme removed');
+  // 音频必须由原生 SoundPlayer 播放，禁止通过 runJavaScript 注入 audio 播放脚本。
+  // 但允许 runJavaScript 调用 anki.imageOcclusion.setup() 作为图片遮罩兜底（BUG-001）。
   assert.doesNotMatch(page, /runJavaScript\([^)]*\baudio\b/i, 'no injected audio playback script');
   assert.match(page, /runJavaScript\(['"]anki\.imageOcclusion\.setup\(\)['"]\)/,
     'image occlusion setup fallback wired via runJavaScript');
@@ -163,9 +172,12 @@ test('study page plays card audio through native SoundPlayer', () => {
 
 test('image occlusion IIFE exposes toggle and hides #toggle button (BUG-007)', () => {
   const builder = read('entry/src/main/ets/model/学习卡片HTML构建器.ets');
+  // 上游 afmt 模板的 <button id="toggle"> 无 onclick，由 IIFE 在 setup() 中隐藏（2026-07-28 暂停切换功能）。
   assert.match(builder, /toggle:\s*function\s*\(\s*\)\s*\{/, 'anki.imageOcclusion.toggle method defined');
   assert.match(builder, /getElementById\(['"]toggle['"]\)/, '#toggle button looked up in setup');
+  // 暂时隐藏按钮：Web focusable(false) 下 click/touchend 都存在事件转发问题
   assert.match(builder, /btn\.style\.display\s*=\s*['"]none['"]/, '#toggle button hidden via display=none');
+  // 防重定义：if (window.anki.imageOcclusion) return 防止 hidden 状态被重定义丢失
   assert.match(builder, /if\s*\(window\.anki\.imageOcclusion\)\s*\{\s*return;\s*\}/,
     'IIFE does not redefine anki.imageOcclusion if already present');
 });
@@ -191,6 +203,10 @@ test('study page wires the full review loop', () => {
 test('study page web component blocks file-protocol cross origin correctly', () => {
   const page = read(STUDY_PAGE);
 
+  // BUG-008 修复（2026-07-30）：src 必须为空字符串。
+  // 旧实现 src=媒体基地址 会在 onControllerAttached 后自动加载 https://jidecards-media.local/，
+  // 与 aboutToAppear 中的 loadData(data: URL) 竞争导致首卡渲染被初始空加载覆盖。
+  // 跨域拦截由 onInterceptRequest + loadData baseUrl=媒体基地址 负责，与 Web 组件 src 无关。
   assert.match(page, /Web\(\{ src: '', controller: this\.网页控制器 \}\)/);
   assert.match(page, /\.fileAccess\(true\)/);
   assert.match(page, /\.javaScriptAccess\(true\)/);
@@ -265,6 +281,8 @@ test('scheduler service exposes deck today counts via scheduler method 10', () =
 });
 
 test('home sources completed today from graphs.today.answerCount instead of per-deck RPCs', () => {
+  // 旧实现 sumCompletedToday 只迭代顶层牌组调用 countsForDeckToday，既漏子牌组学习、
+  // 又缺 learn/relearn 口径；新实现直接用 graphs.today.answerCount（全库聚合、完整口径）。
   const index = read(INDEX_PAGE);
   assert.doesNotMatch(index, /sumCompletedToday/,
     'sumCompletedToday must be removed; today.answerCount replaces it');

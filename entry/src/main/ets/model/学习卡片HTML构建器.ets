@@ -1,9 +1,89 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-001
+// @名称 学习页卡片 HTML 构建器
+//
+// @作用
+// 渲染节点流 → 学习页 HTML 的纯函数积木（M7）。
+// 不依赖后端 / Web 组件，可独立单元测试。
+//
+// 媒体路径策略：Anki 卡片 HTML 中媒体以相对文件名引用（<img src="foo.png">）。
+// ArkWeb 对 file/resource 协议跨域请求一律拦截（官方文档：本地资源跨域），
+// 因此把相对文件名重写为自建 https 域名 媒体基地址，由 StudyPage 的
+// onInterceptRequest 拦截并映射到沙箱 collection.media/ 目录。
+// 依据：developer.huawei.com ArkWeb「本地资源跨域」章节 + 社区示例。
+//
+// @输入
+// rendered: RenderedCard - 后端渲染的卡片节点流
+// side: 卡片正反面 - 'question' 或 'answer'
+// nodes: TemplateNode[] - 模板节点流（提取拼写标记用）
+// html: string - 待剥除/注入的 HTML 文本
+// resultHtml: string - 拼写比对结果 HTML
+//
+// @输出
+// 重写媒体地址(html): string
+// 原始侧HTML(rendered, side): string
+// 构建卡片HTML(rendered, side): string
+// 提取拼写标记(nodes): 拼写标记 | null
+// 剥除拼写标记(html): string
+// 注入拼写结果(html, resultHtml): string
+//
+// @业务规则
+// 'question' / 'answer' 是 CardSide 字符串字面量联合类型的值，
+// 同时也是与后端协议的字段语义，保留英文，不可中文化。
+// 媒体基地址 'https://jidecards-media.local/' 是自建拦截锚点，保留英文。
+//
+// @副作用
+// 无。全部为纯函数。
+//
+// @注意
+// 修改这里可能影响学习页卡片渲染、媒体加载、拼写题功能。
+// ========================================================
+
 import type { RenderedCard, TemplateNode } from '../proto/messages/CardRenderingMessages';
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-002
+// @名称 媒体基地址
+//
+// @作用
+// 自建媒体域名（onInterceptRequest 拦截锚点），不与真实域名冲突。
+//
+// @输入
+// 无（常量定义）
+//
+// @输出
+// string：'https://jidecards-media.local/'
+//
+// @业务规则
+// 此 URL 是自建拦截锚点，保留英文，不可中文化。
+//
+// @副作用
+// 无
+// ========================================================
 export const 媒体基地址: string = 'https://jidecards-media.local/';
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-003
+// @名称 卡片正反面
+//
+// @作用
+// 卡片正反面类型：抽出 type alias 避免 ArkTS 在函数签名中直接展开字符串字面量联合
+// 引发类型推断告警。
+//
+// @输入
+// 无（类型定义）
+//
+// @输出
+// 字符串字面量联合类型：'question' | 'answer'
+//
+// @业务规则
+// 'question' / 'answer' 是与后端协议的字段语义值，保留英文。
+//
+// @副作用
+// 无
+// ========================================================
 export type 卡片正反面 = 'question' | 'answer';
 
 const 基础样式: string = `
@@ -30,6 +110,25 @@ hr { opacity: 0.3; }
 #typearrow { color: #888; }
 `;
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-004
+// @名称 重写媒体地址
+//
+// @作用
+// 把卡片正文中的相对媒体文件名重写为 媒体基地址 绝对地址。
+//
+// @输入
+// html: string - 原始 HTML
+//
+// @输出
+// string：重写后的 HTML（src / href 相对路径被替换为 媒体基地址 + 文件名）
+//
+// @业务规则
+// href 以 '#' 开头的锚点链接不重写。
+//
+// @副作用
+// 无
+// ========================================================
 export function 重写媒体地址(html: string): string {
   return html
     .replace(/(src\s*=\s*")([^":/][^":]*)"/g, (_匹配: string, 前缀: string, 文件名: string): string => {
@@ -43,6 +142,7 @@ export function 重写媒体地址(html: string): string {
     });
 }
 
+/** 节点流 → HTML 片段：text 节点为模板原文，replacement 节点为后端已渲染的字段 HTML */
 function 节点流转HTML(节点列表: TemplateNode[]): string {
   const 片段: string[] = [];
   for (const 节点 of 节点列表) {
@@ -55,15 +155,56 @@ function 节点流转HTML(节点列表: TemplateNode[]): string {
   return 片段.join('');
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-005
+// @名称 原始侧HTML
+//
+// @作用
+// 一侧卡片的原始字段 HTML（未剥标签、未重写地址），供后端 ExtractAvTags 提取音频。
+//
+// @输入
+// rendered: RenderedCard - 后端渲染的卡片
+// side: 卡片正反面 - 'question' 取正面节点流，'answer' 取背面节点流
+//
+// @输出
+// string：原始字段 HTML
+//
+// @副作用
+// 无
+// ========================================================
 export function 原始侧HTML(渲染结果: RenderedCard, 侧面: 卡片正反面): string {
   const 节点列表: TemplateNode[] = 侧面 === 'question' ? 渲染结果.questionNodes : 渲染结果.answerNodes;
   return 节点流转HTML(节点列表);
 }
 
+/** 剥除 Anki [sound:xxx] 标签，原位留小标记示意有音频；播放由原生 SoundPlayer 负责 */
 function 剥除音频标签(html: string): string {
   return html.replace(/\[sound:([^\]]+)\]/g, '<span class="sound-flag">♪</span>');
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-011
+// @名称 ImageOcclusion 渲染样式
+//
+// @作用
+// 为 ImageOcclusion 笔记类型卡片提供 container / img / canvas 的定位样式，
+// 使 canvas 能叠加在 img 上方绘制遮罩。仅在含 #image-occlusion-container
+// 的卡片上生效，Basic / Cloze 卡片不受影响。
+//
+// @输入
+// 无（常量定义）
+//
+// @输出
+// string：CSS 文本，拼接到 构建卡片HTML 输出的 <style> 末尾
+//
+// @业务规则
+// Anki 桌面端通过全局 reviewer.scss 提供 #image-occlusion-container 的
+// position:relative 与 img/canvas 的 position:absolute 定位；jidecards01
+// 复习页无此全局样式，需随卡片 HTML 一起注入。
+//
+// @副作用
+// 无
+// ========================================================
 const 图片遮罩渲染样式: string = `
 #image-occlusion-container {
   position: relative;
@@ -84,6 +225,46 @@ const 图片遮罩渲染样式: string = `
 }
 `;
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-012
+// @名称 ImageOcclusion 渲染脚本
+//
+// @作用
+// 定义 window.anki.imageOcclusion.setup() 与 toggle()，供 ImageOcclusion 笔记类型
+// qfmt/afmt 中的 <script>anki.imageOcclusion.setup()</script> 调用，
+// 以及 afmt 中 <button id="toggle"> 的点击切换遮罩。
+// 在 canvas 上按 cloze 数据绘制矩形遮罩：正面用不透明粉色盖住区域，
+// 背面用透明填充揭示原图。仅在含 #image-occlusion-canvas 的卡片上生效。
+//
+// @输入
+// 无（自包含脚本，运行时从 DOM 读取 cloze 数据）
+//
+// @输出
+// string：以 <script>...</script> 包裹的 JS 文本，拼接到 构建卡片HTML
+// 输出的 <head> 末尾
+//
+// @业务规则
+// cloze 数据格式（Anki rslib/src/cloze.rs render_image_occlusion 产出）：
+//   <div class="cloze" data-ordinal="1" data-shape="rect"
+//        data-left="0.20" data-top="0.30" data-width="0.40"
+//        data-height="0.10"></div>
+// left/top/width/height 为 0-1 归一化坐标，乘以 canvas 像素尺寸得绘制坐标。
+// 三类 cloze class 对应三种绘制模式：
+//   .cloze            — 正面当前 ordinal，默认不透明粉色 #ff8e8e，toggle 后透明
+//   .cloze-inactive   — 其他 ordinal，仅 data-occludeinactive="1" 时绘制
+//   .cloze-highlight  — 背面当前 ordinal，透明填充揭示原图
+// 仅实现 rect 形状（spec §4 限定），ellipse/polygon/text 忽略。
+//
+// 上游 afmt 模板（rslib/src/image_occlusion/notetype.rs）的切换按钮 HTML：
+//   <div><button id="toggle">Toggle Masks</button></div>
+// 按钮无 onclick 属性，由本脚本在 setup() 中查找 #toggle 后隐藏（2026-07-28 暂停切换功能）。
+// toggle() 方法保留，hidden 变量保留，redraw 中 hidden 逻辑保留，不破坏 IIFE 结构。
+// 后续恢复切换遮罩功能时：去掉 btn.style.display='none'，重新绑事件即可。
+// 防重定义：if (window.anki.imageOcclusion) return 避免重定义对象导致 hidden 状态丢失。
+//
+// @副作用
+// 无（脚本在 webview 内执行，操作 DOM/canvas）
+// ========================================================
 const 图片遮罩渲染脚本: string = `<script>
 (function () {
   window.anki = window.anki || {};
@@ -144,6 +325,10 @@ const 图片遮罩渲染脚本: string = `<script>
       }
       var btn = document.getElementById('toggle');
       if (btn) {
+        // 暂时隐藏「切换遮罩」按钮（2026-07-28）：
+        // Web focusable(false) 下 click/touchend 都存在事件转发问题，toggle 无法稳定触发。
+        // 后续若恢复切换遮罩功能，去掉 display='none' 并重新绑事件即可。
+        // 保留 toggle 方法 + hidden 变量 + redraw 中的 hidden 逻辑，不破坏 IIFE 结构。
         btn.style.display = 'none';
       }
     },
@@ -155,6 +340,35 @@ const 图片遮罩渲染脚本: string = `<script>
 })();
 </script>`;
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-006
+// @名称 构建卡片HTML
+//
+// @作用
+// 组装学习页完整 HTML 文档。
+//
+// @输入
+// rendered: RenderedCard - 后端渲染的卡片
+// side: 卡片正反面 - 'question' 取正面节点流，'answer' 取背面节点流；
+//   背面节点流在 Anki 模板中通常已包含正面（{{FrontSide}}），直接渲染即可。
+//
+// @输出
+// string：完整 HTML 文档字符串
+//
+// @业务规则
+// 模板 CSS（rendered.css）在前，基础兜底 CSS 在后做最低可读保障。
+// 字段中的 [sound:xxx] 标签剥除为小标记，
+// 音频由原生 SoundPlayer 播放（真机 Web 自动播放无声）。
+// ImageOcclusion 渲染样式追加在 <style> 末尾；IIFE 脚本放在 <head> 末尾，
+// 因为 qfmt/afmt 模板内联 <script>anki.imageOcclusion.setup()</script> 在 正文 中，
+// 必须在 qfmt 脚本执行前先定义 window.anki.imageOcclusion，否则抛 ReferenceError。
+// ArkWeb 对 <body> 起始处的内联脚本存在执行时序抖动（BUG-001），
+// 移到 <head> 后由解析器在 body 解析前同步执行，时序稳定。
+// 无 #image-occlusion-canvas 时 setup() 直接返回，Basic / Cloze 卡片零影响。
+//
+// @副作用
+// 无
+// ========================================================
 export function 构建卡片HTML(渲染结果: RenderedCard, 侧面: 卡片正反面): string {
   const 正文: string = 剥除音频标签(重写媒体地址(原始侧HTML(渲染结果, 侧面)));
   const 样式: string = `${渲染结果.css}\n${基础样式}\n${图片遮罩渲染样式}`;
@@ -170,12 +384,52 @@ ${图片遮罩渲染脚本}
 </html>`;
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-007
+// @名称 拼写标记
+//
+// @作用
+// [[type:FieldName]] 标记解析结果。
+//
+// @输入
+// 无（数据结构定义）
+//
+// @输出
+// 字段：
+// fieldName - 字段名
+// combining - 控制是否 NFC 归一化
+// cloze - 标记本期不实现
+//
+// @副作用
+// 无
+// ========================================================
 export interface 拼写标记 {
   fieldName: string;
   combining: boolean;
   cloze: boolean;
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-008
+// @名称 提取拼写标记
+//
+// @作用
+// 检测节点流中首个 [[type:...]] 标记，返回字段名与模式（combining/cloze）。
+//
+// @输入
+// nodes: TemplateNode[] - 模板节点流
+//
+// @输出
+// 拼写标记 | null：无标记返回 null
+//
+// @业务规则
+// - mode === 'nc'：fieldName 取 second，combining=false，cloze=false
+// - mode === 'cloze'：fieldName 取 second，combining=true，cloze=true
+// - 其他：fieldName 取 mode，combining=true，cloze=false
+//
+// @副作用
+// 无
+// ========================================================
 export function 提取拼写标记(节点列表: TemplateNode[]): 拼写标记 | null {
   const 正则 = /\[\[type:([a-zA-Z0-9_]+)(?::([a-zA-Z0-9_]+))?\]\]/;
   for (const 节点 of 节点列表) {
@@ -200,10 +454,43 @@ export function 提取拼写标记(节点列表: TemplateNode[]): 拼写标记 |
   return null;
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-009
+// @名称 剥除拼写标记
+//
+// @作用
+// 剥除 HTML 中所有 [[type:...]] 标记（正面不显示输入框占位）。
+//
+// @输入
+// html: string - 待处理的 HTML
+//
+// @输出
+// string：剥除标记后的 HTML
+//
+// @副作用
+// 无
+// ========================================================
 export function 剥除拼写标记(html: string): string {
   return html.replace(/\[\[type:[^\]]+\]\]/g, '');
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-HTML-010
+// @名称 注入拼写结果
+//
+// @作用
+// 将 HTML 中首个 [[type:...]] 标记替换为比对结果 HTML（背面注入 diff）。
+//
+// @输入
+// html: string - 待注入的 HTML
+// resultHtml: string - 拼写比对结果 HTML（已转义，不再二次转义）
+//
+// @输出
+// string：注入结果后的 HTML
+//
+// @副作用
+// 无
+// ========================================================
 export function 注入拼写结果(html: string, 结果HTML: string): string {
   return html.replace(/\[\[type:[^\]]+\]\]/, 结果HTML);
 }

@@ -64,7 +64,11 @@ import { 应用主题 } from '../utils/主题控制器';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 选取数据文件 } from '../utils/文件导入助手';
 import { 可见牌组行, 平铺牌组树 } from '../model/牌组层级';
+import { 检查节流标记, 获取节流奖励 } from '../utils/操作节流';
+import { 欢迎弹窗 } from '../components/欢迎弹窗';
+import { 是否已展示欢迎弹窗, 标记已展示欢迎弹窗 } from '../model/欢迎弹窗存储';
 
+/** 窄屏详情页推栈参数：牌组 id 经 param 传递，页面内按 id 取最新快照数据 */
 interface 牌组详情页参数 {
   deckId?: string;
 }
@@ -79,18 +83,30 @@ struct 首页 {
   private readonly 统计服务实例: 统计服务 = new 统计服务();
   private readonly 牌组配置服务实例: 牌组配置服务 = new 牌组配置服务();
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
+  // 笔记添加广播：添加笔记页保存成功后写 noteAddedTick = Date.now()，
+  // 这里 @Watch 监听变化触发 加载主页数据，绕开 NavPathStack.onPop 偶发不触发的问题，
+  // 让 牌组详情面板 的统计计数（总卡数/新卡/学习中/待复习）立即刷新。
+  // 与 打开添加笔记 的 onPop 回调并存：两者都触发时 加载主页数据 多跑一次（幂等，无副作用）。
   @StorageLink('noteAddedTick') @Watch('笔记添加广播_回调') private 笔记添加标记: number = 0;
+  // 主页今日进度卡开关：用户在设置页「复习页布局」分组末尾切换，
+  // 写 AppStorage 触发本 @StorageLink 自动重渲染，包裹 主页摘要分页 的 if 直接控制显示。
+  // 默认 true 保持新用户开箱即见；aboutToAppear 时调 加载显示今日进度卡 同步 preferences 持久化值。
   @StorageLink(主页今日进度卡AppStorage键) private 显示今日进度卡: boolean = true;
+  // 用 @Provide 暴露给宽屏 GridCol 路径下的 牌组详情面板：
+  // 改用 @Provide/@Consume 让 牌组详情面板 内部根据 选中的牌组ID 自查 主页快照，
   @Provide('selectedDeckId') private 选中的牌组ID: string = '';
   @Provide('snapshot') private 主页快照数据: 主页快照 = 空主页快照;
   @State private 加载状态: 主页加载状态 = 'loading';
   @State private 当前断点: string = 'xs';
   @State private 主题模式值: 主题模式 = 'system';
   @State private 颜色主题值: 颜色主题 = 默认颜色主题;
+  // 跟随用户选择的颜色主题（极光蓝/仙野绿/暗夜紫/碧涛青/活力橙/柠檬金）
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
+  // 2.1.4.1 对比度：按钮背景专用档（配 #FFFFFF 文字 ≥ 4.5:1）
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景色: string = '#2F5FD0';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
+  // 顶部 设置/创建牌组 两按钮共用一个 pressed 状态：0=无，1=设置，2=创建牌组
   @State private 工具栏按下状态: number = 0;
   @State private 显示设置: boolean = false;
   @State private 显示许可证: boolean = false;
@@ -101,7 +117,12 @@ struct 首页 {
   @State private 创建牌组错误: string = '';
   @State private 展开的牌组ID集合: Set<string> = new Set<string>();
   @State private 牌组展开已初始化: boolean = false;
+  // 已知牌组 id 集合：用于区分「用户手动折叠的牌组」与「同步/导入新出现的牌组」。
+  // 加载主页数据 时，新出现的 hasChildren 牌组默认展开（加入 展开的牌组ID集合），
+  // 已知牌组保持用户之前的展开/折叠状态不变。
   private 已知牌组ID集合: Set<string> = new Set<string>();
+  // 用户主动隐藏的牌组 id 集合：加载主页数据 时从 preferences 加载，可见牌组行 过滤掉这些 id。
+  // 隐藏入口在 牌组列表项 长按菜单「隐藏牌组」；恢复入口在设置页「已隐藏牌组」。
   @State private 隐藏的牌组ID集合: Set<string> = new Set<string>();
   @State private 显示数据迁移: boolean = false;
   @State private 数据迁移初始模式: 数据迁移模式 = 'exportDeck';
@@ -111,6 +132,8 @@ struct 首页 {
   @State private 数据迁移错误: string = '';
   @State private 数据迁移阶段: number = -1;
   @State private 个人数据替换步骤: number = 0;
+  // 同步面板弹窗（B14 2026-07-22）：从 同步分组 点「立即同步」后挂载
+  // 同步中关闭守卫由 同步面板 内部 canClose() 控制，首页 不拦
   @State private 显示同步面板: boolean = false;
   @State private 同步面板认证: SyncAuth | null = null;
   @State private 同步面板账号名: string = '';
@@ -118,6 +141,7 @@ struct 首页 {
   @State private 定制牌组ID: string = '';
   @State private 定制牌组中: boolean = false;
   @State private 定制牌组错误: string = '';
+  // 牌组选项：在根 Stack 中挂载以实现平板下的全局磨砂覆盖（与 创建牌组面板 同款）
   @State private 显示牌组选项: boolean = false;
   @State private 牌组选项加载中: boolean = false;
   @State private 牌组选项中: boolean = false;
@@ -129,12 +153,27 @@ struct 首页 {
   @State private 编辑表单: 牌组配置表单 | null = null;
   @State private 编辑选项: 牌组选项编辑 | null = null;
   @State private 月历: 月历数据 = 构建月历(new Date(), new Map<string, number>());
+  /** 下拉刷新状态：与 Refresh 组件双向绑定；加载主页数据 完成后置回 false 收起指示器。 */
   @State private 刷新中: boolean = false;
+  // 同级子牌组拖拽排序模式：true 时所有 牌组列表项 进入可拖态、顶部显示「完成排序」Bar、onClick 不选牌。
+  // 通过长按某 牌组列表项 弹菜单 → 选「拖动排序」进入；点「完成」按钮退出并重新拉取数据。
   @State private 排序模式中: boolean = false;
+  // 主页今日进度折叠态（B12-Y2 2026-07-21）：默认折叠，点击展开后渲染完整 Swiper
+  // B12-Y4 2026-07-25：aboutToAppear 从 preferences 加载持久化值（加载摘要展开状态），
+  // 用户上次展开 → 本次启动保持展开；用户上次折叠 → 保持折叠。onToggleExpand 切换时落盘。
   @State private 摘要折叠: boolean = true;
+  // 上次选中牌组恢复标志：仅在首次 加载主页数据 完成后恢复一次，避免 onPop 刷新时反复覆盖用户主动取消的选中态
   private 上次牌组已恢复: boolean = false;
+  // 首次启动欢迎弹窗：介绍基础操作/个性设置/作者的话，由 aboutToAppear → 显示欢迎弹窗一次 触发
+  @State private 显示欢迎弹窗: boolean = false;
+  // AnkiWeb 资源引导弹窗：首次启动展示一次，由 aboutToAppear → 显示AnkiWeb引导一次 触发
   @State private 显示AnkiWeb引导: boolean = false;
+  // 好评引导弹窗：用户首次完成一份牌组学习回到主页后展示一次，
+  // 由 开始学习 onPop → 检查学习完成标记 触发；频率由 好评引导存储 控制为「只弹一次」。
   @State private 显示好评引导: boolean = false;
+  @State private 显示节流奖励: boolean = false;
+  @State private 节流奖励文案: string = '';
+  // 窄屏详情显隐（方案 C 2026-07-25）：点牌组后 true，根 Stack 内 牌组详情面板 盖住列表，替代推栈 NavDestination
   @State private 显示牌组详情: boolean = false;
 
   aboutToAppear(): void {
@@ -142,9 +181,61 @@ struct 首页 {
     this.恢复颜色主题();
     this.恢复今日进度卡开关();
     this.恢复摘要展开状态();
+    // 首次启动弹一次欢迎弹窗（preferences 持久化标记，仅展示一次）。
+    // fire-and-forget：不阻塞首页加载；await 自然延迟弹窗时机到 UI 就绪后。
+    this.显示欢迎弹窗一次();
+    // 首次启动弹一次 AnkiWeb 资源引导（preferences 持久化标记，仅展示一次）。
+    // fire-and-forget：不阻塞首页加载；await 自然延迟弹窗时机到 UI 就绪后。
     this.显示AnkiWeb引导一次();
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-019
+  // @名称 显示欢迎弹窗一次
+  //
+  // @作用
+  // 首次启动展示欢迎弹窗（介绍基础操作/个性设置/作者的话）；已展示过则跳过。
+  //
+  // @输入
+  // 无（读取 preferences 标记）
+  //
+  // @输出
+  // 设置 显示欢迎弹窗 状态为 true 触发弹窗渲染
+  //
+  // @业务规则
+  // 先标记再弹窗：即使弹窗 UI 未显示，也保证「只弹一次」语义；最坏情况是用户没看到。
+  //
+  // @副作用
+  // 写 preferences 持久化「已展示」标记
+  // ========================================================
+  private async 显示欢迎弹窗一次(): Promise<void> {
+    const 已展示: boolean = await 是否已展示欢迎弹窗();
+    if (已展示) {
+      return;
+    }
+    await 标记已展示欢迎弹窗();
+    this.显示欢迎弹窗 = true;
+  }
+
+  // ========================================================
+  // @块ID UI-PAGE-HOME-001
+  // @名称 显示AnkiWeb引导一次
+  //
+  // @作用
+  // 首次启动展示 AnkiWeb 资源引导弹窗；已展示过则跳过。
+  //
+  // @输入
+  // 无（读取 preferences 标记）
+  //
+  // @输出
+  // 设置 显示AnkiWeb引导 状态为 true 触发弹窗渲染
+  //
+  // @业务规则
+  // 先标记再弹窗：即使弹窗 UI 未显示，也保证「只弹一次」语义；最坏情况是用户没看到。
+  //
+  // @副作用
+  // 写 preferences 持久化「已展示」标记
+  // ========================================================
   private async 显示AnkiWeb引导一次(): Promise<void> {
     const 已展示: boolean = await 是否已展示AnkiWeb引导();
     if (已展示) {
@@ -154,10 +245,12 @@ struct 首页 {
     this.显示AnkiWeb引导 = true;
   }
 
+  /** 页面每次可见都刷新（含从复习页返回），保证今日计数与队列状态同步。 */
   onPageShow(): void {
     this.加载主页数据();
   }
 
+  /** 系统返回键：窄屏详情打开时关详情而非退出 App；其他情况交给系统默认行为。 */
   onBackPress(): boolean {
     if (this.显示牌组详情) {
       this.显示牌组详情 = false;
@@ -166,10 +259,52 @@ struct 首页 {
     return false;
   }
 
+
+  // ========================================================
+  // @块ID UI-PAGE-HOME-018
+  // @名称 笔记添加广播回调
+  //
+  // @作用
+  // 监听 @StorageLink('noteAddedTick') 变化：添加笔记页保存成功后写 AppStorage
+  // 标志位触发本回调，立即调 加载主页数据 让 牌组详情面板 的统计计数刷新。
+  // 解决 NavPathStack.onPop 在不同设备/API 版本偶发不触发导致统计数字不刷新的问题（BUG-006）。
+  //
+  // @输入
+  // 无（@Watch 回调约定无参）
+  //
+  // @输出
+  // fire-and-forget 调 加载主页数据（async，不 await）
+  //
+  // @副作用
+  // 触发后端 RPC 重新拉取牌组树 + 图表统计
+  // ========================================================
   private 笔记添加广播_回调(): void {
     this.加载主页数据();
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-002
+  // @名称 加载主页数据
+  //
+  // @作用
+  // 打开本地 collection 并拉取牌组树，构建主页快照供 UI 渲染；
+  // 失败时进入 error 态并提示。
+  //
+  // @输入
+  // 无（从 abilityContext 取 filesDir，调后端服务）
+  //
+  // @输出
+  // 更新 主页快照数据 / 加载状态 / 月历 / 牌组数据源 等状态字段
+  //
+  // @业务规则
+  // 首次启动自动开启 FSRS（用户决策：默认开启可关闭）。
+  // 首次加载默认展开所有含子节点的父牌组；
+  // 后续刷新：新出现的 hasChildren 牌组默认展开，已知牌组保持用户之前状态。
+  // 首次加载完成且宽屏：恢复上次选中的牌组。
+  //
+  // @副作用
+  // 调后端服务、读写 preferences、刷新多个 @State 字段
+  // ========================================================
   private async 加载主页数据(): Promise<void> {
     this.加载状态 = 'loading';
     const context: common.UIAbilityContext | null = this.取能力上下文();
@@ -179,6 +314,9 @@ struct 首页 {
     }
     try {
       await 后端会话.获取实例().确保已打开(context.filesDir);
+      // 首次启动自动开启 FSRS（用户决策：默认开启可关闭）。确保FSRS已开启一次
+      // 内部有 initialized 标记，只在首次跑一次；后续用户在设置页关掉就保持关闭。
+      // 放在 确保已打开 之后、拉取 tree 之前，避免与 deckTree/graphs 并发冲突。
       await 确保FSRS已开启一次();
       const tree = await this.牌组服务实例.获取牌组树();
       const graphs: GraphsView | null = await this.静默加载图表();
@@ -186,20 +324,24 @@ struct 首页 {
       const deckIds: string[] = allDecks.map((deck: 牌组汇总): string => deck.id);
       const toneOverrides: Map<string, 牌组色调> = await 加载牌组色调映射(deckIds);
       const displayNameOverrides: Map<string, string> = await 加载牌组别名映射(deckIds);
+      // 收集所有 parent id（含顶层 ''）：用于按 parent 加载子牌组顺序覆盖
       const parentIds: string[] = allDecks
         .map((deck: 牌组汇总): string => deck.parentId)
         .filter((pid: string, index: number, self: string[]): boolean => self.indexOf(pid) === index);
+      // allDecks 不含 root，但顶层 parent='' 总要尝试加载（若用户拖过顶层）
       if (parentIds.indexOf('') < 0) {
         parentIds.push('');
       }
       const orderOverrides: Map<string, string[]> = await 加载全部牌组顺序(parentIds);
       const backgroundImageOverrides: Map<string, string> = await 加载牌组背景图映射(deckIds);
+      // 加载用户隐藏的 deck id 集合，可见牌组行 会过滤掉这些 id
       const hiddenIds: string[] = await 加载已隐藏牌组ID列表();
       this.隐藏的牌组ID集合 = new Set<string>(hiddenIds);
       const snapshot: 主页快照 =
         构建主页快照(tree, graphs, new Date(), toneOverrides, displayNameOverrides,
           orderOverrides, backgroundImageOverrides);
       this.主页快照数据 = snapshot;
+      // 首次加载时默认展开所有含子节点的父牌组；用 已初始化 标记而非 size 判断，避免用户全折叠后被刷新重置
       if (!this.牌组展开已初始化) {
         this.牌组展开已初始化 = true;
         const next: Set<string> = new Set<string>();
@@ -208,6 +350,8 @@ struct 首页 {
         }
         this.展开的牌组ID集合 = next;
       } else {
+        // 同步/导入后：新出现的 hasChildren 牌组默认展开，已知牌组保持用户之前的展开/折叠状态。
+        // 用 已知牌组ID集合 区分「新牌组」与「用户手动折叠的牌组」——后者 id 在 已知牌组ID集合 中但不在 展开的牌组ID集合 中。
         const next: Set<string> = new Set<string>(this.展开的牌组ID集合);
         for (const deck of snapshot.decks) {
           if (deck.hasChildren && !this.已知牌组ID集合.has(deck.id)) {
@@ -216,6 +360,7 @@ struct 首页 {
         }
         this.展开的牌组ID集合 = next;
       }
+      // 更新已知牌组 id 集合
       const newKnown: Set<string> = new Set<string>();
       for (const deck of snapshot.decks) {
         newKnown.add(deck.id);
@@ -224,6 +369,9 @@ struct 首页 {
       this.牌组数据源.replaceAll(可见牌组行(snapshot.decks, this.展开的牌组ID集合, this.隐藏的牌组ID集合));
       this.月历 = 构建月历(new Date(), snapshot.reviewCountsByDate);
       this.加载状态 = snapshot.decks.length > 0 ? 'ready' : 'empty';
+      // 首次加载完成且宽屏：恢复上次选中的牌组（牌组详情面板 显示详情）。
+      // 窄屏不恢复 选中的牌组ID——用户决策 2026-07-22：手机不高亮上次牌组。
+      // 旋转到宽屏时由 onBreakpointChange 再触发一次恢复。
       if (!this.上次牌组已恢复 && this.当前断点 !== 'xs') {
         await this.尝试恢复上次牌组();
       }
@@ -231,10 +379,31 @@ struct 首页 {
       this.加载状态 = 'error';
       this.显示提示($r('app.string.home_load_error'));
     } finally {
+      // 无论成功或失败都收起下拉刷新指示器；onPageShow 触发时本来即为 false，无副作用。
       this.刷新中 = false;
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-003
+  // @名称 尝试恢复上次牌组
+  //
+  // @作用
+  // 恢复上次选中的牌组（仅宽屏调用）：设 选中的牌组ID 让 牌组详情面板 显示详情。
+  //
+  // @输入
+  // 无（从 preferences 读取上次牌组 ID）
+  //
+  // @输出
+  // 更新 选中的牌组ID / 展开的牌组ID集合 / 牌组数据源
+  //
+  // @业务规则
+  // 窄屏不调用——用户决策 2026-07-22：手机不高亮上次牌组，仅平板宽屏恢复。
+  // 上次牌组已恢复 保证只恢复一次；snapshot 未加载时跳过等下次触发。
+  //
+  // @副作用
+  // 读 preferences
+  // ========================================================
   private async 尝试恢复上次牌组(): Promise<void> {
     if (this.上次牌组已恢复) {
       return;
@@ -253,6 +422,22 @@ struct 首页 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-004
+  // @名称 静默加载图表
+  //
+  // @作用
+  // 拉取月历热力/记忆率/今日完成数据；失败静默降级为空态，不阻断首页其余数据。
+  //
+  // @输入
+  // 无（取本月当日号数）
+  //
+  // @输出
+  // GraphsView 或 null（失败时）
+  //
+  // @副作用
+  // 无（仅调用后端）
+  // ========================================================
   private async 静默加载图表(): Promise<GraphsView | null> {
     try {
       return await this.统计服务实例.获取图表统计(new Date().getDate());
@@ -261,6 +446,28 @@ struct 首页 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-005
+  // @名称 同步后检查FSRS
+  //
+  // @作用
+  // 同步完成后检查 FSRS 状态：若云端 collection 的 fsrs=false 覆盖了本地，弹窗让用户决策。
+  //
+  // @输入
+  // 无（读取本地 FSRS 开启状态）
+  //
+  // @输出
+  // 用户选「重新开启」时回写 fsrs=true
+  //
+  // @业务规则
+  // 触发场景：AnkiWeb 云端在桌面端等关掉了 FSRS，syncCollection/fullDownload 把 fsrs=false
+  // 写到本地 collection；本地 确保FSRS已开启一次 因 fsrs_initialized=true 不会自动重开。
+  // 弹窗用 promptAction.showDialog（系统原生）：按钮 0 = 重新开启（回写 fsrs=true），
+  // 按钮 1 = 保持关闭（不动）。
+  //
+  // @副作用
+  // 写本地 FSRS 状态（用户选「重新开启」时）
+  // ========================================================
   private async 同步后检查FSRS(): Promise<void> {
     try {
       const fsrsEnabled: boolean | null = await 加载FSRS开启状态();
@@ -280,23 +487,61 @@ struct 首页 {
           ]
         }).then((result: promptAction.ShowDialogSuccessResponse): void => {
           if (result.index === 0) {
+            // 选「重新开启」：回写 fsrs=true；失败静默降级（用户可在设置页手动重开）
             设置FSRS开启状态(true).catch((): void => {});
           }
         });
       }
     } catch (error) {
+      // 拉取 FSRS 状态失败或弹窗失败都不阻断，静默降级
     }
   }
 
+  /**
+   * 进入排序模式：用户在 牌组列表项 长按菜单选「拖动排序」时触发。
+   * 全局进入 排序模式中=true，所有 牌组列表项 显示≡手柄、行描边高亮、onClick 不选牌、
+   * LongPressGesture 等效禁用（duration 改到 99999999），让 List.onMove 接管长按拖动事件。
+   * 若父牌组未展开，提示用户先展开父牌组才能拖子牌组。
+   */
   private 进入排序模式(): void {
     this.排序模式中 = true;
   }
 
+  /**
+   * 退出排序模式：用户点顶部「完成」按钮时触发。
+   * 退出后立即 reload，确保 LazyForEach 按 orderOverrides 重新渲染顺序（onMove 期间内存态
+   * 已通过 牌组数据源.moveItem 更新，但落盘 保存牌组顺序 后下次 build 仍按 OrderOverrides 重排，
+   * 视觉上不会跳动；reload 主要用于把 mode 标志清掉、重新计算 LazyForEach key）。
+   */
   private 退出排序模式(): void {
     this.排序模式中 = false;
     this.加载主页数据();
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-006
+  // @名称 处理牌组移动
+  //
+  // @作用
+  // 处理 List.onMove 回调：校验 from/to 在同一 parent 后，调用 牌组数据源.moveItem
+  // 同步内存顺序，并立即落盘到 DeckOrderStore。
+  //
+  // @输入
+  // from: 拖动起始索引
+  // to: 拖动目标索引
+  //
+  // @输出
+  // 更新 牌组数据源 内存顺序
+  //
+  // @业务规则
+  // 跨 parent（不同 depth 或不同 ancestorIds）的拖动直接拒绝，避免破坏树结构。
+  // 例如：顶层牌组不能拖到子牌组下面，子牌组不能拖到顶层。
+  // onMove 在用户拖动期间会持续触发（from/to 实时更新），每次都立即落盘以保证
+  // 用户中途退出排序模式不丢失中间状态。落盘是 async，但 fire-and-forget，不阻塞 UI。
+  //
+  // @副作用
+  // 写 preferences（保存牌组顺序）
+  // ========================================================
   private 处理牌组移动(from: number, to: number): void {
     if (!this.排序模式中) {
       return;
@@ -310,10 +555,12 @@ struct 首页 {
     }
     const fromDeck: 牌组汇总 = decks[from];
     const toDeck: 牌组汇总 = decks[to];
+    // 同 parent 校验：parentId 相同即可（不同 depth 但同 parentId 不存在，因为 depth 由 parentId 决定）
     if (fromDeck.parentId !== toDeck.parentId) {
       return;
     }
     this.牌组数据源.moveItem(from, to);
+    // 计算 parent 下最新子牌组顺序并落盘
     const updatedDecks: 牌组汇总[] = this.牌组数据源.snapshotDecks();
     const childIds: string[] = [];
     for (let i: number = 0; i < updatedDecks.length; i++) {
@@ -330,6 +577,7 @@ struct 首页 {
     this.应用激活主题(restored);
   }
 
+  /** 加载持久化的颜色主题并应用到 AppStorage；启动时调用一次。 */
   private async 恢复颜色主题(): Promise<void> {
     const restored: 颜色主题 = await 加载颜色主题();
     this.颜色主题值 = restored;
@@ -337,11 +585,51 @@ struct 首页 {
     应用颜色主题(restored, this.是否深色());
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-019
+  // @名称 恢复今日进度卡开关
+  //
+  // @作用
+  // 启动时从 preferences 加载「是否显示今日进度卡片」开关，
+  // 同步写 AppStorage 让 @StorageLink(显示今日进度卡) 拿到持久化值，
+  // 避免首次渲染用默认 true 后又因读到 false 闪一下又消失。
+  //
+  // @输入
+  // 无
+  //
+  // @输出
+  // 写 AppStorage 的 'homeShowTodaySummary' 键
+  //
+  // @副作用
+  // 读 preferences（jidecards_settings store）；写 AppStorage 触发 @StorageLink 重渲染。
+  // ========================================================
   private async 恢复今日进度卡开关(): Promise<void> {
     const 开启: boolean = await 加载显示今日进度卡();
     AppStorage.setOrCreate<boolean>(主页今日进度卡AppStorage键, 开启);
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-020
+  // @名称 恢复摘要展开状态
+  //
+  // @作用
+  // 启动时从 preferences 加载「摘要是否展开」状态，同步写 摘要折叠 @State。
+  // 用户上次展开 → 本次启动保持展开（直接看到月历 Swiper）；
+  // 用户上次折叠或未设置 → 保持折叠（默认今日摘要卡）。
+  //
+  // @输入
+  // 无
+  //
+  // @输出
+  // 更新 摘要折叠 字段（展开状态 = !折叠状态）
+  //
+  // @业务规则
+  // 不写 AppStorage：摘要展开状态仅首页使用，无跨组件广播需求（与「今日进度卡」不同）。
+  // fire-and-forget：aboutToAppear 同步调用不 await，避免阻塞首页加载；默认折叠态先渲染，加载完成后切到展开态。
+  //
+  // @副作用
+  // 读 preferences（jidecards_settings store 的 home_summary_expanded）。
+  // ========================================================
   private async 恢复摘要展开状态(): Promise<void> {
     const 展开: boolean = await 加载摘要展开状态();
     this.摘要折叠 = !展开;
@@ -359,15 +647,18 @@ struct 首页 {
     if (context !== null) {
       应用主题(context, mode, this.系统暗黑模式);
     }
+    // 深浅色变化时颜色主题的浅色/深色套也要同步刷新
     应用颜色主题(this.颜色主题值, this.是否深色());
   }
 
+  /** 切换主题：写 AppStorage + 应用 + 持久化。 */
   private 切换主题(mode: 主题模式): void {
     this.主题模式值 = mode;
     this.应用激活主题(mode);
     保存主题模式(mode);
   }
 
+  /** 切换颜色主题：写入 AppStorage 触发全局 @StorageProp 重渲染 + 持久化。 */
   private 切换颜色主题(theme: 颜色主题): void {
     this.颜色主题值 = theme;
     AppStorage.setOrCreate<颜色主题>('colorTheme', theme);
@@ -401,9 +692,30 @@ struct 首页 {
     try {
       this.getUIContext().getPromptAction().showToast({ message: message });
     } catch (error) {
+      // 页面销毁或系统提示服务不可用时，不影响主界面的连续操作。
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-007
+  // @名称 进入复习页
+  //
+  // @作用
+  // 把当前选中牌组作为参数推栈 学习页；返回（pop）时通过 onPop 刷新主页数据。
+  //
+  // @输入
+  // 无（使用 选中的牌组ID）
+  //
+  // @输出
+  // 推入 NavPathStack 一条 'StudyPage' 项
+  //
+  // @业务规则
+  // 仅当前选中牌组有效时入栈。
+  // 'StudyPage' 字符串是 NavPathStack 跨页面寻址协议，保留英文。
+  //
+  // @副作用
+  // 改 Navigation 栈状态
+  // ========================================================
   private 开始学习(): void {
     if (!this.已选中牌组()) {
       return;
@@ -422,8 +734,30 @@ struct 首页 {
     });
   }
 
+  // ========================================================
+  // @名称 检查学习完成标记
+  //
+  // @作用
+  // 学习页 pop 回调中调用：读取 AppStorage 的 studyJustFinished 标记（由 学习页 在
+  // 完成学习且展示时刻毫秒 > 0 时写入），若为 true 且本设备未展示过好评引导，
+  // 则触发 好评引导对话框 弹窗，并标记「已展示」（只弹一次）。
+  //
+  // @输入
+  // 无（读 AppStorage + preferences）
+  //
+  // @输出
+  // 可能设置 显示好评引导 = true 触发弹窗渲染
+  //
+  // @业务规则
+  // 先标记再弹窗：即使弹窗 UI 未显示，也保证「只弹一次」语义（参考 显示AnkiWeb引导一次）。
+  // 一进来就空队列（展示时刻毫秒=0）的学习页不会写标记，避免新用户刚进空牌组就弹好评引导。
+  //
+  // @副作用
+  // 读 AppStorage；写 preferences 的 rate_guide_shown=true；清空 AppStorage 标记。
+  // ========================================================
   private async 检查学习完成标记(): Promise<void> {
     const studyCompleted: boolean | undefined = AppStorage.get<boolean>('studyJustFinished');
+    // 无论是否弹窗都清空标记，避免下次返回主页重复弹
     AppStorage.setOrCreate('studyJustFinished', false);
     if (!studyCompleted) {
       return;
@@ -435,6 +769,7 @@ struct 首页 {
     this.显示好评引导 = true;
   }
 
+  /** 新建牌组全链路：确保已打开 → NewDeck → AddDeck → 刷新主页并选中新牌组。 */
   private 展开牌组路径(deck: 牌组汇总): void {
     const next: Set<string> = new Set<string>(this.展开的牌组ID集合);
     for (const ancestorId of deck.ancestorIds) next.add(ancestorId);
@@ -448,7 +783,10 @@ struct 首页 {
       return;
     }
     this.展开牌组路径(deck);
+    // 记忆上次选中的牌组，下次进入应用恢复选中（fire-and-forget，持久化失败不阻塞 UI）
     保存上次牌组ID(deckId).catch((): void => {});
+    // 窄屏（手机）：点牌组后 显示牌组详情=true，根 Stack 内渲染 牌组详情面板 盖住列表。
+    // 不再推栈 NavDestination——@Consume 在 NavDestination 内找不到 @Provide 导致空白。
     if (this.当前断点 === 'xs') {
       this.显示牌组详情 = true;
     }
@@ -461,10 +799,32 @@ struct 首页 {
     this.牌组数据源.replaceAll(可见牌组行(this.主页快照数据.decks, this.展开的牌组ID集合, this.隐藏的牌组ID集合));
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-008
+  // @名称 递归切换牌组
+  //
+  // @作用
+  // 双击牌组：递归展开/折叠该牌组及其所有子孙牌组。
+  //
+  // @输入
+  // deckId: 触发双击的牌组 ID
+  //
+  // @输出
+  // 更新 展开的牌组ID集合 / 牌组数据源
+  //
+  // @业务规则
+  // 当前折叠 → 展开本牌组 + 所有子孙牌组
+  // 当前展开 → 折叠本牌组 + 所有子孙牌组
+  // 通过 ancestorIds 包含 deckId 来判定子孙关系。
+  //
+  // @副作用
+  // 无
+  // ========================================================
   private 递归切换牌组(deckId: string): void {
     const isExpanded: boolean = this.展开的牌组ID集合.has(deckId);
     const next: Set<string> = new Set<string>(this.展开的牌组ID集合);
     for (const deck of this.主页快照数据.decks) {
+      // 匹配本牌组（deckId）或其子孙（ancestorIds 含 deckId）
       if (deck.id === deckId || deck.ancestorIds.includes(deckId)) {
         if (deck.hasChildren) {
           if (isExpanded) {
@@ -479,6 +839,7 @@ struct 首页 {
     this.牌组数据源.replaceAll(可见牌组行(this.主页快照数据.decks, this.展开的牌组ID集合, this.隐藏的牌组ID集合));
   }
 
+  /** 长按牌组色条切换 tone：先持久化、再就地替换当前 主页快照数据 中对应行的 tone 并刷新列表，避免重拉后端数据。 */
   private async 更改牌组色调(deckId: string, tone: 牌组色调): Promise<void> {
     await 保存牌组色调(deckId, tone);
     const oldDecks: 牌组汇总[] = this.主页快照数据.decks;
@@ -513,6 +874,7 @@ struct 首页 {
     this.牌组数据源.replaceAll(可见牌组行(newDecks, this.展开的牌组ID集合));
   }
 
+  /** 长按牌组 → 自定义牌组：打开改名面板。 */
   private 打开牌组定制(deckId: string): void {
     const deck: 牌组汇总 = this.按ID查牌组(deckId);
     if (deck.id === '') {
@@ -523,6 +885,26 @@ struct 首页 {
     this.显示牌组定制 = true;
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-009
+  // @名称 删除牌组
+  //
+  // @作用
+  // 长按牌组 → 删除牌组：先弹 AlertDialog 二次确认，确认后真正调 牌组服务实例.删除牌组。
+  //
+  // @输入
+  // deckId: 待删除牌组 ID
+  //
+  // @输出
+  // 删除后刷新主页并清空选中态（防止详情页指向已删牌组）
+  //
+  // @业务规则
+  // 后端语义（rslib/src/decks/remove.rs:remove_decks_and_child_decks）：递归删除所有子牌组及其卡片，
+  // 卡片移到「已删除」状态（可通过 undo 恢复）。
+  //
+  // @副作用
+  // 调后端删除牌组；写 preferences 清除上次选中牌组
+  // ========================================================
   private 请求删除牌组(deckId: string): void {
     const deck: 牌组汇总 = this.按ID查牌组(deckId);
     if (deck.id === '') {
@@ -555,6 +937,7 @@ struct 首页 {
   private async 确认删除牌组(deckId: string): Promise<void> {
     try {
       const count: number = await this.牌组服务实例.删除牌组([Number(deckId)]);
+      // 选中态/详情页若指向已删牌组，清空避免悬空引用
       if (this.选中的牌组ID === deckId) {
         this.选中的牌组ID = '';
         await 清除上次牌组ID();
@@ -571,6 +954,26 @@ struct 首页 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-010
+  // @名称 隐藏牌组
+  //
+  // @作用
+  // 长按牌组 → 隐藏牌组：写入 隐藏的牌组ID集合 持久化 + 更新内存态 + 重新过滤列表。
+  //
+  // @输入
+  // deckId: 待隐藏牌组 ID
+  //
+  // @输出
+  // 更新 隐藏的牌组ID集合 / 牌组数据源
+  //
+  // @业务规则
+  // 与删除不同：隐藏只在前端列表里过滤掉，不动后端数据；可在设置页「已隐藏牌组」恢复。
+  // 选中态/详情页若指向已隐藏牌组，清空避免悬空引用。
+  //
+  // @副作用
+  // 写 preferences 持久化隐藏集合；写 preferences 清除上次选中牌组
+  // ========================================================
   private async 隐藏牌组(deckId: string): Promise<void> {
     try {
       await 隐藏牌组(deckId);
@@ -586,12 +989,16 @@ struct 首页 {
         message: this.getUIContext().getHostContext()!.resourceManager.getStringSync($r('app.string.deck_hide_success').id)
       });
     } catch (error) {
+      // 持久化失败仅 Toast 提示，不阻断
       this.getUIContext().getPromptAction().showToast({
         message: this.getUIContext().getHostContext()!.resourceManager.getStringSync($r('app.string.deck_hide_failed').id)
       });
     }
   }
 
+  /** 设置页「已隐藏牌组」入口：弹 AlertDialog 展示数量 + 全部恢复。
+   *  简版方案（AlertDialog 只支持两个按钮）：全部恢复 / 取消。
+   *  逐个恢复需 CustomDialog，后续按需升级。 */
   private 显示隐藏牌组对话框(): void {
     const count: number = this.隐藏的牌组ID集合.size;
     if (count === 0) {
@@ -627,9 +1034,31 @@ struct 首页 {
       this.隐藏的牌组ID集合 = new Set<string>();
       this.牌组数据源.replaceAll(可见牌组行(this.主页快照数据.decks, this.展开的牌组ID集合, this.隐藏的牌组ID集合));
     } catch (error) {
+      // 恢复失败静默降级，下次 加载主页数据 会重新加载
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-011
+  // @名称 应用牌组定制
+  //
+  // @作用
+  // 面板内点「保存」：写入本地 displayName 覆盖 + 处理背景图动作 + 刷新主页。
+  //
+  // @输入
+  // result: 牌组定制结果（newName / backgroundAction / backgroundPixelMap）
+  //
+  // @输出
+  // 关闭面板、刷新主页数据、显示提示
+  //
+  // @业务规则
+  // 走 UI 覆盖路线（不动后端 rename_deck）：避免重名/层级冲突 BackendError、避免子牌组前缀级联改名、
+  // 避免 LazyForKey 不含 name 导致 UI 不刷新。代价：导出 apkg/同步到其他设备时仍显示后端原名。
+  // 背景图动作：keep 不动；remove 删沙盒文件 + preferences 键；replace 编码 PixelMap 写入沙盒 + preferences。
+  //
+  // @副作用
+  // 写 preferences（牌组别名 / 牌组背景图）
+  // ========================================================
   private async 应用牌组定制(result: 牌组定制结果): Promise<void> {
     if (this.定制牌组中) return;
     const trimmedName: string = result.新名.trim();
@@ -643,11 +1072,14 @@ struct 首页 {
     this.定制牌组中 = true;
     this.定制牌组错误 = '';
     try {
+      // 用户输入等于后端真实 name：清除覆盖（恢复显示后端原名）；
+      // 否则写入新覆盖。保存牌组别名 内部对空串会 delete 键。
       const effectiveName: string = trimmedName === deck.name ? '' : trimmedName;
       if (effectiveName !== deck.displayName) {
         await 保存牌组别名(deckId, effectiveName);
       }
 
+      // 背景图动作
       if (result.背景动作 === 'remove') {
         await 清除牌组背景图(deckId);
       } else if (result.背景动作 === 'replace'
@@ -655,6 +1087,7 @@ struct 首页 {
         try {
           await 保存牌组背景图(deckId, result.背景像素图);
         } catch (saveError) {
+          // 背景图保存失败：不阻断改名保存流程，单独提示
           this.定制牌组错误 = this.getUIContext().getHostContext()!.resourceManager.getStringSync(
             $r('app.string.deck_customize_background_save_failed').id);
           this.定制牌组中 = false;
@@ -676,6 +1109,26 @@ struct 首页 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-012
+  // @名称 数据迁移处理
+  //
+  // @作用
+  // 处理导入/导出/替换意图：选取文件、调后端服务、刷新主页。
+  //
+  // @输入
+  // intent: 数据迁移意图（importDeck / replacePersonalData / exportDeck / exportPersonalData）
+  //
+  // @输出
+  // 关闭弹窗、刷新主页、显示提示；失败时显示错误
+  //
+  // @业务规则
+  // 导入后展开新导入的含子牌组的父牌组。
+  // 个人数据替换需二次确认（个人数据替换步骤 控制）。
+  //
+  // @副作用
+  // 调后端导入/导出服务；读写沙箱文件
+  // ========================================================
   private async 从选择器导入牌组(): Promise<void> {
     if (this.数据迁移中) return;
     const context: common.UIAbilityContext | null = this.取能力上下文();
@@ -687,15 +1140,16 @@ struct 首页 {
     }
     this.数据迁移中 = true;
     this.数据迁移错误 = '';
-    this.数据迁移阶段 = 0;
+    this.数据迁移阶段 = 0; // 准备文件中
     try {
       await 后端会话.获取实例().确保已打开(context.filesDir);
       const stagedPath: string = 暂存导入文件(context.filesDir, uri);
-      this.数据迁移阶段 = 1;
+      this.数据迁移阶段 = 1; // 导入数据中
       await 执行牌组导入(stagedPath);
-      this.数据迁移阶段 = 2;
+      this.数据迁移阶段 = 2; // 刷新列表中
       const oldDeckIds: Set<string> = new Set(this.主页快照数据.decks.map((d: 牌组汇总): string => d.id));
       await this.加载主页数据();
+      // 展开新导入的含子牌组的父牌组
       const nextExpanded: Set<string> = new Set(this.展开的牌组ID集合);
       for (const deck of this.主页快照数据.decks) {
         if (deck.hasChildren && !oldDeckIds.has(deck.id)) {
@@ -707,6 +1161,7 @@ struct 首页 {
         this.牌组数据源.replaceAll(可见牌组行(this.主页快照数据.decks, this.展开的牌组ID集合, this.隐藏的牌组ID集合));
       }
       this.显示提示($r('app.string.transfer_done'));
+      // B13 2026-07-22：导入成功后关闭弹窗（原仅 显示提示，弹窗残留）
       this.显示数据迁移 = false;
       this.个人数据替换步骤 = 0;
     } catch (error) {
@@ -734,10 +1189,11 @@ struct 首页 {
     this.数据迁移错误 = '';
     try {
       await 替换集合(context.filesDir, uri, true, (stage: number) => { this.数据迁移阶段 = stage; });
-      this.数据迁移阶段 = 4;
+      this.数据迁移阶段 = 4; // 刷新列表中
       await this.加载主页数据();
       this.个人数据替换步骤 = 0;
       this.显示提示($r('app.string.transfer_done'));
+      // B13 2026-07-22：替换成功后关闭弹窗（原仅 显示提示，弹窗残留）
       this.显示数据迁移 = false;
     } catch (error) {
       this.数据迁移错误 = error instanceof Error ? error.message : `${error}`;
@@ -766,6 +1222,26 @@ struct 首页 {
     this.显示数据迁移 = true;
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-013
+  // @名称 进入建卡页
+  //
+  // @作用
+  // 推栈 添加笔记页；onPop 时刷新主页数据。
+  //
+  // @输入
+  // 无（使用 选中的牌组ID / 添加笔记的牌组选项）
+  //
+  // @输出
+  // 推入 NavPathStack 一条 'AddNotePage' 项
+  //
+  // @业务规则
+  // 仅当前选中牌组有效时入栈。
+  // 'AddNotePage' 字符串是 NavPathStack 跨页面寻址协议，保留英文。
+  //
+  // @副作用
+  // 改 Navigation 栈状态
+  // ========================================================
   private 打开添加笔记(): void {
     if (!this.已选中牌组()) {
       return;
@@ -798,12 +1274,12 @@ struct 首页 {
     if (context === null) return;
     this.数据迁移中 = true;
     this.数据迁移错误 = '';
-    this.数据迁移阶段 = 0;
+    this.数据迁移阶段 = 0; // 导出数据中
     try {
       const path: string = intent.kind === 'exportDeck'
         ? await 导出牌组(context.filesDir, intent.deckId, intent.options)
         : await 导出集合(context.filesDir, intent.options);
-      this.数据迁移阶段 = 1;
+      this.数据迁移阶段 = 1; // 保存文件中
       const extension: string = intent.kind === 'exportDeck' ? '.apkg' : '.colpkg';
       const fileName: string = intent.kind === 'exportDeck' ? 'jidecards-deck.apkg' : 'jidecards-data.colpkg';
       const savedPath: string | null = await 完成导出(context, path, fileName, extension);
@@ -820,6 +1296,25 @@ struct 首页 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-014
+  // @名称 创建牌组
+  //
+  // @作用
+  // 新建牌组全链路：确保已打开 → 创建牌组 → 刷新主页 → 选中新牌组。
+  //
+  // @输入
+  // name: 新牌组名称
+  //
+  // @输出
+  // 关闭面板、刷新主页数据、选中并展开新牌组、显示提示
+  //
+  // @业务规则
+  // 创建后立即记忆为新选中的牌组；失败时面板上显示错误。
+  //
+  // @副作用
+  // 调后端创建牌组；写 preferences 保存上次牌组 ID
+  // ========================================================
   private async 创建牌组(name: string): Promise<void> {
     if (this.创建牌组中) {
       return;
@@ -840,7 +1335,12 @@ struct 首页 {
       await this.加载主页数据();
       this.展开牌组路径(this.选中牌组());
       this.牌组数据源.replaceAll(可见牌组行(this.主页快照数据.decks, this.展开的牌组ID集合, this.隐藏的牌组ID集合));
-      this.显示提示($r('app.string.create_deck_done'));
+      if (检查节流标记(name)) {
+        this.节流奖励文案 = 获取节流奖励();
+        this.显示节流奖励 = true;
+      } else {
+        this.显示提示($r('app.string.create_deck_done'));
+      }
     } catch (error) {
       this.创建牌组错误 = error instanceof Error ? error.message : `${error}`;
     } finally {
@@ -848,6 +1348,25 @@ struct 首页 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-015
+  // @名称 打开牌组选项
+  //
+  // @作用
+  // 拉取牌组配置视图后弹出全屏磨砂面板（与 创建牌组面板 同款全局覆盖）。
+  //
+  // @输入
+  // 无（使用 选中牌组）
+  //
+  // @输出
+  // 显示牌组选项=true 触发面板渲染；失败时设置 牌组选项错误
+  //
+  // @业务规则
+  // 找不到 currentDeck 对应 config 时抛错。
+  //
+  // @副作用
+  // 调后端拉取配置视图
+  // ========================================================
   private async 打开牌组选项(): Promise<void> {
     if (this.牌组选项加载中 || this.牌组选项中 || this.显示牌组选项) {
       return;
@@ -918,6 +1437,27 @@ struct 首页 {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(resource.id);
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-016
+  // @名称 保存牌组选项
+  //
+  // @作用
+  // 校验表单 → 提交到后端 → 关闭面板 → 刷新主页。
+  //
+  // @输入
+  // form: 牌组配置表单
+  // options: 牌组选项编辑
+  //
+  // @输出
+  // 关闭面板、刷新主页数据；失败时设置 牌组选项错误
+  //
+  // @业务规则
+  // 校验失败时不调后端，仅显示错误。
+  // 提交字段含 limits / newCardsIgnoreReviewLimit / fsrs / applyAllParentLimits / fsrsReschedule / fsrsHealthCheck。
+  //
+  // @副作用
+  // 调后端更新牌组配置
+  // ========================================================
   private async 保存牌组选项(form: 牌组配置表单, options: 牌组选项编辑): Promise<void> {
     if (this.牌组选项中) {
       console.warn('[jidecards] 保存牌组选项 被跳过：正在保存中');
@@ -968,6 +1508,26 @@ struct 首页 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-PAGE-HOME-017
+  // @名称 页面映射
+  //
+  // @作用
+  // Navigation 目的地映射：学习页 / 添加笔记页 以 NavDestination 形式入栈展示。
+  //
+  // @输入
+  // name: NavPathStack 寻址字符串
+  // param: 入栈参数
+  //
+  // @输出
+  // 渲染对应 NavDestination 内容
+  //
+  // @业务规则
+  // 'StudyPage' / 'AddNotePage' 字符串是 NavPathStack 跨页面寻址协议，保留英文。
+  //
+  // @副作用
+  // 无（仅渲染）
+  // ========================================================
   @Builder
   private 页面映射(name: string, param: ESObject) {
     if (name === 'StudyPage') {
@@ -1011,12 +1571,18 @@ struct 首页 {
             gutter: 0
           }) {
             GridCol({ span: { xs: 4, sm: 5, md: 8 } }) {
+              // B12-Y2 2026-07-23：主面板 直接铺满左 GridCol，去掉 Stack(Center) 居中。
+              // 牌组列表右端 = 左 GridCol 右端 = 牌组详情面板 左端，紧贴无空白。
+              // 用 主页摘要分页 + 主页牌组列表 两个积木组件替代原 主面板 @Builder，
+              // 由 首页.ets 保留对数据状态的控制权（业务契约要求）。
               Column({ space: 应用尺寸.间距_12 }) {
                 if (this.显示今日进度卡) {
                   主页摘要分页({
                     摘要折叠: this.摘要折叠,
                     onToggleExpand: (): void => {
                       this.摘要折叠 = !this.摘要折叠;
+                      // B12-Y4 2026-07-25：落盘展开状态，让下次启动保持用户偏好。
+                      // 展开状态 = !折叠状态；fire-and-forget 不 await，失败仅丢失下次启动的值。
                       保存摘要展开状态(!this.摘要折叠);
                     },
                     主页快照数据: this.主页快照数据,
@@ -1064,6 +1630,9 @@ struct 首页 {
                     this.退出排序模式();
                   },
                   onRefresh: (): void => {
+                    // 先置 刷新中=true 触发 @Watch 同步 刷新指示器开关=true（Refresh 内部已置 true，无副作用）；
+                    // 加载主页数据() 内部 finally 置 刷新中=false（true→false 触发 @Watch 同步 刷新指示器开关=false 收起指示器）。
+                    // 不显式置 true 会导致 刷新中 一直 false，@Watch 不触发，刷新指示器永远转圈。
                     this.刷新中 = true;
                     this.加载主页数据();
                   },
@@ -1109,6 +1678,7 @@ struct 首页 {
           .layoutWeight(1)
           .onBreakpointChange((breakpoint: string) => {
             this.当前断点 = breakpoint;
+            // 旋转/首屏 breakpoint 确定后若尚未恢复且变到宽屏，触发一次上次牌组恢复
             if (!this.上次牌组已恢复 && breakpoint !== 'xs') {
               this.尝试恢复上次牌组();
             }
@@ -1144,10 +1714,13 @@ struct 首页 {
             点击已隐藏牌组回调: (): void => {
               this.显示隐藏牌组对话框();
             },
+            // 用户在 同步分组 点「先备份后同步」：导出整个 collection 为 .colpkg
+            // 用户备份完手动回设置页点「立即同步」—— 备份与同步两步分离
             先备份后同步回调: (): void => {
               this.显示设置 = false;
               this.打开数据迁移('exportPersonalData', 0, false);
             },
+            // 用户在 同步分组 点「立即同步」：暂存 auth + 账号名，挂载 同步面板 弹窗
             打开同步弹窗回调: (auth: SyncAuth, accountName: string): void => {
               this.同步面板认证 = auth;
               this.同步面板账号名 = accountName;
@@ -1203,6 +1776,10 @@ struct 首页 {
           })
         }
 
+        // 窄屏详情显隐（方案 C 2026-07-25）：显示牌组详情=true 时 牌组详情面板 盖住列表。
+        // 牌组详情面板 在根 Stack 内，作为 @Entry 后代，@Consume 能找到 @Provide。
+        // B12-Y3 2026-07-28：详情面板必须在 3 个协调器弹窗之前渲染，否则弹窗被详情面板遮挡，
+        // 用户点「创建子牌组/牌组选项/导出」后弹窗藏在详情面板背后，返回后才看到。
         if (this.当前断点 === 'xs' && this.显示牌组详情) {
           Column() {
             Row() {
@@ -1258,6 +1835,8 @@ struct 首页 {
           .backgroundColor(this.页面底色微染值)
         }
 
+        // 详情触发的弹层（创建牌组/数据迁移/牌组选项）：用 3 个协调器组件替代原 @Builder。
+        // B12-Y3 2026-07-28：弹层渲染在窄屏详情面板之后，确保弹窗能盖住详情面板。
         创建牌组协调器({
           显示: this.显示创建牌组,
           进行中: this.创建牌组中,
@@ -1329,6 +1908,19 @@ struct 首页 {
           })
         }
 
+        // 首次启动欢迎弹窗：放最顶层，确保覆盖所有浮层
+        //   关闭时调 标记已展示欢迎弹窗 持久化（已在 显示欢迎弹窗一次 中提前标记，
+        //   这里仅关闭状态；即使弹窗未显示也已标记，保证「只弹一次」语义）
+        if (this.显示欢迎弹窗) {
+          欢迎弹窗({
+            onClose: (): void => {
+              this.显示欢迎弹窗 = false;
+            }
+          })
+            .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
+        }
+
+        // AnkiWeb 资源引导弹窗：首次启动展示一次，挂载在最顶层确保覆盖其他弹窗
         if (this.显示AnkiWeb引导) {
           AnkiWeb引导对话框({
             isDark: this.是否深色(),
@@ -1338,6 +1930,8 @@ struct 首页 {
           })
         }
 
+        // 好评引导弹窗：用户首次完成一份牌组学习回到主页后展示一次，
+        // 挂载在最顶层确保覆盖其他弹窗（与 AnkiWeb引导对话框 同款磨砂遮罩）
         if (this.显示好评引导) {
           好评引导对话框({
             isDark: this.是否深色(),
@@ -1345,6 +1939,63 @@ struct 首页 {
               this.显示好评引导 = false;
             }
           })
+        }
+
+        if (this.显示节流奖励) {
+          Stack() {
+            Column()
+              .width('100%')
+              .height('100%')
+              .backgroundColor('rgba(0,0,0,0.35)')
+              .backgroundBlurStyle(BlurStyle.Thin, {
+                colorMode: ThemeColorMode.LIGHT,
+                adaptiveColor: AdaptiveColor.DEFAULT
+              })
+              .onClick(() => { this.显示节流奖励 = false; })
+
+            Column() {
+              Stack({ alignContent: Alignment.End }) {
+                Text('×')
+                  .fontSize(应用尺寸.字号_卡片标题)
+                  .fontColor($r('app.color.text_secondary'))
+                  .padding({ left: 8, top: 4, right: 4, bottom: 4 })
+                  .onClick(() => { this.显示节流奖励 = false; })
+              }
+              .width('100%')
+              .padding({ left: 12, right: 12, top: 12, bottom: 8 })
+
+              Text(this.节流奖励文案)
+                .fontSize(应用尺寸.字号_彩蛋文案)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+                .width('100%')
+                .textAlign(TextAlign.Center)
+                .padding({ top: 24, bottom: 32 })
+
+              Row() {
+                Button($r('app.string.easter_egg_got_it'))
+                  .type(ButtonType.Capsule)
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontWeight(FontWeight.Medium)
+                  .backgroundColor(this.动作主色)
+                  .fontColor('#FFFFFF')
+                  .onClick(() => { this.显示节流奖励 = false; })
+              }
+              .width('100%')
+              .padding({ left: 20, right: 20, bottom: 20 })
+            }
+            .width('88%')
+            .constraintSize({ maxWidth: 380 })
+            .backgroundColor($r('app.color.surface_page'))
+            .borderRadius(应用尺寸.圆角_指标卡)
+            .shadow({ radius: 24, color: 'rgba(0,0,0,0.18)', offsetX: 0, offsetY: 4 })
+          }
+          .width('100%')
+          .height('100%')
+          .alignContent(Alignment.Center)
+          .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
         }
       }
       .width('100%')

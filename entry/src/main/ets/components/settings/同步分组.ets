@@ -13,30 +13,73 @@ import { 分类同步错误 } from '../../model/同步流程';
 import { 设置面板色板, 设置面板色板_取 } from '../../utils/设置面板配色';
 import { 颜色键 } from '../../model/颜色主题';
 
+// ========================================================
+// @块ID UI-SYNC-GROUP-001
+// @名称 AnkiWeb 云同步分组
+//
+// @作用
+// 仅负责登录/注销状态机，同步流程已抽到独立弹窗 SyncPanel。
+// 三态简化为两态：未登录（登录表单）/ 已登录（账号 + 立即同步/注销）。
+// 点「立即同步」时 加载同步凭证 拿最新凭证（端点可能被 SyncPanel 更新过），
+// 上抛 打开同步弹窗回调(凭证, 账号名) 给 Index，Index 挂载 SyncPanel 弹窗。
+//
+// 同步流程不再放在本组件的原因：
+// - 之前在 SettingsPanel 内 syncing 中关闭会导致定时器泄漏、错误被吞、冲突中断；
+// - SyncPanel 作为独立弹窗，关闭守卫确保 syncing/conflict/abortRequested 期间不可关闭。
+//
+// @输入
+// 是否深色：当前是否深色模式（影响色板取值）。
+// 是否展开：本分组是否展开。
+// 切换展开回调 / 打开同步弹窗回调 / 点击导出数据回调 / 打开说明回调：父组件注入。
+//
+// @输出
+// 渲染同步分组卡片；用户登录/注销/同步时分别上抛对应回调。
+//
+// @副作用
+// 调用 加载同步凭证 / 保存同步凭证 / 清除同步凭证 读写本地凭证；
+// 调用 同步服务.同步登录 与 AnkiWeb 通信。
+// ========================================================
 @Component
 export struct 同步分组 {
   @Prop 是否深色: boolean = false;
   @Prop 是否展开: boolean = false;
   切换展开回调: () => void = (): void => {};
+  // 用户点「立即同步」：上抛当前凭证 + 账号名给 Index，Index 挂载 SyncPanel 弹窗
   打开同步弹窗回调: (凭证: SyncAuth, 账号名: string) => void = (_凭证: SyncAuth, _账号名: string): void => {};
+  // 用户选「先备份后同步」：上抛给 Index 打开 DataTransferPanel 导出 collection
+  // 备份完成用户自己回到设置页再点「立即同步」—— 备份与同步是两步分离操作
   点击导出数据回调: () => void = (): void => {};
+  // ⓘ 按钮上抛：由父组件 SettingsPanel 统一渲染 FieldHelpPanel 浮层（与其他分组一致）
   打开说明回调: (标题: Resource, 正文: Resource) => void = (_标题: Resource, _正文: Resource): void => {};
 
+  // @StorageLink 让本组件在 主色按钮背景 变化时立即重渲染；解析主色按钮背景() 直接引用此字段，
+  // 让登录按钮主色在颜色主题切换瞬间同步更新（与 外观分组 同款机制）。
   @StorageLink(颜色键.主色按钮背景) private 主色按钮背景链接: string = '';
+  // B12-Y5 2026-07-29 修复 Bug 1：@StorageProp('themeMode') 让主题模式切换直接触发重 build，
+  // 不依赖 @Prop 是否深色 传播（aurora 主题 主色按钮背景 深浅色相同，@StorageLink 可能不触发）。
   @StorageProp('themeMode') private 主题模式监听: string = 'system';
 
+  // ---- @State 全部集中声明在 struct 顶部（ArkTS 约束） ----
+  /** 状态机：未登录 / 已登录（同步流程在 SyncPanel 弹窗，不占 当前状态） */
   @State private 当前状态: '未登录' | '已登录' = '未登录';
+  /** 登录表单输入 */
   @State private 用户名输入: string = '';
   @State private 密码输入: string = '';
+  /** 登录请求进行中（按钮 busy 态显示 sync_logging_in） */
   @State private 登录中: boolean = false;
+  /** 已登录账号名（仅展示用） */
   @State private 账号名: string = '';
+  /** 错误提示（面板内红字） */
   @State private 错误文本: string = '';
 
+  // ---- 内部（非 @State，不参与 UI 刷新） ----
+  /** 登录成功后持有的会话凭证（hkey + endpoint） */
   private 鉴权凭证: SyncAuth | null = null;
 
   private readonly 同步服务实例: 同步服务 = new 同步服务();
 
   aboutToAppear(): void {
+    // 启动读取本地凭证：有 hkey 直接进 已登录（重启免登录）
     const 信息: 同步凭证信息 | null = 加载同步凭证();
     if (信息 !== null) {
       const 凭证: SyncAuth = {
@@ -56,10 +99,28 @@ export struct 同步分组 {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id);
   }
 
+  /** 按钮背景专用主色（配 #FFFFFF 文字 ≥ 4.5:1）。2.1.4.1 深色模式修复。 */
   private 解析主色按钮背景(): string {
     return this.主色按钮背景链接 !== '' ? this.主色按钮背景链接 : 设置面板色板_取(this.是否深色).主色按钮背景;
   }
 
+  // ========================================================
+  // @块ID UI-SYNC-GROUP-002
+  // @名称 登录处理
+  //
+  // @作用
+  // 登录：成功持久化 hkey（密码绝不落盘）；失败按 分类同步错误 归类提示，停留 未登录。
+  //
+  // @输入
+  // 用户名输入 / 密码输入：当前表单输入值（来自 @State）。
+  //
+  // @输出
+  // 成功 → 鉴权凭证 / 账号名 / 当前状态 更新；失败 → 错误文本 填充分类后的提示。
+  //
+  // @副作用
+  // 调用 同步服务实例.同步登录 与 AnkiWeb 通信；
+  // 成功后调用 保存同步凭证 持久化凭证（密码绝不落盘）。
+  // ========================================================
   private async 点击登录(): Promise<void> {
     if (this.登录中) {
       return;
@@ -84,8 +145,10 @@ export struct 同步分组 {
       const 后端错误类别编号: number | undefined = 错误对象 instanceof 后端错误 ? 错误对象.kind : undefined;
       const 类别 = 分类同步错误(错误对象, 后端错误类别编号);
       if (类别 === 'auth') {
+        // 诊断阶段：附带 kind 与实际错误信息，定位"原本可以现在不行"的真实原因
         this.错误文本 = `${this.取本地化文本($r('app.string.sync_error_auth'))} [kind=${后端错误类别编号 ?? -1}]：${错误对象.message}`;
       } else if (类别 === 'network') {
+        // 诊断阶段：附带 kind 与实际错误信息
         this.错误文本 = `${this.取本地化文本($r('app.string.sync_error_network'))} [kind=${后端错误类别编号 ?? -1}]：${错误对象.message}`;
       } else {
         this.错误文本 = `${this.取本地化文本($r('app.string.sync_error_generic'))} [kind=${后端错误类别编号 ?? -1}]：${错误对象.message}`;
@@ -95,6 +158,7 @@ export struct 同步分组 {
     }
   }
 
+  /** 注销：弹 AlertDialog 二次确认后清空本地凭证与面板状态，回登录表单。 */
   private 点击注销(): void {
     this.getUIContext().showAlertDialog({
       title: this.取本地化文本($r('app.string.sync_logout')),
@@ -115,6 +179,7 @@ export struct 同步分组 {
     });
   }
 
+  /** 真正执行注销：清凭证 + 清状态 + 回 未登录。 */
   private 确认注销(): void {
     清除同步凭证();
     this.鉴权凭证 = null;
@@ -125,6 +190,10 @@ export struct 同步分组 {
     this.当前状态 = '未登录';
   }
 
+  /**
+   * 立即同步：加载同步凭证 拿最新凭证（端点可能被上次 SyncPanel 更新过），
+   * 上抛 打开同步弹窗回调 给 Index 挂载 SyncPanel 弹窗。
+   */
   private 点击立即同步(): void {
     const 信息: 同步凭证信息 | null = 加载同步凭证();
     if (信息 === null) {
@@ -149,6 +218,7 @@ export struct 同步分组 {
         .fontSize(14)
         .fontWeight(FontWeight.Medium)
         .fontColor(设置面板色板_取(this.是否深色).次文字)
+      // 展开时才显示 ⓘ 按钮，点击弹出说明面板（与 调度器分组 / 语音分组 / 术语分组 一致）
       if (this.是否展开) {
         Button($r('app.string.field_help_button'))
           .type(ButtonType.Normal)
@@ -177,6 +247,22 @@ export struct 同步分组 {
     })
   }
 
+  // ========================================================
+  // @块ID UI-SYNC-GROUP-003
+  // @名称 未登录内容
+  //
+  // @作用
+  // 渲染未登录态：副标题 + 用户名/密码输入 + 登录按钮 + 错误红字。
+  //
+  // @输入
+  // 色板：当前色板。
+  //
+  // @输出
+  // 渲染登录表单；点击登录时调用 点击登录。
+  //
+  // @副作用
+  // 无（点击登录的副作用见 UI-SYNC-GROUP-002）。
+  // ========================================================
   @Builder
   private 未登录内容(色板: 设置面板色板) {
     Text($r('app.string.sync_subtitle_logged_out'))
@@ -234,6 +320,25 @@ export struct 同步分组 {
     }
   }
 
+  // ========================================================
+  // @块ID UI-SYNC-GROUP-004
+  // @名称 已登录内容
+  //
+  // @作用
+  // 渲染已登录态：账号名 + 先备份后同步/立即同步/注销 三按钮 + 错误提示。
+  // B12-Y2 2026-07-22：三按钮都用中性底（标签背景），无主色按钮。
+  // 用户决策：三个按钮不需要颜色，因「立即同步」与「先备份后同步」都是用户主动选的操作，
+  // 无主次关系；注销按钮本就是次按钮，统一风格更协调。
+  //
+  // @输入
+  // 色板：当前色板。
+  //
+  // @输出
+  // 渲染已登录面板；点击各按钮时上抛对应回调。
+  //
+  // @副作用
+  // 无（点击立即同步/注销的副作用见对应方法）。
+  // ========================================================
   @Builder
   private 已登录内容(色板: 设置面板色板) {
     Text(this.账号名)

@@ -1,5 +1,47 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID MODEL-FSRS-CTRL-001
+// @名称 FSRS 全局开关控制器
+//
+// @作用
+// FSRS（Free Spaced Repetition Scheduler）全局开关控制器。
+// Anki 的 fsrs 字段是 collection 级全局 flag（不是 per-deck）：
+// 整个 collection 要么全用 FSRS，要么全用 SM-2，二选一。
+// Anki 24.04 起官方推荐默认开启 FSRS。
+//
+// 提供两个能力：
+// 1. 确保FSRS已开启一次(): App 首次启动时若 fsrs=false 则自动开启一次，
+//    并写 fsrs_initialized 标记；之后用户在设置页关闭就保持关闭，下次启动不再自动开启。
+// 2. 设置FSRS开启状态(value): 设置页切换开关时回写到后端，保留 view 中其他字段不丢。
+//
+// 另提供 加载FSRS开启状态() 用于设置页打开时同步 UI。
+//
+// @输入
+// 无（确保/加载）；enabled: boolean（设置）
+//
+// @输出
+// 确保FSRS已开启一次(): Promise<void>
+// 设置FSRS开启状态(enabled): Promise<boolean>
+// 加载FSRS开启状态(): Promise<boolean | null>
+//
+// @业务规则
+// - targetDeckId 用 Default deck (id=1)。Anki 约定 Default deck 不可删除且 id 固定，
+//   fsrs 字段与 targetDeckId 无关，只是后端用 targetDeckId 定位 currentDeck.limits。
+// - configs 数组只回传 view.allConfigs 里的所有 config，原样保真（含 preserved 字节）。
+// - fsrsReschedule：view 里没有这个字段；开启 FSRS 时设 true（让卡片按新算法重新调度），
+//   关闭时设 false（无新算法需要应用）。
+//
+// @副作用
+// 读写 preferences 的 jidecards_settings store；
+// 通过 牌组配置服务 间接修改 Anki collection 状态。
+//
+// @注意
+// preferences 中的字符串键（'jidecards_settings' / 'fsrs_initialized' /
+// 'abilityContext'）属持久化协议字段，保留英文，不可中文化。
+// import 路径 `../backend/牌组配置服务` 已经是中文，保留不变。
+// ========================================================
+
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { 牌组配置服务 } from '../backend/牌组配置服务';
@@ -45,9 +87,11 @@ async function 标记已初始化(): Promise<void> {
     await 存储.put(FSRS已初始化键, true);
     await 存储.flush();
   } catch (错误) {
+    // 偏好不可用时不阻断；下次启动可能再次尝试开启。
   }
 }
 
+/** 从 view 构造 UpdateDeckConfigsInput，仅覆盖 fsrs/fsrsReschedule，其他字段原样回传。 */
 function 构造请求(视图: DeckConfigsForUpdateView, fsrs开关: boolean, fsrs重调度: boolean): UpdateDeckConfigsInput {
   const 配置列表: DeckConfig[] = [];
   for (let i: number = 0; i < 视图.allConfigs.length; i++) {
@@ -68,6 +112,27 @@ function 构造请求(视图: DeckConfigsForUpdateView, fsrs开关: boolean, fsr
   };
 }
 
+// ========================================================
+// @块ID MODEL-FSRS-CTRL-002
+// @名称 确保FSRS已开启一次
+//
+// @作用
+// App 首次启动时调用一次：若 fsrs 未初始化且当前为 false，则自动开启 FSRS。
+// 已初始化过则跳过，保留用户后续在设置页的关闭状态。
+//
+// @输入
+// 无
+//
+// @输出
+// Promise<void>。失败静默降级，不阻断首页加载。
+//
+// @业务规则
+// 后端不可用时不写 initialized 标记，下次启动重试。
+//
+// @副作用
+// 读取并写入 preferences 的 fsrs_initialized 键；
+// 通过 牌组配置服务 修改 Anki collection 的 fsrs 字段。
+// ========================================================
 export async function 确保FSRS已开启一次(): Promise<void> {
   const 已初始化: boolean = await 加载已初始化标记();
   if (已初始化) {
@@ -81,11 +146,29 @@ export async function 确保FSRS已开启一次(): Promise<void> {
       await 服务.更新牌组配置(请求);
     }
   } catch (错误) {
+    // 后端不可用时不写 initialized 标记，下次启动重试。
     return;
   }
   await 标记已初始化();
 }
 
+// ========================================================
+// @块ID MODEL-FSRS-CTRL-003
+// @名称 设置FSRS开启状态
+//
+// @作用
+// 设置页切换 FSRS 开关：拉取最新 view 后仅覆盖 fsrs/fsrsReschedule 字段回写。
+//
+// @输入
+// enabled: boolean - 期望的 FSRS 开关状态
+//
+// @输出
+// Promise<boolean>：最终落盘的 fsrs 值（成功时与入参一致；失败时抛出异常，
+// 由调用方决定回滚 UI）。
+//
+// @副作用
+// 通过 牌组配置服务 修改 Anki collection 的 fsrs 字段。
+// ========================================================
 export async function 设置FSRS开启状态(开启: boolean): Promise<boolean> {
   const 服务: 牌组配置服务 = new 牌组配置服务();
   const 视图: DeckConfigsForUpdateView = await 服务.获取牌组配置编辑视图(默认牌组ID);
@@ -94,6 +177,23 @@ export async function 设置FSRS开启状态(开启: boolean): Promise<boolean> 
   return 开启;
 }
 
+// ========================================================
+// @块ID MODEL-FSRS-CTRL-004
+// @名称 加载FSRS开启状态
+//
+// @作用
+// 读取当前 FSRS 开关状态（从后端 view 拉）。设置页打开时调用一次同步 UI。
+//
+// @输入
+// 无
+//
+// @输出
+// Promise<boolean | null>：当前 FSRS 开关；失败时返回 null，
+// UI 可显示"加载失败"或隐藏开关。
+//
+// @副作用
+// 通过 牌组配置服务 只读 view，不写入。
+// ========================================================
 export async function 加载FSRS开启状态(): Promise<boolean | null> {
   const 服务: 牌组配置服务 = new 牌组配置服务();
   try {

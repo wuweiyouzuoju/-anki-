@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// T1.5 图片遮罩服务契约测试：
+// - 获取图片遮罩字段 经 后端会话 走 后端图片遮罩(37) 的 获取图片遮罩字段(2)，
+//   解出 4 个字段索引（含 occlusions=0 的 proto3 默认值）；
+// - 添加图片遮罩笔记类型 经 后端图片遮罩(37) 的 添加图片遮罩笔记类型(3)，
+//   入参为 generic.Empty（空字节）；
+// - 媒体服务.添加媒体文件 经 后端媒体(41) 的 添加媒体文件(1)，返回最终文件名。
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import test from 'node:test';
@@ -7,11 +13,16 @@ import test from 'node:test';
 import { 协议写入器 } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
 import { 媒体方法, 图片遮罩方法, 服务号 } from '../../entry/src/main/ets/backend/服务索引.ts';
 
+// 后端客户端.ts import libjidecards.so（HarmonyOS 原生 NAPI），Node 测试环境无此包。
+// 注册一个 resolve hook 把它桩成空实现，让 后端会话 / 图片遮罩服务 / 媒体服务 可在 Node 下加载。
 const libStub = 'export const openBackend = () => 0; export const closeBackend = () => {}; export const runMethodRaw = () => Promise.resolve(new Uint8Array(0));';
 const libStubUrl = 'data:text/javascript;base64,' + Buffer.from(libStub).toString('base64');
 const hookCode = `export function resolve(s, c, n) { if (s === 'libjidecards.so') { return { url: ${JSON.stringify(libStubUrl)}, shortCircuit: true }; } return n(s, c); }`;
 register('data:text/javascript;base64,' + Buffer.from(hookCode).toString('base64'), import.meta.url);
 
+// 构造 GetImageOcclusionFieldsResponse 字节：
+// ImageOcclusionFieldIndexes { occlusions=0, image=1, header=2, back_extra=3 }
+// occlusions=0 是 proto3 默认值，不在网络上传输，验证解码端正确补 0。
 function buildFieldsResponseBytes() {
   const indexes = new 协议写入器();
   indexes.写入变长整数(2, 1);
@@ -22,6 +33,7 @@ function buildFieldsResponseBytes() {
   return response.转为字节();
 }
 
+// 桩 后端会话.获取实例：返回只带 调用 方法的 mock，按方法号分派固定字节。
 async function 桩会话与图片遮罩服务(分派) {
   const { 后端会话 } = await import('../../entry/src/main/ets/backend/后端会话.ts');
   const calls = [];
@@ -45,6 +57,7 @@ test('获取图片遮罩字段 走 后端图片遮罩(37) 的 获取图片遮罩
   assert.equal(calls[0].服务号, 服务号.后端图片遮罩, 'service id 37');
   assert.equal(calls[0].方法号, 图片遮罩方法.获取图片遮罩字段, 'method id 2');
 
+  // 请求侧 GetImageOcclusionFieldsRequest { notetype_id: int64 = 1 }
   const { 协议读取器 } = await import('../../entry/src/main/ets/proto/core/ProtoReader.ts');
   const reader = new 协议读取器(calls[0].输入字节);
   const tag = reader.读取标签();

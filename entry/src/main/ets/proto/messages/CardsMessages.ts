@@ -1,25 +1,59 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-CARDS-001
+// @名称 卡片消息编解码
+//
+// @作用
+// 编解码 anki.cards.proto 消息（Anki 26.05）：
+// - Card 完整视图（22+ 字段，含 FSRS 记忆状态）
+// - CardId / CardIds / UpdateCards / RemoveCards / SetDeck / SetFlag 等请求
+// 字段来源：third_party/anki/proto/anki/cards.proto
+// service 号：BACKEND_CARDS = 5（backend.rs line 6672）
+// 方法号：CARDS_METHOD（ServiceIds.ts）
+//
+// @输入
+// 编码：Card 结构 / cardIds 数组 / (cardIds, deckId/flag) 等
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：Card 完整视图
+//
+// @业务规则
+// sint32 字段（usn/queue/due/originalDue）用 zigzag 编码，与 prost 一致。
+// FSRS 状态字段（20-23）由 backend 维护，前端不在 UpdateCards 中回写。
+// 响应复用 CollectionMessages 的 OpChanges / OpChangesWithCount 解码。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 import { decodeOpChanges, decodeOpChangesWithCount } from './CollectionMessages';
 
+/** sint32 zigzag 编码：((n << 1) ^ (n >> 31)) >>> 0，结果是无符号 32 位 */
 function zigzag32(n: number): number {
   return ((n << 1) ^ (n >> 31)) >>> 0;
 }
 
+/** 在 协议写入器 上写 sint32 字段（varint + zigzag，与 prost 一致） */
 function writeSint32(w: 协议写入器, fieldNumber: number, value: number): void {
   w.写入变长整数(fieldNumber, zigzag32(value));
 }
 
+/** 从 协议读取器 读 sint32 字段（varint + zigzag 反向） */
 function readSint32(reader: 协议读取器): number {
   const unsigned = reader.读取大变长整数() & 0xFFFFFFFFn;
+  // zigzag 反向：(n >> 1) ^ -(n & 1)
   const low = unsigned & 1n;
   const rest = unsigned >> 1n;
   const signed = rest ^ -low;
   return Number(BigInt.asIntN(32, signed));
 }
 
+/** CardId：单张卡片的 cid */
 export function encodeCardId(cid: number): Uint8Array {
   const w = new 协议写入器();
   if (cid !== 0) {
@@ -28,12 +62,14 @@ export function encodeCardId(cid: number): Uint8Array {
   return w.转为字节();
 }
 
+/** CardIds：repeated int64 cids = 1，proto3 标量 repeated 默认 packed */
 export function encodeCardIds(cids: number[]): Uint8Array {
   const w = new 协议写入器();
   w.写入打包64位整数(1, cids);
   return w.转为字节();
 }
 
+/** 卡片队列类型（ctype 字段） */
 export enum CardType {
   NEW = 0,
   LEARNING = 1,
@@ -41,6 +77,7 @@ export enum CardType {
   RELEARNING = 3
 }
 
+/** 卡片队列状态（queue 字段） */
 export enum CardQueue {
   SUSPENDED = -1,
   BURIED_MANUALLY = -2,
@@ -52,6 +89,7 @@ export enum CardQueue {
   PREVIEW = 4
 }
 
+/** FsrsMemoryState：FSRS 算法的记忆状态 */
 export interface FsrsMemoryState {
   stability: number;
   difficulty: number;
@@ -75,6 +113,7 @@ export function decodeFsrsMemoryState(reader: 协议读取器): FsrsMemoryState 
   return out;
 }
 
+/** Card：完整卡片视图（cards.proto Card 消息，22+ 字段） */
 export interface Card {
   id: number;
   noteId: number;
@@ -131,11 +170,11 @@ export function decodeCard(bytes: Uint8Array): Card {
       case 3: card.deckId = reader.读取64位整数(); break;
       case 4: card.templateIdx = reader.读取变长整数(); break;
       case 5: card.mtimeSecs = reader.读取64位整数(); break;
-      case 6: card.usn = readSint32(reader); break;
-      case 7: card.ctype = reader.读取变长整数(); break;
-      case 8: card.queue = readSint32(reader); break;
-      case 9: card.due = readSint32(reader); break;
-      case 10: card.interval = reader.读取变长整数(); break;
+      case 6: card.usn = readSint32(reader); break;        // sint32 zigzag
+      case 7: card.ctype = reader.读取变长整数(); break;       // uint32
+      case 8: card.queue = readSint32(reader); break;       // sint32 zigzag
+      case 9: card.due = readSint32(reader); break;         // sint32 zigzag
+      case 10: card.interval = reader.读取变长整数(); break;  // uint32
       case 11: card.easeFactor = reader.读取变长整数(); break;
       case 12: card.reps = reader.读取变长整数(); break;
       case 13: card.lapses = reader.读取变长整数(); break;
@@ -159,6 +198,7 @@ export function decodeCard(bytes: Uint8Array): Card {
   return card;
 }
 
+/** 编码 Card 子消息（用于 UpdateCardsRequest.cards 嵌入） */
 export function encodeCard(card: Card): Uint8Array {
   const w = new 协议写入器();
   if (card.id !== 0) w.写入64位整数(1, card.id);
@@ -166,10 +206,10 @@ export function encodeCard(card: Card): Uint8Array {
   if (card.deckId !== 0) w.写入64位整数(3, card.deckId);
   if (card.templateIdx !== 0) w.写入变长整数(4, card.templateIdx);
   if (card.mtimeSecs !== 0) w.写入64位整数(5, card.mtimeSecs);
-  if (card.usn !== 0) writeSint32(w, 6, card.usn);
+  if (card.usn !== 0) writeSint32(w, 6, card.usn);            // sint32 zigzag
   if (card.ctype !== 0) w.写入变长整数(7, card.ctype);
-  if (card.queue !== 0) writeSint32(w, 8, card.queue);
-  if (card.due !== 0) writeSint32(w, 9, card.due);
+  if (card.queue !== 0) writeSint32(w, 8, card.queue);        // sint32 zigzag
+  if (card.due !== 0) writeSint32(w, 9, card.due);            // sint32 zigzag
   if (card.interval !== 0) w.写入变长整数(10, card.interval);
   if (card.easeFactor !== 0) w.写入变长整数(11, card.easeFactor);
   if (card.reps !== 0) w.写入变长整数(12, card.reps);
@@ -180,9 +220,11 @@ export function encodeCard(card: Card): Uint8Array {
   if (card.flags !== 0) w.写入变长整数(17, card.flags);
   if (card.originalPosition !== undefined) w.写入变长整数(18, card.originalPosition);
   if (card.customData !== '') w.写入字符串(19, card.customData);
+  // FSRS 状态（20-23 字段）由 backend 维护，前端不在 UpdateCards 中回写
   return w.转为字节();
 }
 
+/** UpdateCardsRequest：repeated Card cards = 1, bool skip_undo_entry = 2 */
 export function encodeUpdateCardsRequest(cards: Card[], skipUndoEntry: boolean = false): Uint8Array {
   const w = new 协议写入器();
   for (const card of cards) {
@@ -194,12 +236,14 @@ export function encodeUpdateCardsRequest(cards: Card[], skipUndoEntry: boolean =
   return w.转为字节();
 }
 
+/** RemoveCardsRequest：repeated int64 card_ids = 1（packed） */
 export function encodeRemoveCardsRequest(cardIds: number[]): Uint8Array {
   const w = new 协议写入器();
   w.写入打包64位整数(1, cardIds);
   return w.转为字节();
 }
 
+/** SetDeckRequest：repeated int64 card_ids = 1（packed）, int64 deck_id = 2 */
 export function encodeSetDeckRequest(cardIds: number[], deckId: number): Uint8Array {
   const w = new 协议写入器();
   w.写入打包64位整数(1, cardIds);
@@ -209,6 +253,7 @@ export function encodeSetDeckRequest(cardIds: number[], deckId: number): Uint8Ar
   return w.转为字节();
 }
 
+/** SetFlagRequest：repeated int64 card_ids = 1（packed）, uint32 flag = 2 */
 export function encodeSetFlagRequest(cardIds: number[], flag: number): Uint8Array {
   const w = new 协议写入器();
   w.写入打包64位整数(1, cardIds);
@@ -218,6 +263,7 @@ export function encodeSetFlagRequest(cardIds: number[], flag: number): Uint8Arra
   return w.转为字节();
 }
 
+// 响应解码（全部复用 CollectionMessages 的 OpChanges / OpChangesWithCount）
 export {
   decodeOpChanges as decodeUpdateCardsResponse,
   decodeOpChangesWithCount as decodeRemoveCardsResponse,

@@ -1,4 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// 移植自 Anki rslib/src/typeanswer.rs，纯函数无副作用。
+// 实现 compare_answer 字符级 diff，行为与 Anki Type-in-the-Answer 一致。
+// 不依赖任何 HarmonyOS Kit / @kit.* / 后端调用，可被 node test runner 直接加载。
+
+// ========================================================
+// @块ID MODEL-TYPE-ANSWER-001
+// @名称 拼写比对器-常量与预处理工具
+//
+// @作用
+// 定义 HTML/换行/声音/TTS/组合标记正则、命名实体表，以及
+// 转义HTML / 是否组合标记 / 剥除答案标签 等纯工具函数。
+// 对应 Anki rslib/src/typeanswer.rs 的常量与预处理函数。
+//
+// @输入
+// 字符串。
+//
+// @输出
+// 处理后的字符串或布尔值。
+//
+// @业务规则
+// 剥除答案标签流程：去音视频 → 换行转空格 → 去 HTML 标签并解码实体 → trim。
+// 转义HTML：& < > " ' 五字符转义为实体。
+// 命名实体表覆盖常见 HTML 实体（amp/lt/gt/quot/apos/nbsp 等）。
+//
+// @副作用
+// 无。
+// ========================================================
 
 const 换行正则 = /(\n|<br\s?\/?>|<\/?div>)+/gi;
 const HTML标签正则 = /<!--.*?-->|<style.*?>.*?<\/style>|<script.*?>.*?<\/script>|<.*?>/gis;
@@ -61,6 +89,7 @@ export function 是否组合标记(字符串: string): boolean {
   return 组合标记正则.test(字符串);
 }
 
+/** 解码 HTML 实体（数字 / 十六进制 / 命名）。 */
 function 解码实体(字符串: string): string {
   if (!字符串.includes('&')) {
     return 字符串;
@@ -87,10 +116,12 @@ function 解码实体(字符串: string): string {
     .replace(/\u00A0/g, ' ');
 }
 
+/** 剥除声音与 TTS 标签。 */
 function 剥除音视频标签(字符串: string): string {
   return 字符串.replace(声音标签正则, '').replace(TTS指令正则, '');
 }
 
+/** 剥除 HTML 标签并解码实体。 */
 function 剥除HTML(字符串: string): string {
   return 解码实体(字符串.replace(HTML标签正则, ''));
 }
@@ -101,10 +132,12 @@ export function 剥除答案标签(期望答案: string): string {
   return 剥除HTML(无换行).trim();
 }
 
+/** 生成 typeans 容器 HTML。 */
 function 格式化拼写框(内容: string): string {
   return `<code id=typeans>${内容}</code>`;
 }
 
+/** 若首字符是组合标记，前置一个不间断空格避免被某些渲染器丢弃。 */
 function 隔离前导组合标记(文本: string): string {
   const 首字符 = [...文本][0];
   if (首字符 !== undefined && 是否组合标记(首字符)) {
@@ -113,6 +146,7 @@ function 隔离前导组合标记(文本: string): string {
   return 文本;
 }
 
+/** 两个 string[] 是否逐项相等。 */
 function 数组相等(左: string[], 右: string[]): boolean {
   if (左.length !== 右.length) return false;
   for (let i = 0; i < 左.length; i++) {
@@ -120,6 +154,30 @@ function 数组相等(左: string[], 右: string[]): boolean {
   }
   return true;
 }
+
+// ========================================================
+// @块ID MODEL-TYPE-ANSWER-002
+// @名称 拼写比对器-差异片段与渲染
+//
+// @作用
+// 定义差异片段类型（正确/错误/缺失）及其 CSS 类映射，
+// 提供 渲染片段 函数把片段数组渲染为带 span class 的 HTML。
+// 对应 Anki typeanswer.rs 的 typeGood/typeBad/typeMissed 渲染逻辑。
+//
+// @输入
+// 差异片段[] / 单段文本。
+//
+// @输出
+// HTML 字符串（span 包裹）。
+//
+// @业务规则
+// CSS 类名固定：typeGood / typeBad / typeMissed（与 Anki 桌面端 CSS 一致，不可改写）。
+// 渲染前对每段文本调用 隔离前导组合标记 + 转义HTML。
+// DiffTokenKind 字面量 'Good'/'Bad'/'Missing' 保持英文，与上游语义对齐。
+//
+// @副作用
+// 无。
+// ========================================================
 
 type 差异片段类别 = 'Good' | 'Bad' | 'Missing';
 
@@ -158,6 +216,30 @@ function 渲染片段(片段列表: 差异片段[]): string {
   return 累加;
 }
 
+// ========================================================
+// @块ID MODEL-TYPE-ANSWER-003
+// @名称 拼写比对器-序列匹配器（difflib 移植）
+//
+// @作用
+// Python difflib SequenceMatcher（autojunk=false）的 TS 移植。
+// find_longest_match 使用 b2j 倒排索引 + 动态规划，行为与 CPython difflib 一致。
+// 用于求 输入 与 期望 字符序列的最长公共子序列，输出操作码序列。
+//
+// @输入
+// a: 输入字符数组（typed）。
+// b: 期望字符数组（expected）。
+//
+// @输出
+// 操作码[]：equal/delete/insert/replace 操作序列。
+//
+// @业务规则
+// 不启用 autojunk（与 Anki 上游一致）。
+// Opcode tag 'equal'/'delete'/'insert'/'replace' 保持英文，与 Python difflib 上游一致。
+//
+// @副作用
+// 无。
+// ========================================================
+
 interface 操作码 {
   tag: 'equal' | 'delete' | 'insert' | 'replace';
   firstStart: number;
@@ -166,6 +248,8 @@ interface 操作码 {
   secondEnd: number;
 }
 
+// Python difflib SequenceMatcher port (autojunk=false).
+// find_longest_match 使用 b2j 倒排索引 + 动态规划，与 CPython difflib 一致。
 class 序列匹配器 {
   private a: string[];
   private b: string[];
@@ -263,6 +347,33 @@ class 序列匹配器 {
   }
 }
 
+// ========================================================
+// @块ID MODEL-TYPE-ANSWER-004
+// @名称 拼写比对器-差异上下文与 HTML 构建
+//
+// @作用
+// 定义 差异上下文 接口与两种实现：
+//   - 差异比对：保留组合标记（NFC 规范化）。
+//   - 不合并组合标记的差异比对：剥除组合标记（NFKD 规范化），用于不区分组合标记的语言。
+// 提供 构建差异片段 / 构建差异HTML 公共函数。
+// 对应 Anki typeanswer.rs 的 Diff / DiffNonCombining。
+//
+// @输入
+// 期望 / 输入 字符串。
+//
+// @输出
+// HTML 字符串（typeans 容器）。
+//
+// @业务规则
+// 输入 完全等于 期望 时直接渲染为单 typeGood span。
+// 否则按操作码渲染：equal→Good / delete→Bad / insert→Missing / replace→Bad+Missing。
+// 输出结构：<code id=typeans>{输入HTML}<br><span id=typearrow>&darr;</span><br>{期望HTML}</code>
+// CSS 类名 typeGood/typeBad/typeMissed、id typeans/typearrow 均为 Anki 上游固定值，不可改写。
+//
+// @副作用
+// 无。
+// ========================================================
+
 interface 差异上下文 {
   获取输入序列(): string[];
   获取期望序列(): string[];
@@ -308,6 +419,7 @@ function 构建差异HTML(上下文: 差异上下文): string {
   return 格式化拼写框(`${输入HTML}<br><span id=typearrow>&darr;</span><br>${期望HTML}`);
 }
 
+/** 保留组合标记的差异比对（NFC 规范化）。 */
 class 差异比对 implements 差异上下文 {
   private 输入: string[];
   private 期望: string[];
@@ -338,6 +450,7 @@ class 差异比对 implements 差异上下文 {
   }
 }
 
+/** 剥除组合标记的差异比对（NFKD 规范化），用于不区分组合标记的语言。 */
 class 不合并组合标记的差异比对 implements 差异上下文 {
   private 输入: string[];
   private 期望: string[];
@@ -399,6 +512,29 @@ class 不合并组合标记的差异比对 implements 差异上下文 {
     return 构建差异HTML(this);
   }
 }
+
+// ========================================================
+// @块ID MODEL-TYPE-ANSWER-005
+// @名称 拼写比对器-比对答案
+//
+// @作用
+// 比对期望答案与用户输入，返回 typeans HTML（与 Anki Type-in-the-Answer 行为一致）。
+// 启用组合标记=true 走 差异比对（保留组合标记），否则走 不合并组合标记的差异比对。
+//
+// @输入
+// 期望答案: 期望答案原始文本（含 HTML/AV 标签）。
+// 用户输入: 用户输入文本。
+// 启用组合标记: 是否启用组合标记敏感比对。
+//
+// @输出
+// HTML 字符串（<code id=typeans>...</code>）。
+//
+// @业务规则
+// 用户输入 为空时直接渲染期望答案为单 typeGood span（无差异）。
+//
+// @副作用
+// 无。
+// ========================================================
 
 export function 比对答案(期望答案: string, 用户输入: string, 启用组合标记: boolean): string {
   const 剥除后 = 剥除答案标签(期望答案);

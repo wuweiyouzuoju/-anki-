@@ -1,5 +1,38 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID MODEL-STUDY-LAYOUT-001
+// @名称 复习页布局持久化
+//
+// @作用
+// 复习页布局持久化：布局模式（底部默认 / 浮动模式）+ 两个浮动工具栏的拖动位置。
+// 用 preferences（@kit.ArkData）存储，与 DeckMetaStore 同一 store 但 key 前缀独立。
+// 浮动模式下的工具栏位置以 vp 为单位，避免与屏幕分辨率耦合；
+// 拖出屏幕外时由调用方夹紧。
+//
+// @输入
+// 无（读取布局/工具栏位置）；mode / x / y（保存）
+//
+// @输出
+// 加载学习布局模式(): Promise<学习布局模式>
+// 保存学习布局模式(mode): Promise<void>
+// 加载工具栏位置(toolbarId): Promise<工具栏位置 | null>
+// 保存工具栏位置(toolbarId, x, y): Promise<void>
+//
+// @业务规则
+// 'bottom' / 'float' / 'main' / 'aux' 是字符串字面量联合类型的值，
+// 同时也是持久化协议字段，保留英文，不可中文化。
+//
+// @副作用
+// 读写 preferences 的 jidecards_study_layout store。
+//
+// @注意
+// preferences 中的字符串键（'jidecards_study_layout' /
+// 'study_layout_mode' / 'study_main_toolbar_x' / 'study_main_toolbar_y' /
+// 'study_aux_toolbar_x' / 'study_aux_toolbar_y' / 'abilityContext'）
+// 属持久化协议字段，保留英文，不可中文化。
+// ========================================================
+
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 
@@ -11,10 +44,70 @@ const 辅工具栏X键: string = 'study_aux_toolbar_x';
 const 辅工具栏Y键: string = 'study_aux_toolbar_y';
 const 上下文键: string = 'abilityContext';
 
+// ========================================================
+// @块ID MODEL-STUDY-LAYOUT-002
+// @名称 学习布局模式
+//
+// @作用
+// 复习页操作按钮布局模式类型。
+//
+// @输入
+// 无（类型定义）
+//
+// @输出
+// 字符串字面量联合类型：'bottom' | 'float'
+// - 'bottom' = 贴底部（默认，保持原体验）
+// - 'float' = 浮动可拖动
+//
+// @业务规则
+// 'bottom' / 'float' 是持久化协议字段值，保留英文。
+//
+// @副作用
+// 无
+// ========================================================
 export type 学习布局模式 = 'bottom' | 'float';
 
+// ========================================================
+// @块ID MODEL-STUDY-LAYOUT-003
+// @名称 学习工具栏标识
+//
+// @作用
+// 浮动工具栏标识类型。
+//
+// @输入
+// 无（类型定义）
+//
+// @输出
+// 字符串字面量联合类型：'main' | 'aux'
+// - 'main' = 主操作（显示答案 / 4 评分按钮）
+// - 'aux' = 辅助操作（埋藏 / 暂停）
+//
+// @业务规则
+// 'main' / 'aux' 是持久化协议字段值，保留英文。
+//
+// @副作用
+// 无
+// ========================================================
 export type 学习工具栏标识 = 'main' | 'aux';
 
+// ========================================================
+// @块ID MODEL-STUDY-LAYOUT-004
+// @名称 工具栏位置
+//
+// @作用
+// 浮动工具栏屏幕坐标（vp）。
+//
+// @输入
+// 无（数据结构定义）
+//
+// @输出
+// 字段：
+// x - 工具栏左上角相对屏幕左上角的水平偏移（vp）
+// y - 工具栏左上角相对屏幕左上角的垂直偏移（vp）
+//
+// @副作用
+// 无
+// ========================================================
 export interface 工具栏位置 {
   x: number;
   y: number;
@@ -26,6 +119,22 @@ function 取上下文(): common.UIAbilityContext | null {
   return 上下文 === undefined ? null : 上下文;
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-LAYOUT-005
+// @名称 加载学习布局模式
+//
+// @作用
+// 读取复习页布局模式。
+//
+// @输入
+// 无
+//
+// @输出
+// Promise<学习布局模式>：读取失败或未设置时返回 'bottom'（默认保持原体验）。
+//
+// @副作用
+// 只读 preferences，不写入。
+// ========================================================
 export async function 加载学习布局模式(): Promise<学习布局模式> {
   const 上下文: common.UIAbilityContext | null = 取上下文();
   if (上下文 === null) {
@@ -43,6 +152,22 @@ export async function 加载学习布局模式(): Promise<学习布局模式> {
   }
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-LAYOUT-006
+// @名称 保存学习布局模式
+//
+// @作用
+// 持久化布局模式。
+//
+// @输入
+// mode: 学习布局模式
+//
+// @输出
+// Promise<void>
+//
+// @副作用
+// 写入 preferences 的 study_layout_mode 并 flush 落盘。
+// ========================================================
 export async function 保存学习布局模式(模式: 学习布局模式): Promise<void> {
   const 上下文: common.UIAbilityContext | null = 取上下文();
   if (上下文 === null) {
@@ -53,9 +178,27 @@ export async function 保存学习布局模式(模式: 学习布局模式): Prom
     await 存储.put(布局模式键, 模式);
     await 存储.flush();
   } catch (错误) {
+    // 偏好不可用时仅丢失持久化，不阻塞 UI。
   }
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-LAYOUT-007
+// @名称 加载工具栏位置
+//
+// @作用
+// 读取指定浮动工具栏的拖动位置（vp）。
+//
+// @输入
+// toolbarId: 学习工具栏标识（'main' 或 'aux'）
+//
+// @输出
+// Promise<工具栏位置 | null>：未持久化时返回 null，
+// 调用方应使用默认位置（如主工具栏贴右下、辅助工具栏贴左下）。
+//
+// @副作用
+// 只读 preferences，不写入。
+// ========================================================
 export async function 加载工具栏位置(工具栏ID: 学习工具栏标识): Promise<工具栏位置 | null> {
   const 上下文: common.UIAbilityContext | null = 取上下文();
   if (上下文 === null) {
@@ -81,6 +224,24 @@ export async function 加载工具栏位置(工具栏ID: 学习工具栏标识):
   }
 }
 
+// ========================================================
+// @块ID MODEL-STUDY-LAYOUT-008
+// @名称 保存工具栏位置
+//
+// @作用
+// 持久化指定浮动工具栏的拖动位置（vp）。
+//
+// @输入
+// toolbarId: 学习工具栏标识（'main' 或 'aux'）
+// x: number - 水平偏移（vp）
+// y: number - 垂直偏移（vp）
+//
+// @输出
+// Promise<void>
+//
+// @副作用
+// 写入 preferences 的 study_main_toolbar_x/y 或 study_aux_toolbar_x/y 并 flush 落盘。
+// ========================================================
 export async function 保存工具栏位置(工具栏ID: 学习工具栏标识, x: number, y: number): Promise<void> {
   const 上下文: common.UIAbilityContext | null = 取上下文();
   if (上下文 === null) {
@@ -94,5 +255,6 @@ export async function 保存工具栏位置(工具栏ID: 学习工具栏标识, 
     await 存储.put(Y键, y);
     await 存储.flush();
   } catch (错误) {
+    // 偏好不可用时仅丢失持久化，不阻塞 UI。
   }
 }

@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// 新建牌组链路契约测试（M5）：
+// - 弹层为纯 UI 积木（不 import 后端），经回调上抛名称；
+// - 忙碌/错误态由父级下发；提交需非空且防重入；
+// - 首页.ets 走 确保已打开 → 创建牌组 → 刷新 的完整链路。
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -74,6 +78,7 @@ test('home page wires the create button through the full flow', () => {
   const page = read(PAGE);
   const createCoord = read('entry/src/main/ets/components/home/创建牌组协调器.ets');
 
+  // 创建牌组面板 现在挂在 创建牌组协调器 积木组件里
   assert.match(createCoord, /创建牌组面板/);
   assert.match(page, /@State private 显示创建牌组: boolean/);
   assert.match(page, /@State private 创建牌组中: boolean/);

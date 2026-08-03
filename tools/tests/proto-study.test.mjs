@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// scheduler / card_rendering 消息编解码字节级测试（Anki 26.05）。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -32,29 +33,30 @@ test('GetQueuedCardsRequest encodes fetch limit and intraday flag', () => {
 
 test('SchedulingStates keeps five raw state blobs for opaque round-trip', () => {
   const w = new 协议写入器();
-  w.写入字节(1, new Uint8Array([0x0a, 0x01]));
-  w.写入字节(2, new Uint8Array([0x0b, 0x02]));
-  w.写入字节(3, new Uint8Array([0x0c, 0x03]));
-  w.写入字节(4, new Uint8Array([0x0d, 0x04]));
-  w.写入字节(5, new Uint8Array([0x0e, 0x05]));
+  w.写入字节(1, new Uint8Array([0x0a, 0x01])); // current
+  w.写入字节(2, new Uint8Array([0x0b, 0x02])); // again
+  w.写入字节(3, new Uint8Array([0x0c, 0x03])); // hard
+  w.写入字节(4, new Uint8Array([0x0d, 0x04])); // good
+  w.写入字节(5, new Uint8Array([0x0e, 0x05])); // easy
 
   const states = decodeSchedulingStates(w.转为字节());
   assert.deepEqual([...states.current], [0x0a, 0x01]);
   assert.deepEqual([...states.easy], [0x0e, 0x05]);
 
+  // 原样回写后字节完全一致：作答/DescribeNextStates 的保真通道
   assert.equal(hex(encodeSchedulingStates(states)), hex(w.转为字节()));
 });
 
 test('QueuedCards decodes nested card summary, queue and states', () => {
   const cardMsg = new 协议写入器();
-  cardMsg.写入64位整数(1, 100);
-  cardMsg.写入64位整数(2, 200);
-  cardMsg.写入64位整数(3, 300);
-  cardMsg.写入变长整数(4, 2);
-  cardMsg.写入变长整数(12, 9);
+  cardMsg.写入64位整数(1, 100); // id
+  cardMsg.写入64位整数(2, 200); // note_id
+  cardMsg.写入64位整数(3, 300); // deck_id
+  cardMsg.写入变长整数(4, 2); // template_idx（card_ord）
+  cardMsg.写入变长整数(12, 9); // reps：学习链路不需要，应被跳过
 
   const statesMsg = new 协议写入器();
-  statesMsg.写入字节(4, new Uint8Array([0x21]));
+  statesMsg.写入字节(4, new Uint8Array([0x21])); // good
 
   const queued = new 协议写入器();
   queued.写入子消息(1, cardMsg);
@@ -62,13 +64,13 @@ test('QueuedCards decodes nested card summary, queue and states', () => {
   queued.写入子消息(3, statesMsg);
   const context = new 协议写入器();
   context.写入字符串(1, '英语');
-  queued.写入子消息(4, context);
+  queued.写入子消息(4, context); // context 应被跳过
 
   const resp = new 协议写入器();
   resp.写入子消息(1, queued);
-  resp.写入变长整数(2, 7);
-  resp.写入变长整数(3, 3);
-  resp.写入变长整数(4, 11);
+  resp.写入变长整数(2, 7); // new_count
+  resp.写入变长整数(3, 3); // learning_count
+  resp.写入变长整数(4, 11); // review_count
 
   const view = decodeQueuedCards(resp.转为字节());
   assert.equal(view.cards.length, 1);
@@ -103,7 +105,7 @@ test('CardAnswer omits AGAIN rating and empty states (proto3 defaults)', () => {
     cardId: 1,
     currentState: new Uint8Array(0),
     newState: new Uint8Array(0),
-    rating: 0,
+    rating: 0, // AGAIN
     answeredAtMillis: 0,
     millisecondsTaken: 0
   });
@@ -154,7 +156,7 @@ test('RenderCardResponse decodes mixed text/replacement nodes and flags', () => 
   const resp = new 协议写入器();
   resp.写入子消息(1, textNode);
   resp.写入子消息(1, replNode);
-  resp.写入子消息(2, textNode);
+  resp.写入子消息(2, textNode); // answer 侧复用同一节点即可验证解码
   resp.写入字符串(3, '.card { font-size: 20px; }');
   resp.写入布尔(4, true);
   resp.写入布尔(5, false);

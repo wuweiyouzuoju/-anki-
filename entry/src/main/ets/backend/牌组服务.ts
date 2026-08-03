@@ -1,5 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID BACKEND-SVC-DECK-001
+// @名称 牌组服务边界
+//
+// @作用
+// 包装后端牌组服务的 4 个 RPC：获取牌组树 / 创建牌组 / 重命名牌组 / 删除牌组。
+// 编解码 + 经 后端会话 调用；不持有 UI 状态，不做数据映射。
+// 数据语义见 HomeSnapshotMapper 与 third_party/anki/rslib/src/decks/tree.rs。
+//
+// @输入
+// 牌组ID / 新名称 / 牌组ID列表 / 当前秒数 等
+//
+// @输出
+// Promise<DeckTreeNode> / Promise<number> / Promise<void>
+//
+// @业务规则
+// 创建牌组流程：新建牌组模板 → 改名 → 添加牌组，返回新牌组ID。
+// 名称支持「父::子」层级（缺失的父级由后端自动创建）。
+// 删除牌组：递归删除所有子牌组及其卡片（与 Anki 桌面端 deckbrowser.py:369 行为一致）。
+//
+// @副作用
+// 通过 后端会话 间接调用 NAPI 桥，可能修改 Anki collection 状态。
+// ========================================================
+
 import { 后端会话 } from './后端会话';
 import { 牌组方法, 服务号 } from './服务索引';
 import type { Deck, DeckTreeNode } from '../proto/messages/DeckMessages';
@@ -9,6 +33,11 @@ import { decodeOpChangesWithCount, decodeOpChangesWithId } from '../proto/messag
 export class 牌组服务 {
   private readonly 会话: 后端会话 = 后端会话.获取实例();
 
+  /**
+   * 拉取牌组树（DeckTree）。
+   * 返回根节点占位（deckId=0、name=''），真实牌组在 children；
+   * 每个节点的 new/learn/review 计数已按日限裁剪且包含子节点合计。
+   */
   async 获取牌组树(): Promise<DeckTreeNode> {
     const 当前秒数: number = Math.floor(Date.now() / 1000);
     const 请求: Uint8Array = encodeDeckTreeRequest(当前秒数);
@@ -17,6 +46,11 @@ export class 牌组服务 {
     return decodeDeckTreeNode(响应);
   }
 
+  /**
+   * 新建牌组：NewDeck 模板 → 改名 → AddDeck，返回新牌组 id。
+   * 名称支持「父::子」层级（缺失的父级由后端自动创建）。
+   * 重复名等失败以 BackendError 抛出，message 可直接展示。
+   */
   async 创建牌组(名称: string): Promise<number> {
     const 模板字节: Uint8Array = await this.会话.调用(
       服务号.后端牌组, 牌组方法.新建牌组, new Uint8Array(0));
@@ -28,12 +62,26 @@ export class 牌组服务 {
     return decodeOpChangesWithId(已添加);
   }
 
+  /**
+   * 重命名牌组：调用后端 rename_deck（method 18），自动级联重命名子牌组前缀。
+   * 名称冲突等失败以 BackendError 抛出，message 可直接展示。
+   */
   async 重命名牌组(牌组ID: number, 新名称: string): Promise<void> {
     const 请求: Uint8Array = encodeRenameDeckRequest(牌组ID, 新名称);
     await this.会话.调用(
       服务号.后端牌组, 牌组方法.重命名牌组, 请求);
   }
 
+  /**
+   * 删除牌组：调用后端 remove_decks（method 16）。
+   *
+   * 后端语义（rslib/src/decks/remove.rs:6 remove_decks_and_child_decks）：
+   * - 递归删除所有子牌组及其卡片
+   * - 牌组内所有卡片会移到「已删除」状态（可通过 undo 恢复）
+   * - 返回 OpChangesWithCount.count = 实际删除的牌组数（不含被级联删除的子牌组）
+   *
+   * 二次确认防误删（与 Anki 桌面端 deckbrowser.py:369 行为一致）。
+   */
   async 删除牌组(牌组ID列表: number[]): Promise<number> {
     const 请求: Uint8Array = encodeDeckIds(牌组ID列表);
     const 响应: Uint8Array = await this.会话.调用(

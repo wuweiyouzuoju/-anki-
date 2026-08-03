@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ProtoReader/ProtoWriter 单元测试：字节级锁定 wire format 行为，
+// 样例与 protobuf 官方文档及 prost 编码对齐。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -14,6 +16,7 @@ function hex(bytes) {
 test('varint encoding matches the protobuf spec examples', () => {
   const w = new 协议写入器();
   w.写入变长整数(1, 150);
+  // field1 varint: tag 0x08, 150 = 0x96 0x01（官方文档样例）
   assert.equal(hex(w.转为字节()), '08 96 01');
 });
 
@@ -52,6 +55,7 @@ test('int64 positive roundtrip for deck-id scale values', () => {
 test('string fields use length-delimited encoding', () => {
   const w = new 协议写入器();
   w.写入字符串(2, 'hi');
+  // field2 wire2: tag 0x12, len 2, "hi"（官方文档样例）
   assert.equal(hex(w.转为字节()), '12 02 68 69');
 
   const r = new 协议读取器(w.转为字节());
@@ -87,11 +91,13 @@ test('nested messages embed with length prefix', () => {
 
 test('reader skips unknown fields of every wire type', () => {
   const w = new 协议写入器();
-  w.写入变长整数(1, 7);
-  w.写入变长整数(99, 1);
-  w.写入字节(98, new Uint8Array([1, 2, 3]));
-  w.写入变长整数(2, 42);
+  w.写入变长整数(1, 7); // 已知
+  w.写入变长整数(99, 1); // 未知 varint
+  w.写入字节(98, new Uint8Array([1, 2, 3])); // 未知 LEN
+  w.写入变长整数(2, 42); // 已知
 
+  // 手工拼一个 fixed64（field20）+ fixed32（field22）尾部
+  // key = field*8 + wireType，varint 编码：161 → [0xA1,0x01]，181 → [0xB5,0x01]
   const tail = new Uint8Array([0xa1, 0x01, 1, 2, 3, 4, 5, 6, 7, 8, 0xb5, 0x01, 9, 10, 11, 12]);
   const all = new Uint8Array(w.转为字节().length + tail.length);
   all.set(w.转为字节(), 0);
@@ -114,12 +120,14 @@ test('reader skips unknown fields of every wire type', () => {
 test('packed int64/float encode as length-delimited payloads like prost', () => {
   const i64 = new 协议写入器();
   i64.写入打包64位整数(1, [1, 300]);
+  // field1 wire2: tag 0x0a, len 3, 1=0x01, 300=0xac 0x02
   assert.equal(hex(i64.转为字节()), '0a 03 01 ac 02');
 
   const f32 = new 协议写入器();
   f32.写入打包浮点(1, [1.0]);
   assert.equal(hex(f32.转为字节()), '0a 04 00 00 80 3f');
 
+  // 空数组不产出任何字节（proto3 空 repeated 等同未设置）
   const empty = new 协议写入器();
   empty.写入打包64位整数(1, []);
   empty.写入打包浮点(2, []);
@@ -142,7 +150,7 @@ test('packed readers roundtrip and handle negative int64', () => {
 test('offset/sliceFrom capture raw field bytes for verbatim passthrough', () => {
   const w = new 协议写入器();
   w.写入变长整数(1, 7);
-  w.写入变长整数(9, 20);
+  w.写入变长整数(9, 20); // 未建模字段
   const r = new 协议读取器(w.转为字节());
 
   r.读取标签();
@@ -160,12 +168,15 @@ test('offset/sliceFrom capture raw field bytes for verbatim passthrough', () => 
 });
 
 test('reader rejects truncated input instead of reading out of bounds', () => {
+  // tag 的 varint 截断
   assert.throws(() => new 协议读取器(new Uint8Array([0x80])).读取标签());
+  // tag 完整但 value 缺失
   assert.throws(() => {
     const r = new 协议读取器(new Uint8Array([0x08]));
     r.读取标签();
     r.读取变长整数();
   });
+  // length-delimited 声明长度超过剩余字节
   assert.throws(() => {
     const r = new 协议读取器(new Uint8Array([0x0a, 0x05, 0x68]));
     r.读取标签();
@@ -177,6 +188,7 @@ test('reader rejects varints beyond the safe integer range', () => {
   const w = new 协议写入器();
   w.写入变长整数(1, 0);
   const bytes = w.转为字节();
+  // 构造 2^60 的 varint
   bytes[1] = 0x80;
   const huge = new Uint8Array([0x08, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x10]);
   const r = new 协议读取器(huge);

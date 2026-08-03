@@ -1,8 +1,38 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID BACKEND-ERRORS-001
+// @名称 后端错误类型与原生错误映射
+//
+// @作用
+// 定义后端业务错误的类型化封装（后端错误），并把 NAPI 桥抛出的
+// 原生错误（含 nativeStatus / details / message）映射为后端错误。
+// 纯逻辑、无桥接依赖，可独立单元测试。
+//
+// @输入
+// 后端错误构造参数：message / kind / context / nativeStatus
+// 映射原生错误入参：caught: unknown（NAPI 桥抛出的任意值）
+//
+// @输出
+// 后端错误实例（含 kind 与 backend.proto BackendError.Kind 对应：0=INVALID_INPUT … 5=DB_ERROR）
+//
+// @业务规则
+// kind 与 backend.proto BackendError.Kind 对应（0=INVALID_INPUT … 5=DB_ERROR）。
+// 当 nativeStatus === 后端错误 且 details 是 BackendError protobuf 字节时，
+// 用 decodeBackendError 解析出 message/kind/context；解码失败不掩盖原始错误，落到通用分支。
+// 通用分支：message 取自原生错误 message，kind=0，context=''，status=原生致命错误 或 实际 status。
+//
+// @副作用
+// 无
+//
+// @注意
+// 修改错误映射逻辑会影响所有 service 的 catch 语义，需同步测试。
+// ========================================================
+
 import { decodeBackendError } from '../proto/messages/BackendMessages';
 import { 原生状态 } from './服务索引';
 
+/** 类型化的后端错误：kind 与 backend.proto BackendError.Kind 对应（0=INVALID_INPUT … 5=DB_ERROR） */
 export class 后端错误 extends Error {
   readonly kind: number;
   readonly context: string;
@@ -17,12 +47,14 @@ export class 后端错误 extends Error {
   }
 }
 
+/** NAPI 桥抛出的错误形态（native_module.cpp CreateNativeError） */
 export interface 原生错误形态 {
   nativeStatus?: number;
   details?: Uint8Array;
   message?: string;
 }
 
+/** 把 NAPI 桥错误映射为后端错误；后端错误 时 details 是 BackendError protobuf 字节 */
 export function 映射原生错误(caught: unknown): 后端错误 {
   const shape = caught as 原生错误形态;
   const status = typeof shape?.nativeStatus === 'number' ? shape.nativeStatus : 原生状态.原生致命错误;
@@ -31,6 +63,7 @@ export function 映射原生错误(caught: unknown): 后端错误 {
       const info = decodeBackendError(shape.details);
       return new 后端错误(info.message, info.kind, info.context, status);
     } catch {
+      // details 解码失败不应掩盖原始错误，落到通用分支
     }
   }
   const message = typeof shape?.message === 'string' ? shape.message : 'unknown native error';

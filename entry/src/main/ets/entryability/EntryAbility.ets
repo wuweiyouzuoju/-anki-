@@ -61,6 +61,9 @@ export default class EntryAbility extends UIAbility {
     if (activeThemeMode === undefined || activeThemeMode === 'system') {
       应用系统栏样式(this.context, isDark);
     }
+    // 系统深浅色变化时颜色主题的浅色/深色套也要同步刷新。
+    // AppStorage 中 colorTheme 由 首页.恢复颜色主题 在启动时写入；
+    // 若 首页 尚未挂载（极端时序），用默认主题兜底。
     const storedTheme: string | undefined = AppStorage.get<string>('colorTheme');
     const theme: 颜色主题 = storedTheme === undefined
       ? 默认颜色主题

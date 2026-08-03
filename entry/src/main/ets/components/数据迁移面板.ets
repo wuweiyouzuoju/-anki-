@@ -1,5 +1,49 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID UI-DATA-TRANSFER-001
+// @名称 数据迁移面板
+//
+// @作用
+// 纯展示层数据管理面板：覆盖 4 种迁移模式（导出牌组 / 导出个人数据 /
+// 导入牌组 / 替换个人数据），通过模式切换下拉选择目标动作，配置导出选项
+// （调度信息 / 牌组配置 / 媒体 / 旧版兼容），提交时上抛 数据迁移意图 由
+// 父级处理文件与后端调用。文件与后端工作不落在本组件。
+//
+// @输入
+// deckId: 当前牌组 ID（导出牌组模式默认选中）
+// initialMode: 初始模式（exportDeck / exportPersonalData / importDeck / importPersonalData）
+// deckOptions: 牌组候选列表（允许选牌时显示）
+// allowDeckSelection: 是否允许选牌
+// busy: 父级是否正在落盘
+// errorMessage: 父级下发的错误文案
+// personalReplacementStep: 替换个人数据进度（0=未确认 / 1=已确认待执行）
+// stage: busy 期间阶段编号（-1 表示无阶段文案）
+// isDark: 是否深色主题
+//
+// @输出
+// onIntent: 提交时回调，参数为 数据迁移意图（4 种之一）
+// onClose: 取消时回调
+//
+// @业务规则
+// 测试断言保留：mode / selectedExportDeckId / includeScheduling /
+// includeDeckConfigs / includeMedia / legacy / personalReplacementAcknowledged /
+// primaryButtonColor / modeSelectOptions / modeSelectIndex / selectedDeckIndex /
+// selectedDeckName / deckSelectOptions / optionRow / resolveText / modeLabel /
+// subtitle / primaryButtonLabel / busyLabel / stageLabel / openLegacyHelp /
+// canSubmit / submit 等字面符号由阶段 6 统一更新；本阶段保留以减小工作量。
+// 字面量字符串值 'exportDeck' | 'exportPersonalData' | 'importDeck' |
+// 'importPersonalData' | 'replacePersonalData' 作为意图 kind 协议值保留英文，
+// 与父级 handleDataTransfer 的 switch 分支耦合。
+// 资源 key（transfer_* / continue / close / field_help_button / done 等）
+// 作为 i18n 键保留英文。
+// 牌组导出选项 / 整库导出选项 字段（withScheduling / withDeckConfigs /
+// withMedia / legacy / includeMedia）作为依赖层 DTO 字段保留英文。
+//
+// @副作用
+// 仅通过外部回调引发后端写入与文件操作；本组件不直接落盘。
+// ========================================================
+
 import type { 整库导出选项, 牌组导出选项 } from '../model/数据传输模型';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 设置面板色板_取 } from '../utils/设置面板配色';
@@ -40,6 +84,7 @@ class 牌组选择项 {
 
 const 迁移模式列表: 数据迁移模式[] = ['exportDeck', 'exportPersonalData', 'importDeck', 'importPersonalData'];
 
+/** Presentation-only data management panel. File and backend work stay with its owner. */
 @Component
 export struct 数据迁移面板 {
   @Prop deckId: number = 0;
@@ -75,6 +120,7 @@ export struct 数据迁移面板 {
     return 索引 < 0 ? 0 : 索引;
   }
 
+  // 官方 Select 文档：selected 仅控制菜单初始高亮，按钮文本需由 value 提供，否则框内空白
   private 已选牌组名称(): string {
     for (const 牌组 of this.deckOptions) {
       if (牌组.id === this.已选导出牌组Id) {
@@ -92,6 +138,8 @@ export struct 数据迁移面板 {
     });
   }
 
+  // 官方 Select 文档：selected 仅控制菜单初始高亮，按钮文本需由 value 提供，否则框内空白。
+  // value 必须传 string：传 Resource 时按钮文本不显示（同 高级牌组选项面板 同款 bug）。
   private 解析文本(资源: Resource): string { return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id); }
   private 模式标签(模式: 数据迁移模式): string {
     if (模式 === 'exportDeck') return this.解析文本($r('app.string.transfer_export_deck'));
@@ -124,6 +172,7 @@ export struct 数据迁移面板 {
     return this.解析文本($r('app.string.transfer_importing'));
   }
 
+  // 阶段文案：根据 模式 + stage 返回对应文字；stage < 0 时回退到通用 忙碌文案
   private 阶段文案(): string {
     if (this.stage < 0) return this.忙碌文案();
     if (this.模式 === 'importDeck') {
@@ -143,6 +192,7 @@ export struct 数据迁移面板 {
     return this.忙碌文案();
   }
 
+  /** 弹出 AlertDialog 说明「旧版兼容」含义：何时启用、代价是什么 */
   private 打开旧版帮助(): void {
     this.getUIContext().showAlertDialog({
       title: this.解析文本($r('app.string.transfer_legacy')),
@@ -190,6 +240,7 @@ export struct 数据迁移面板 {
     }
   }
 
+  // 模式下拉选项：复用 牌组选择项，value 传 string（与牌组选择器同款）
   private 模式下拉选项(): 牌组选择项[] {
     return 迁移模式列表.map((模式: 数据迁移模式): 牌组选择项 => {
       const 选项 = new 牌组选择项();
@@ -203,6 +254,7 @@ export struct 数据迁移面板 {
     return 索引 < 0 ? 0 : 索引;
   }
 
+  // 选项行：label 左侧 layoutWeight(1) 撑满 + Toggle 右侧
   @Builder 选项行(标签: string, 是否开启: boolean, 改变回调: (值: boolean) => void) {
     Row() {
       Text(标签)
@@ -217,6 +269,7 @@ export struct 数据迁移面板 {
 
   build() {
     Stack() {
+      // B13 2026-07-22：磨砂玻璃遮罩层（Thin 比 Regular/Thick 更轻薄，避免磨砂过厚）
       Column()
         .width('100%')
         .height('100%')
@@ -229,6 +282,7 @@ export struct 数据迁移面板 {
         .onClick(() => { if (!this.busy) this.onClose(); })
 
       Column({ space: 应用尺寸.间距_12 }) {
+      // === Header：标题 + 副标题 + 右上角 × ===
       Row() {
         Column() {
           Text(this.解析文本($r('app.string.transfer_panel_title')))
@@ -243,6 +297,7 @@ export struct 数据迁移面板 {
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
 
+        // B13 2026-07-22：busy 期间隐藏右上角 ×，避免误触；标题列 layoutWeight 自动撑满
         if (!this.busy) {
           Text('×')
             .fontSize(24)
@@ -255,6 +310,7 @@ export struct 数据迁移面板 {
       }
       .width('100%')
 
+      // === 模式选择下拉（单 Select 替代原 4 个横排 Tab，避免宽屏越界）===
       Select(this.模式下拉选项())
         .selected(this.模式下拉索引())
         .value(this.模式标签(this.模式))
@@ -264,6 +320,7 @@ export struct 数据迁移面板 {
           this.模式 = 迁移模式列表[索引];
         })
 
+      // === 牌组选择（仅 exportDeck 且允许选牌）===
       if (this.模式 === 'exportDeck' && this.allowDeckSelection) {
         Row() {
           Text(this.解析文本($r('app.string.transfer_label_deck')))
@@ -282,6 +339,7 @@ export struct 数据迁移面板 {
         .width('100%')
       }
 
+      // === 导出选项（默认展开，label+Toggle 同行）===
       if (this.模式 === 'exportDeck' || this.模式 === 'exportPersonalData') {
         Column({ space: 应用尺寸.间距_8 }) {
           if (this.模式 === 'exportDeck') {
@@ -292,6 +350,7 @@ export struct 数据迁移面板 {
           }
           this.选项行(this.解析文本($r('app.string.transfer_include_media')),
             this.包含媒体, (值: boolean) => { this.包含媒体 = 值; })
+          // 旧版兼容 行单独写：加 ⓘ 帮助按钮，点击弹 AlertDialog 说明旧版兼容含义（用户决策 2026-07-24）
           Row() {
             Text(this.解析文本($r('app.string.transfer_legacy')))
               .fontSize(应用尺寸.字号_正文)
@@ -312,6 +371,7 @@ export struct 数据迁移面板 {
         .alignItems(HorizontalAlign.Start)
       }
 
+      // === 个人数据替换警告（红色背景 + ⚠ + 勾选确认）===
       if (this.模式 === 'importPersonalData') {
         Column({ space: 应用尺寸.间距_8 }) {
           Row({ space: 应用尺寸.间距_8 }) {
@@ -340,6 +400,7 @@ export struct 数据迁移面板 {
         .borderRadius(应用尺寸.圆角_面板)
       }
 
+      // === 错误信息（红字）===
       if (this.errorMessage !== '') {
         Text(this.errorMessage)
           .fontSize(应用尺寸.字号_正文_中)
@@ -347,6 +408,7 @@ export struct 数据迁移面板 {
           .width('100%')
       }
 
+      // === 主按钮（primary 色）===
       Button(this.主按钮文案())
         .width('100%')
         .height(应用尺寸.按钮高度)
@@ -358,6 +420,7 @@ export struct 数据迁移面板 {
           (this.模式 !== 'importPersonalData' || this.已确认替换个人数据))
         .onClick(() => this.提交())
 
+      // === busy LoadingProgress + 文案 ===
       if (this.busy) {
         Row({ space: 应用尺寸.间距_8 }) {
           LoadingProgress()
@@ -373,6 +436,7 @@ export struct 数据迁移面板 {
       }
     }
     .width('75%')
+    // B12-Y2 2026-07-22：maxWidth 400 → 480（与 创建牌组面板/设置面板 等其他弹层一致）
     .constraintSize({ maxWidth: 480 })
     .padding(应用尺寸.卡片内边距)
     .backgroundColor($r('app.color.surface_card'))

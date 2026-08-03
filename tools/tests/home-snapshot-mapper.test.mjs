@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// 主页快照映射器 单测：牌组树 → 主页快照的映射规则。
+// 映射语义来源：third_party/anki/rslib/src/decks/tree.rs（根节点占位、
+// 节点计数含子节点合计），本文件锁定这些约定，防回归。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -107,6 +110,9 @@ test('all deck rows keep backend aggregate counts without double counting', () =
 });
 
 test('completed today is sourced from graphs.today.answerCount (full learn/review/relearn/filtered scope, all decks aggregated)', () => {
+  // Anki today.rs 中 today.answer_count = learn_count + review_count + relearn_count
+  // + early_review_count，全库聚合、含全部子牌组学习；旧实现只对顶层牌组求
+  // countsForDeckToday.new+review，既漏子牌组、又缺 learn/relearn 口径。
   const withToday = graphs({
     today: {
       answerCount: 42, answerMillis: 0, correctCount: 0, matureCorrect: 0,
@@ -116,26 +122,34 @@ test('completed today is sourced from graphs.today.answerCount (full learn/revie
   const snap = 构建主页快照(node({}), withToday);
   assert.equal(snap.today.completedCount, 42, 'completedCount mirrors graphs.today.answerCount');
 
+  // graphs 缺 today 字段时降级为 0
   assert.equal(构建主页快照(node({}), graphs({})).today.completedCount, 0);
   assert.equal(构建主页快照(node({}), null).today.completedCount, 0);
 });
 
 test('fallback tone is stable per deckId (independent of position)', () => {
+  // 旧实现用 rows.length % 4 让连续创建的 deck 轮转 4 色，但拖动排序后位置变 fallback tone 跟着变，
+  // 与用户期望「色条跟着牌组走」矛盾。改为 Math.abs(deckId) % 4 后每张牌组色条固定。
   const root = node({
     children: [1, 2, 3, 4, 5].map((i) => node({ deckId: i, name: `d${i}` }))
   });
   const snap = 构建主页快照(root);
+  // TONE_ROTATION = [Blue, Purple, Mint, Amber]
+  // id=1 → 1%4=1 → Purple；id=2 → 2 → Mint；id=3 → 3 → Amber；id=4 → 0 → Blue；id=5 → 1 → Purple
   assert.deepEqual(snap.decks.map((d) => d.tone), [
     牌组色调.Purple, 牌组色调.Mint, 牌组色调.Amber, 牌组色调.Blue, 牌组色调.Purple
   ]);
 });
 
 test('fallback tone unchanged after reordering via orderOverrides', () => {
+  // 拖动后位置变，但每张牌组 fallback tone 应保持稳定（核心修复点）
   const root = node({
     children: [1, 2, 3, 4, 5].map((i) => node({ deckId: i, name: `d${i}` }))
   });
+  // 把顺序倒过来：5 4 3 2 1
   const orderOverrides = new Map([['', ['5', '4', '3', '2', '1']]]);
   const snap = 构建主页快照(root, null, new Date(), null, null, orderOverrides);
+  // 顺序变但 tone 应保持与 deckId 绑定（id=5→Purple, id=4→Blue, id=3→Amber, id=2→Mint, id=1→Purple）
   assert.deepEqual(snap.decks.map((d) => d.tone), [
     牌组色调.Purple, 牌组色调.Blue, 牌组色调.Amber, 牌组色调.Mint, 牌组色调.Purple
   ]);
@@ -152,6 +166,8 @@ function graphs(partial) {
 }
 
 test('review counts map day-offset buckets to local calendar dates', () => {
+  // Anki reviews.rs 中 day key = (elapsed_secs_since(next_day_start) / 86_400) as i32，
+  // 语义是「相对今天的偏移」：0=今天、-1=昨天、-2=前天。
   const data = graphs({
     reviewCountsByDaysAgo: new Map([
       [0, { learn: 2, relearn: 1, young: 3, mature: 4, filtered: 1 }],
@@ -159,6 +175,7 @@ test('review counts map day-offset buckets to local calendar dates', () => {
       [-4, { learn: 0, relearn: 0, young: 0, mature: 0, filtered: 0 }]
     ])
   });
+  // 锚定 2026-07-02（本地时区），验证跨月回卷：2 天前 = 2026-06-30
   const now = new Date(2026, 6, 2, 12, 0, 0);
   const snap = 构建主页快照(node({}),data, now);
 
@@ -174,7 +191,12 @@ test('missing graphs keeps the heat calendar empty', () => {
     构建主页快照(node({}),graphs({}), now).reviewCountsByDate.size, 0);
 });
 
+// B12-X 改造 2026-07-21：记忆卡主指标改用「今日不会率」(answer-correct)/answer，
+// 全库平均可提取率降为副标题参考。语义改用 Anki Desktop today.ts 同款算法。
 test('memory summary reports today again rate when today has answers', () => {
+  // 今日答 50 张，其中正确 10 张（40 张"不会"）→ todayAgainRate = 0.8
+  // 今日 mature 卡 20 张，其中 mature 正确 15 张 → matureCorrectRate = 0.75
+  // FSRS 已开 + retrievability.average=92.5（百分制）→ averageRetrievability = 0.925
   const g = graphs({
     fsrs: true,
     retrievability: { average: 92.5, sumByCard: 0, sumByNote: 0 },
@@ -205,11 +227,13 @@ test('memory summary shows today_empty when no reviews today', () => {
   assert.equal(snap.memory.todayAgainRate, 0);
   assert.equal(snap.memory.todayAnsweredCount, 0);
   assert.equal(snap.memory.hasMatureData, false);
+  // 全库平均仍可显示（副标题用，让用户对比）—但仅在 FSRS+memory_state 时
   assert.equal(snap.memory.hasRetrievability, true);
   assert.ok(Math.abs(snap.memory.averageRetrievability - 0.925) < 1e-9);
 });
 
 test('memory summary hides retrievability subtitle when fsrs off', () => {
+  // FSRS 未开 → 不显示全库副标题，但今日不会率仍正常计算
   const g = graphs({
     fsrs: false,
     retrievability: { average: 0, sumByCard: 0, sumByNote: 0 },

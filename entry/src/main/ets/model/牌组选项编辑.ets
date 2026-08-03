@@ -1,5 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID MODEL-DECK-OPTIONS-001
+// @名称 牌组选项编辑
+//
+// @作用
+// 当前牌组限额（DeckLimits）与请求级调度器开关的 UI 草稿与校验器。
+// 维护源限额与已应用限额两份快照，提供统一校验入口、应用入口、
+// 以及转换为后端请求字段（牌组选项请求字段）的出口。
+//
+// @输入
+// DeckLimits | null 与若干调度器开关作为初始来源；
+// UI 层直接读写公开文本 / 布尔字段。
+//
+// @输出
+// 校验问题列表（校验问题类型来自 牌组配置表单.ets）；
+// apply 成功后更新内部已应用限额；
+// 转换为请求字段 返回 牌组选项请求字段 实例供服务层使用。
+//
+// @业务规则
+// 限额草稿（LimitDraft）implements DeckLimits，其字段名（review / new / reviewToday / ...）
+// 必须保留 proto 接口字段名，不得中文化。
+// 牌组选项请求字段（DeckOptionsRequestFields）为 DTO，字段名对齐后端协议，保留英文。
+// @Observed 类（牌组选项编辑）的公开字段为 UI 状态，已中文化。
+// i18n 消息键（deck_*_validation_error）保留英文。
+//
+// @副作用
+// 无。本类只在内存中维护草稿与已应用快照，不直接读写数据库或 preferences。
+//
+// @注意
+// @Observed 类的字段中文化后，UI 绑定调用方需同步更新（由主代理统一处理）。
+// ========================================================
+
 import type { DeckLimits } from '../proto/messages/DeckConfigMessages';
 import type { 校验问题 } from './牌组配置表单';
 
@@ -29,6 +61,7 @@ function 限额转文本(值: number | null): string { return 值 === null ? '' 
 function 解析无符号32位整数(输入文本: string): number | null { const 去除空白后: string = 输入文本.trim(); if (去除空白后 === '') return null; if (!/^\d+$/.test(去除空白后)) return null; const 解析结果: number = Number(去除空白后); return Number.isSafeInteger(解析结果) && 解析结果 <= 4294967295 ? 解析结果 : null; }
 function 解析保留率(输入文本: string): number | null { const 去除空白后: string = 输入文本.trim(); if (去除空白后 === '') return null; const 解析结果: number = Number(去除空白后); return Number.isFinite(解析结果) && 解析结果 >= 0.7 && 解析结果 <= 0.99 ? 解析结果 : null; }
 
+/** 仅用于 UI 的当前牌组限额与请求级调度器开关草稿。 */
 @Observed
 export class 牌组选项编辑 {
   复习限额文本: string = '';

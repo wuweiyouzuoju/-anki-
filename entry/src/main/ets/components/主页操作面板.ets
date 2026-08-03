@@ -2,6 +2,29 @@
 
 import { 应用尺寸 } from '../utils/应用尺寸';
 
+// ========================================================
+// @块ID COMP-HOME-ACTION-001
+// @名称 主页操作面板
+//
+// @作用
+// 首页动作菜单（顶部弹出形态，纯 UI 积木）。
+// 触发按钮在右上角，菜单锚定其下方弹出，手指零移动；
+// 普通下拉式打开：不加 dim/磨砂遮罩，透明层承接外部点击关闭。
+//
+// @输入
+// 创建牌组回调 / 导入牌组回调 / 关闭回调（均由父级 Index 注入）。
+//
+// @输出
+// 渲染一个全屏 Stack：透明承接层 + 右上角下拉的两个动作条目。
+//
+// @业务规则
+// 不加遮罩：透明层仅承接点击关闭，不遮暗不模糊。
+// 入场过渡参考华为官方 TransitionEffect 示例（向下轻推）。
+//
+// @副作用
+// 无。点击事件通过回调上抛，由父级处理实际跳转。
+// ========================================================
+
 @Component
 export struct 主页操作面板 {
   创建牌组回调: () => void = (): void => {};
@@ -10,6 +33,7 @@ export struct 主页操作面板 {
 
   build() {
     Stack() {
+      // 透明承接层：不遮暗不模糊，仅让菜单外点击可关闭
       Column()
         .width('100%')
         .height('100%')
@@ -43,7 +67,9 @@ export struct 主页操作面板 {
       .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
       .margin({ top: 64, right: 应用尺寸.页面内边距_水平 })
       .onClick(() => {
+        // 阻断点击穿透到遮罩
       })
+      // 从触发按钮处向下轻推入场（思路参考：华为官方 TransitionEffect 示例）
       .transition(TransitionEffect.asymmetric(
         TransitionEffect.opacity(0)
           .combine(TransitionEffect.translate({ y: -12 }))

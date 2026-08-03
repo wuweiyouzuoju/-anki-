@@ -1,5 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID BACKEND-SVC-NOTE-001
+// @名称 笔记服务边界
+//
+// @作用
+// 包装后端笔记服务的 4 个 RPC：获取添加默认值 / 新建笔记 / 获取笔记 / 添加笔记。
+// 添加笔记前先做字段校验，校验失败抛 笔记字段校验错误 供 UI 本地化展示。
+// Anki 26.05 note creation boundary；不持有 UI draft state。
+//
+// @输入
+// 笔记类型ID / 笔记ID / 笔记 / 牌组ID
+//
+// @输出
+// Promise<DeckAndNotetype> / Promise<EditableNote> / Promise<number>
+//
+// @业务规则
+// 笔记字段校验三态映射：
+//   EMPTY → add_note_empty_error
+//   DUPLICATE → add_note_duplicate_error
+//   MISSING_CLOZE / NOTETYPE_NOT_CLOZE / FIELD_NOT_CLOZE → add_note_invalid_cloze_error
+// 校验通过后才提交 ADD_NOTE；messageKey 由 UI 层本地化，不在后端边界做翻译。
+//
+// @副作用
+// 通过 后端会话 间接调用 NAPI 桥，可能修改 Anki collection 状态。
+// ========================================================
+
 import { 后端会话 } from './后端会话';
 import { 笔记方法, 服务号 } from './服务索引';
 import type { DeckAndNotetype, EditableNote } from '../proto/messages/NoteMessages';
@@ -21,6 +47,7 @@ export type 笔记字段校验键 =
   'add_note_duplicate_error' |
   'add_note_invalid_cloze_error';
 
+/** Error with a resource key, so presentation code—not the backend boundary—localizes it. */
 export class 笔记字段校验错误 extends Error {
   readonly messageKey: 笔记字段校验键;
 

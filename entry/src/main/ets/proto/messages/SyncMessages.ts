@@ -1,8 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-SYNC-001
+// @名称 同步消息编解码
+//
+// @作用
+// 编解码 anki.sync.proto 消息（Anki 26.05）：
+// - SyncAuth / SyncLoginRequest：登录凭证（hkey / 用户名密码 / 自定义端点 / IO 超时）
+// - SyncStatusResponse / SyncCollectionRequest / SyncCollectionResponse：同步状态与请求
+// - MediaSyncStatusResponse / MediaSyncProgress：媒体同步进度
+// - FullUploadOrDownloadRequest：全量上传/下载
+// - generic.Empty / String / Bool：内联的通用消息
+// 字段来源：third_party/anki/proto/anki/sync.proto
+//
+// @输入
+// 编码：SyncAuth / SyncLoginRequest / SyncCollectionRequest / FullUploadOrDownloadRequest
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：SyncStatusResponse / SyncCollectionResponse / MediaSyncStatusResponse / SyncAuth
+//
+// @业务规则
+// 仅覆盖本项目使用的字段，与 prost 编码对齐：proto3 默认值省略。
+// SyncStatusResponse 的 field 2/3 在 proto 中已废弃，解码时跳过未知字段。
+// SyncCollectionResponse.serverMediaUsn 是 int32，负数按 prost 规则先 sign-extend 到 64 位再写 varint，
+// 必须用 读取32位整数 解码，不能用 读取变长整数。
+// FullUploadOrDownloadRequest.serverUsn 为 null 时不编码（跳过媒体同步）。
+// SYNC_STATUS_REQUIRED / SYNC_COLLECTION_REQUIRED 常量与 proto 枚举值对齐。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 
+/** SyncStatusResponse.required 取值（sync.proto 中无 field 2/3） */
 export interface SyncStatusRequiredValues {
   NO_CHANGES: number;
   NORMAL_SYNC: number;
@@ -15,6 +49,7 @@ export const SYNC_STATUS_REQUIRED: SyncStatusRequiredValues = {
   FULL_SYNC: 2
 };
 
+/** SyncCollectionResponse.required 取值 */
 export interface SyncCollectionRequiredValues {
   NO_CHANGES: number;
   NORMAL_SYNC: number;
@@ -31,52 +66,62 @@ export const SYNC_COLLECTION_REQUIRED: SyncCollectionRequiredValues = {
   FULL_UPLOAD: 4
 };
 
+/** SyncAuth：登录凭证 + 可选自定义端点 + 可选 IO 超时 */
 export interface SyncAuth {
   hkey: string;
-  endpoint: string;
-  ioTimeoutSecs: number;
+  endpoint: string;       // optional，不存在时为空串
+  ioTimeoutSecs: number;  // optional uint32，不存在时为 0
 }
 
+/** SyncLoginRequest：用户名 + 密码 + 可选自定义端点 */
 export interface SyncLoginRequest {
   username: string;
   password: string;
-  endpoint: string;
+  endpoint: string;       // optional，不存在时为空串
 }
 
+/** SyncStatusResponse：同步前检查（proto 中 field 2/3 已废弃，解码需跳过未知字段） */
 export interface SyncStatusResponse {
-  required: number;
-  newEndpoint: string;
+  required: number;       // SYNC_STATUS_REQUIRED
+  newEndpoint: string;    // optional，不存在时为空串
 }
 
+/** SyncCollectionRequest：auth 嵌套消息 + 是否同步媒体 */
 export interface SyncCollectionRequest {
   auth: SyncAuth;
   syncMedia: boolean;
 }
 
+/** SyncCollectionResponse：注意 server_media_usn 是 int32，负数按 10 字节 sign-extend varint 编码 */
 export interface SyncCollectionResponse {
   hostNumber: number;
   serverMessage: string;
-  required: number;
-  newEndpoint: string;
-  serverMediaUsn: number;
+  required: number;       // SYNC_COLLECTION_REQUIRED
+  newEndpoint: string;    // optional，不存在时为空串
+  serverMediaUsn: number; // int32
 }
 
+/** MediaSyncStatusResponse：媒体同步是否进行中 + 进度 */
 export interface MediaSyncStatusResponse {
   active: boolean;
   progress: MediaSyncProgress;
 }
 
+/** MediaSyncProgress：后端预格式化的进度文本 */
 export interface MediaSyncProgress {
   checked: string;
   added: string;
   removed: string;
 }
 
+/** FullUploadOrDownloadRequest：server_usn 为 optional int32，null 表示不提供（跳过媒体同步） */
 export interface FullUploadOrDownloadRequest {
   auth: SyncAuth;
   upload: boolean;
-  serverUsn: number | null;
+  serverUsn: number | null; // optional int32，null 不编码
 }
+
+// ---- 编码 ----
 
 export function encodeSyncAuth(auth: SyncAuth): Uint8Array {
   const w = new 协议写入器();
@@ -142,6 +187,8 @@ export function encodeFullUploadOrDownloadRequest(req: FullUploadOrDownloadReque
     w.写入布尔(2, req.upload);
   }
   if (req.serverUsn !== null) {
+    // int32：负数按 prost 规则先 sign-extend 到 64 位再写 varint（位模式与 写入64位整数 相同）；
+    // 正数直接 varint。
     if (req.serverUsn < 0) {
       w.写入64位整数(3, req.serverUsn);
     } else {
@@ -151,10 +198,14 @@ export function encodeFullUploadOrDownloadRequest(req: FullUploadOrDownloadReque
   return w.转为字节();
 }
 
+// ---- 内联 generic 消息（generic.proto 的 Empty/String/Bool） ----
+
+/** generic.Empty：空请求体 */
 export function encodeEmptyRequest(): Uint8Array {
   return new Uint8Array(0);
 }
 
+/** generic.String：仅一个 field 1 string */
 export function encodeStringRequest(value: string): Uint8Array {
   const w = new 协议写入器();
   if (value !== '') {
@@ -163,6 +214,7 @@ export function encodeStringRequest(value: string): Uint8Array {
   return w.转为字节();
 }
 
+/** generic.Bool：仅一个 field 1 bool */
 export function decodeBoolResponse(bytes: Uint8Array): boolean {
   const r = new 协议读取器(bytes);
   let value = false;
@@ -178,6 +230,8 @@ export function decodeBoolResponse(bytes: Uint8Array): boolean {
   }
   return value;
 }
+
+// ---- 解码 ----
 
 export function decodeSyncAuth(bytes: Uint8Array): SyncAuth {
   const r = new 协议读取器(bytes);
@@ -221,6 +275,7 @@ export function decodeSyncStatusResponse(bytes: Uint8Array): SyncStatusResponse 
         out.newEndpoint = r.读取字符串();
         break;
       default:
+        // field 2/3 在 proto 中不存在，历史/异常数据出现时跳过
         r.跳过字段(tag.线类型);
     }
   }
@@ -252,6 +307,7 @@ export function decodeSyncCollectionResponse(bytes: Uint8Array): SyncCollectionR
         out.newEndpoint = r.读取字符串();
         break;
       case 5:
+        // int32：prost 对负数编成 10 字节 sign-extend varint，必须用 读取32位整数
         out.serverMediaUsn = r.读取32位整数();
         break;
       default:

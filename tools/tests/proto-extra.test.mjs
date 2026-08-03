@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// proto/messages 新增消息字节级测试：Collection/Scheduler/DeckConfig/Stats（Anki 26.05）
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -32,6 +33,8 @@ function hex(bytes) {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(' ');
 }
 
+// ── Collection ──
+
 test('UndoStatus decodes undo/redo/last_step', () => {
   const w = new 协议写入器();
   w.写入字符串(1, 'Add Card');
@@ -45,11 +48,11 @@ test('UndoStatus decodes undo/redo/last_step', () => {
 
 test('OpChanges decodes all bool flags', () => {
   const w = new 协议写入器();
-  w.写入布尔(1, true);
-  w.写入布尔(3, true);
-  w.写入布尔(10, true);
-  w.写入布尔(11, true);
-  w.写入布尔(12, true);
+  w.写入布尔(1, true);   // card
+  w.写入布尔(3, true);   // deck
+  w.写入布尔(10, true);  // study_queues
+  w.写入布尔(11, true);  // deck_config
+  w.写入布尔(12, true);  // mtime
   const c = decodeOpChanges(w.转为字节());
   assert.equal(c.card, true);
   assert.equal(c.note, false);
@@ -61,8 +64,8 @@ test('OpChanges decodes all bool flags', () => {
 
 test('OpChangesAfterUndo decodes nested changes/status/counter', () => {
   const changes = new 协议写入器();
-  changes.写入布尔(1, true);
-  changes.写入布尔(10, true);
+  changes.写入布尔(1, true); // card
+  changes.写入布尔(10, true); // study_queues
 
   const status = new 协议写入器();
   status.写入字符串(1, '');
@@ -93,17 +96,19 @@ test('CheckDatabaseResponse decodes repeated problems', () => {
   assert.deepEqual(decodeCheckDatabaseResponse(new Uint8Array(0)), []);
 });
 
+// ── Scheduler ──
+
 test('CongratsInfo decodes all fields', () => {
   const w = new 协议写入器();
-  w.写入变长整数(1, 5);
-  w.写入变长整数(2, 3600);
-  w.写入布尔(3, true);
-  w.写入布尔(4, false);
-  w.写入布尔(5, true);
-  w.写入布尔(6, false);
-  w.写入布尔(7, false);
-  w.写入布尔(8, true);
-  w.写入字符串(9, 'desc');
+  w.写入变长整数(1, 5);      // learn_remaining
+  w.写入变长整数(2, 3600);   // secs_until_next_learn
+  w.写入布尔(3, true);     // review_remaining
+  w.写入布尔(4, false);    // new_remaining
+  w.写入布尔(5, true);     // have_sched_buried
+  w.写入布尔(6, false);    // have_user_buried
+  w.写入布尔(7, false);    // is_filtered_deck
+  w.写入布尔(8, true);     // bridge_commands_supported
+  w.写入字符串(9, 'desc'); // deck_description
 
   const c = decodeCongratsInfo(w.转为字节());
   assert.equal(c.learnRemaining, 5);
@@ -139,6 +144,8 @@ test('UnburyDeckRequest encodes deck_id and mode', () => {
   assert.equal(hex(bytes), hex(w.转为字节()));
 });
 
+// ── DeckConfig ──
+
 test('DeckConfigId encodes dcid only', () => {
   assert.equal(hex(encodeDeckConfigId(7)), '08 07');
   assert.equal(hex(encodeDeckConfigId(0)), '');
@@ -146,9 +153,9 @@ test('DeckConfigId encodes dcid only', () => {
 
 test('DeckConfig roundtrips with settings preservation', () => {
   const legacy = new 协议写入器();
-  legacy.写入变长整数(16, 36500);
-  legacy.写入浮点(11, 2.5);
-  legacy.写入字节(255, new Uint8Array([0xab, 0xcd]));
+  legacy.写入变长整数(16, 36500);    // maximum_review_interval（未建模）
+  legacy.写入浮点(11, 2.5);       // initial_ease（未建模）
+  legacy.写入字节(255, new Uint8Array([0xab, 0xcd])); // other
 
   const settings = {
     learnSteps: [1, 10],
@@ -171,6 +178,7 @@ test('DeckConfig roundtrips with settings preservation', () => {
   assert.deepEqual(decoded.config.learnSteps, [1, 10]);
   assert.equal(decoded.config.newPerDay, 20);
   assert.equal(decoded.config.reviewsPerDay, 200);
+  // 未建模字段按块保留，再次编码后字节完全一致（update 回写不丢字段）
   assert.equal(decoded.config.maximumReviewInterval, 36500);
   assert.ok(Math.abs(decoded.config.initialEase - 2.5) < 1e-6);
   assert.deepEqual(decoded.config.other, new Uint8Array([0xab, 0xcd]));
@@ -179,8 +187,10 @@ test('DeckConfig roundtrips with settings preservation', () => {
 });
 
 test('DeckConfig encoding omits defaults like prost', () => {
+  // config 缺省（null）：全默认不产生任何字节
   const bare = encodeDeckConfig({ id: 0, name: '', mtimeSecs: 0, usn: 0, config: null });
   assert.equal(bare.length, 0);
+  // config 存在但全默认：仅 field5 空消息（与 prost Some(默认) 一致）
   const withEmpty = encodeDeckConfig({
     id: 0,
     name: '',
@@ -276,22 +286,24 @@ test('UpdateDeckConfigsRequest encodes full input', () => {
   assert.equal(hex(bytes), hex(w.转为字节()));
 });
 
+// ── Stats ──
+
 test('GraphsResponse decodes today counts and retrievability', () => {
   const todayW = new 协议写入器();
-  todayW.写入变长整数(1, 100);
-  todayW.写入变长整数(3, 80);
-  todayW.写入变长整数(5, 60);
-  todayW.写入变长整数(7, 40);
+  todayW.写入变长整数(1, 100); // answer_count
+  todayW.写入变长整数(3, 80);  // correct_count
+  todayW.写入变长整数(5, 60);  // mature_count
+  todayW.写入变长整数(7, 40);  // review_count
 
   const retW = new 协议写入器();
-  retW.写入浮点(2, 0.92);
-  retW.写入浮点(3, 12.5);
-  retW.写入浮点(4, 10.0);
+  retW.写入浮点(2, 0.92);   // average
+  retW.写入浮点(3, 12.5);   // sum_by_card
+  retW.写入浮点(4, 10.0);   // sum_by_note
 
   const topW = new 协议写入器();
   topW.写入子消息(4, todayW);
   topW.写入子消息(12, retW);
-  topW.写入布尔(13, true);
+  topW.写入布尔(13, true);   // fsrs
 
   const view = decodeGraphsResponse(topW.转为字节());
   assert.equal(view.today.answerCount, 100);
@@ -308,21 +320,23 @@ test('GraphsRequest encodes days only, search stays empty', () => {
 });
 
 test('GraphsResponse decodes per-day review counts map and skips time map', () => {
+  // map 条目：field1=key（距今天数），field2=Reviews 子消息
   const entry0 = new 协议写入器();
-  entry0.写入变长整数(1, 0);
+  entry0.写入变长整数(1, 0); // 今天
   const reviews0 = new 协议写入器();
-  reviews0.写入变长整数(1, 2);
-  reviews0.写入变长整数(3, 3);
+  reviews0.写入变长整数(1, 2); // learn
+  reviews0.写入变长整数(3, 3); // young
   entry0.写入子消息(2, reviews0);
 
   const entry3 = new 协议写入器();
-  entry3.写入变长整数(1, 3);
+  entry3.写入变长整数(1, 3); // 3 天前
   const reviews3 = new 协议写入器();
-  reviews3.写入变长整数(2, 1);
-  reviews3.写入变长整数(4, 5);
-  reviews3.写入变长整数(5, 1);
+  reviews3.写入变长整数(2, 1); // relearn
+  reviews3.写入变长整数(4, 5); // mature
+  reviews3.写入变长整数(5, 1); // filtered
   entry3.写入子消息(2, reviews3);
 
+  // time map（field2）首页不用，解码必须跳过而不串位
   const timeEntry = new 协议写入器();
   timeEntry.写入变长整数(1, 0);
   const timeReviews = new 协议写入器();
@@ -335,7 +349,7 @@ test('GraphsResponse decodes per-day review counts map and skips time map', () =
   countsW.写入子消息(2, timeEntry);
 
   const topW = new 协议写入器();
-  topW.写入子消息(9, countsW);
+  topW.写入子消息(9, countsW); // reviews
 
   const view = decodeGraphsResponse(topW.转为字节());
   assert.equal(view.reviewCountsByDaysAgo.size, 2);

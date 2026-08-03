@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "",
-          "keyAlias": "",
-          "keyPassword": "",
-          "profile": "",
+          "storeFile": "D:/华为密钥库/huaweimiyaoku.p12",
+          "storePassword": "00000020404F56FA433DD4E39F2A48F72EA844EE03EE623D2347BFA1189D041D5FB5239BE8504AC6F50F040B840B0E9E",
+          "keyAlias": "jidekapian",
+          "keyPassword": "00000020F75E31A458747DE708EE5CAC26162D96EC5CF2CF4EA0A1F85B68A734E5C05091D220EDAC00D3F933B0615943",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "",
-          "storePassword": ""
+          "profile": "D:/edge浏览器下载/记得卡片Release.p7b",
+          "certpath": "D:/edge浏览器下载/记得卡片.cer"
         }
       }
     ],

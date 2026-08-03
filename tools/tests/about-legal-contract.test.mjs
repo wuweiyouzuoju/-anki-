@@ -8,6 +8,8 @@ function read(relativePath) {
 }
 
 test('Licenses panel explains the Anki core relationship and app overview', () => {
+  // 2026-07-28：原关于页的 summary / anki_notice / license_notice 已迁移到许可证面板。
+  // 测试改为验证许可证面板包含 overview 段落与 third_anki（含内核说明）。
   const panel = read('entry/src/main/ets/components/许可证面板.ets');
 
   for (const key of ['licenses_overview_section', 'licenses_overview_body', 'licenses_third_anki', 'licenses_app_body']) {
@@ -16,6 +18,7 @@ test('Licenses panel explains the Anki core relationship and app overview', () =
 });
 
 test('About keeps copyright and licenses entry, stays free of heavy legal wording', () => {
+  // 2026-07-28：关于页只保留 title + copyright，描述性文字已移到许可证面板。
   const panel = read('entry/src/main/ets/components/设置面板.ets');
 
   for (const key of ['app_about_title', 'app_about_copyright', 'licenses_title']) {

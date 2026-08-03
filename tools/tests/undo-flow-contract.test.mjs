@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// 撤销链路契约测试（T2）：
+// - 集合服务 只经 后端会话 走 后端集合(3) 的 7/8/9 方法索引；
+// - UndoStatus/OpChangesAfterUndo 解码器字段符合 collection.proto；
+// - StudyPage 撤销按钮真实接线 撤销()，撤销后重新取卡，失败走 errorDetail；
+// - 重做 仅服务层封装备用，UI 不暴露（上游移动端惯例）。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -92,6 +97,7 @@ test('study page refreshes undo availability on entry and after rating', () => {
   assert.match(page, /await this\.集合服务实例\.获取撤销状态\(\)/);
   assert.match(page, /this\.可撤销 = status\.undo\.length > 0/,
     'empty undo label means unavailable');
+  // loadNextCard 同时覆盖「页面进入」与「评分成功后」两条路径（startSession/rate 均汇入）
   assert.match(page, /await this\.刷新撤销状态\(\);\s*const queued = await this\.调度器服务实例\.获取队首卡片/,
     'undo status refreshes before every card fetch');
 });
@@ -99,6 +105,8 @@ test('study page refreshes undo availability on entry and after rating', () => {
 test('study page undo button is wired to undo then refetch', () => {
   const page = read(STUDY_PAGE);
 
+  // 2026-07-28：撤销按钮从顶部条独立 Button 改为「更多」菜单项。
+  // 菜单项 enabled 跟随 可撤销 状态（无可撤销时灰色不可点），点击触发 撤销上次()。
   assert.match(page, /更多菜单\(\): MenuElement\[\]/, 'more menu builder exists');
   assert.match(page, /\$r\('app\.string\.study_undo'\)/, 'undo string still referenced');
   assert.match(page, /enabled: this\.可撤销/, 'undo menu item enabled follows 可撤销');

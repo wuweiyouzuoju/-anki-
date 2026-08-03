@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// 检查数据库链路契约测试（T5）：
+// - 集合服务 只经 后端会话 走 后端集合(3) 的 检查数据库(6)；
+// - CheckDatabaseResponse 解码器字段符合 collection.proto（repeated string problems = 1）；
+// - SettingsPanel「检查数据库」入口真实调用 检查数据库()，busy 防重入，
+//   结果（通过/问题列表）与错误透传均走面板内状态行。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';

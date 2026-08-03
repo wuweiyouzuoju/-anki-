@@ -1,5 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-IMPORT-001
+// @名称 导入导出消息编解码
+//
+// @作用
+// 编解码 anki.import_export.proto 消息（Anki 26.05）：
+// - ImportAnkiPackageRequest / ExportAnkiPackageRequest：apkg 包导入导出
+// - ImportCollectionPackageRequest / ExportCollectionPackageRequest：colpkg 全量包
+// - ImportResponse：仅提取 Log 中的 new/updated/duplicate 计数与 found_notes
+// 字段来源：third_party/anki/proto/anki/import_export.proto
+//
+// @输入
+// 编码：包路径 / options / deckId
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：ImportSummary（newNotes / updatedNotes / duplicateNotes / foundNotes）
+//
+// @业务规则
+// DEFAULT_*_OPTIONS 常量与 Anki 桌面端默认选项对齐。
+// ImportResponse 只计数 Log 中本端需要的字段，其他子消息跳过。
+// ExportAnkiPackageRequest 内嵌 limit 子消息（field 3）指定 deckId。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 
@@ -51,6 +79,7 @@ export const DEFAULT_IMPORT_ANKI_PACKAGE_OPTIONS: ImportAnkiPackageOptions = {
   withDeckConfigs: false
 };
 
+/** Matches the choices Anki presents when exporting a deck package. */
 export const DEFAULT_EXPORT_ANKI_PACKAGE_OPTIONS: ExportAnkiPackageOptions = {
   withScheduling: true,
   withDeckConfigs: true,
@@ -126,6 +155,7 @@ function encodeExportAnkiPackageOptions(options: ExportAnkiPackageOptions): 协�
   return w;
 }
 
+/** ImportResponse: only counts the Log section required by the presentation layer. */
 export function decodeImportResponse(bytes: Uint8Array): ImportSummary {
   const summary: ImportSummary = { newNotes: 0, updatedNotes: 0, duplicateNotes: 0, foundNotes: 0 };
   const r = new 协议读取器(bytes);

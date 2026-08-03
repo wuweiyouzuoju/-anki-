@@ -1,5 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-CORE-READER-001
+// @名称 协议读取器
+//
+// @作用
+// 解析 protobuf wire format（proto3）字节流，提供按字段读取各种类型的方法。
+// 规范来源：https://protobuf.dev/programming-guides/encoding/
+//
+// @输入
+// 构造时传入 Uint8Array 字节流
+//
+// @输出
+// 各 读取xx 方法返回对应类型的值；读取标签 返回协议标签或 null（已读完）
+//
+// @业务规则
+// int64/uint64 超过 Number.MAX_SAFE_INTEGER 时抛错——Anki 的 id/时间戳远小于此，
+// 真遇到说明数据异常，宁可显式失败也不静默丢精度。
+// int32 负数按二进制补码解释（prost 将负数 sign-extend 到 64 位再编码）。
+//
+// @副作用
+// 无。仅读取构造时传入的字节流，不修改外部状态。
+//
+// @注意
+// 修改读取逻辑可能影响所有 proto/messages 编解码，需同步测试。
+// ========================================================
+
 import { UTF8解码 } from './utf8';
 import { 线类型_定长32, 线类型_定长64, 线类型_长度分隔, 线类型_变长整数 } from './ProtoWriter';
 
@@ -20,10 +46,12 @@ export class 协议读取器 {
     return this.位置 >= this.字节流.length;
   }
 
+  /** 当前读取位置（配合 截取片段 截取字段原始字节，用于保真回写） */
   get 当前位置(): number {
     return this.位置;
   }
 
+  /** 截取 [起点, 当前位置) 的原始字节（含 tag），原样保留未建模字段 */
   截取片段(起点: number): Uint8Array {
     return this.字节流.slice(起点, this.位置);
   }
@@ -62,6 +90,7 @@ export class 协议读取器 {
     throw new Error('proto: varint exceeds 10 bytes');
   }
 
+  /** 变长整数 → number，超出安全整数范围抛错 */
   读取变长整数(): number {
     const 值 = this.读取大变长整数();
     if (值 > BigInt(Number.MAX_SAFE_INTEGER)) {
@@ -70,6 +99,7 @@ export class 协议读取器 {
     return Number(值);
   }
 
+  /** int64：按二进制补码解释 */
   读取64位整数(): number {
     const 无符号 = this.读取大变长整数();
     const 有符号 = BigInt.asIntN(64, 无符号);
@@ -79,6 +109,12 @@ export class 协议读取器 {
     return Number(有符号);
   }
 
+  /**
+   * int32：按二进制补码解释。protobuf 中 int32 负数（如 Anki usn=-1）会被 prost
+   * 编码成 10 字节 varint（先 sign-extend 到 64 位再编码），不能直接用 读取变长整数
+   * 读取——否则会因值超过 Number.MAX_SAFE_INTEGER 抛错。这里读完 varint 后用
+   * BigInt.asIntN(32, ...) 截到 32 位有符号整数即可。
+   */
   读取32位整数(): number {
     const 无符号 = this.读取大变长整数();
     const 有符号 = BigInt.asIntN(32, 无符号);
@@ -92,6 +128,7 @@ export class 协议读取器 {
     return this.读取变长整数() !== 0;
   }
 
+  /** float（wire type 5，小端 32 位） */
   读取浮点(): number {
     if (this.位置 + 4 > this.字节流.length) {
       throw new Error('proto: unexpected end of input');
@@ -102,6 +139,7 @@ export class 协议读取器 {
     return new Float32Array(缓冲.buffer)[0];
   }
 
+  /** packed repeated int64（wire type 2 载荷） */
   读取打包64位整数(): number[] {
     const 载荷 = new 协议读取器(this.读取字节());
     const 输出: number[] = [];
@@ -111,6 +149,7 @@ export class 协议读取器 {
     return 输出;
   }
 
+  /** packed repeated float（wire type 2 载荷，小端 32 位） */
   读取打包浮点(): number[] {
     const 载荷 = new 协议读取器(this.读取字节());
     const 输出: number[] = [];
@@ -134,6 +173,7 @@ export class 协议读取器 {
     return UTF8解码(this.读取字节());
   }
 
+  /** 跳过未知字段，保证向前兼容（新版 Anki 加字段不崩） */
   跳过字段(线类型: number): void {
     switch (线类型) {
       case 线类型_变长整数:

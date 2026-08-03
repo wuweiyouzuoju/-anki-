@@ -5,9 +5,42 @@ import { 应用尺寸 } from '../utils/应用尺寸';
 import { 开始学习按钮 } from './开始学习按钮';
 import { 颜色键 } from '../model/颜色主题';
 
+// ========================================================
+// @块ID UI-DECK-DETAIL-001
+// @名称 牌组详情面板 组件主体字段
+//
+// @作用
+// 宽屏详情 pane：选中卡组的名称、描述、三类计数、牌组选项入口与开始学习按钮。
+// 牌组选项的渲染由父页面在根 Stack 中挂载以实现全局磨砂覆盖；
+// pane 仅在点击「牌组选项」时通过 onOpenDeckOptions 回调上抛。
+//
+// @输入
+// @Prop 是否深色 / 牌组选项加载中 / 牌组选项错误；
+// @Consume('selectedDeckId') / @Consume('snapshot')（@Provide 来自 Index.ets，key 字符串保留以维持链路）；
+// 父组件回调 onStart / onAddCard / onCreateSubdeck / onExportDeck / onOpenDeckOptions。
+//
+// @输出
+// 渲染宽屏详情面板；通过回调上抛用户操作。
+//
+// @业务规则
+// ArkUI V1 限制（前 5 次失败根因）：
+// - @Prop / @State 对 plain interface 不响应后续更新
+// - @Consume 在 private 方法内部访问不建立响应式依赖
+// - @Watch 回调中 @State 赋值不触发 build() 重新执行
+// - build() 中模板字符串引用 @Consume 不可靠
+// 最终方案：ForEach(this.snapshot.decks) + if (deck.id === this.selectedDeckId) 直接渲染。
+// buttonPressed 用一个数字状态管理 6 个按钮的 pressed 高亮：0=无，1=添加卡片，2=更多，3=创建子牌组，4=牌组选项，5=导出。
+//
+// @副作用
+// 无。仅渲染与上抛回调。
+//
+// @注意
+// @Consume key 'selectedDeckId' / 'snapshot' 是与 Index.ets @Provide 配对的协议字段，禁止修改。
+// ========================================================
 @Component
 export struct 牌组详情面板 {
   @Prop 是否深色: boolean = false;
+  // 注：@Consume key 字符串 'selectedDeckId' / 'snapshot' 与 Index.ets 的 @Provide 配对，保留不动。
   @Consume('selectedDeckId') 选中牌组Id: string;
   @Consume('snapshot') 主页快照数据: 主页快照;
   @Prop 牌组选项加载中: boolean = false;
@@ -29,16 +62,46 @@ export struct 牌组详情面板 {
   @StorageProp(颜色键.复习中计数色) private 复习中计数色: string = '#7056C8';
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
+  // 添加卡片 + 更多 + 3 个子按钮共用一个 pressed 状态：0=无，1=添加卡片，2=更多，3=创建子牌组，4=牌组选项，5=导出
   @State private 按下按钮编号: number = 0;
 
+  // ========================================================
+  // @块ID UI-DECK-DETAIL-002
+  // @名称 牌组详情面板主渲染
+  //
+  // @作用
+  // 渲染选中牌组的标题/描述/计数卡 + 添加卡片 + 更多（可展开创建子牌组/牌组选项/导出） + 开始学习按钮。
+  //
+  // @输入
+  // @Consume 主页快照数据 + 选中牌组Id（直接在 build() 内 ForEach + if 建立响应式依赖）。
+  //
+  // @输出
+  // 宽屏详情面板视觉；通过 5 个回调上抛按钮点击。
+  //
+  // @业务规则
+  // 第 6 次修复：完全绕过 @State/@Watch/@Builder 间接响应链，
+  // 直接在 build() 中用 ForEach + if 从 @Consume snapshot 渲染。
+  // ForEach 建立 @Consume 主页快照数据 响应式依赖，
+  // if (deck.id === this.选中牌组Id) 建立 @Consume 选中牌组Id 依赖。
+  // B12-Y2 2026-07-23：Scroll 包裹，"更多"展开后内容超出时可滚动，开始学习按钮 不被推出边界。
+  //
+  // @副作用
+  // 无。仅上抛回调。
+  // ========================================================
   build() {
     Stack() {
+      // B12-Y2 2026-07-23：Scroll 包裹，"更多"展开后内容超出时可滚动，开始学习按钮 不被推出边界
       Scroll() {
       Column({ space: 应用尺寸.间距_16 }) {
         Text($r('app.string.selected_deck'))
           .fontSize(应用尺寸.字号_正文_中)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
+        // 第 6 次修复：完全绕过 @State/@Watch/@Builder 间接响应链，
+        // 直接在 build() 中用 ForEach + if 从 @Consume 主页快照数据 渲染。
+        // ForEach 建立 @Consume 主页快照数据 响应式依赖，
+        // if (deck.id === this.选中牌组Id) 建立 @Consume 选中牌组Id 依赖，
+        // 直接用 deck.totalCards 等渲染，不经过 @State 中转。
         ForEach(this.主页快照数据.decks, (deck: 牌组汇总) => {
           if (deck.id === this.选中牌组Id) {
             Text(deck.displayName !== '' ? deck.displayName : deck.name)

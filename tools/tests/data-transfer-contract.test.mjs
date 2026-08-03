@@ -39,6 +39,7 @@ test('data transfer service exposes package workflows and safe collection replac
   for (const method of ['导出牌组', '导出集合', '执行牌组导入', '替换集合']) {
     assert.match(service, new RegExp(`export async function ${method}`));
   }
+  // B12 2026-07-22：importDeck 拆为 暂存导入文件（同步复制到沙箱）+ 执行牌组导入（后端 RPC）
   assert.match(service, /export function 暂存导入文件/);
   assert.match(service, /if \(!是否已确认\) \{\s*throw new 数据迁移校验错误/);
   assert.match(service, /export class 数据迁移校验错误 extends Error/);
@@ -66,9 +67,11 @@ test('data transfer panel only emits typed intents and separates merge from repl
   assert.match(panel, /replacePersonalData/);
   assert.match(panel, /onIntent/);
   assert.doesNotMatch(panel, /数据迁移服务|后端会话|\.run\(/);
+  // 模式切换：Task 3 2026-07-23 改用 Select 下拉（4 选项折叠）替代 @Builder modeTab（横屏越界）
   assert.match(panel, /迁移模式列表: 数据迁移模式\[\]/);
   assert.match(panel, /Select\(this\.模式下拉选项\(\)\)/);
   assert.match(panel, /模式下拉索引/);
+  // 导出选项默认展开（不再用 showExportOptions 切换）
   assert.match(panel, /已确认替换个人数据/);
   for (const option of ['withScheduling', 'withDeckConfigs', 'includeMedia', 'legacy']) {
     assert.match(panel, new RegExp(option));

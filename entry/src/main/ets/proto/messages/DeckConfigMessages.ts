@@ -1,5 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-DECKCONF-001
+// @名称 牌组配置消息编解码
+//
+// @作用
+// 编解码 anki.deck_config.proto 消息（Anki 26.05）：
+// - DeckConfig / DeckConfigSettings：完整牌组配置（40+ 字段，含 FSRS 参数）
+// - DeckLimits / CurrentDeckInfo / DeckConfigsForUpdateView：配置面板视图
+// - UpdateDeckConfigsInput：批量更新请求（增删改 + 应用到子牌组 + FSRS 重排）
+// 字段来源：third_party/anki/proto/anki/deck_config.proto
+//
+// @输入
+// 编码：DeckConfig / DeckLimits / UpdateDeckConfigsInput 结构
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：DeckConfig / DeckConfigsForUpdateView
+//
+// @业务规则
+// `preserved` 字段原样保留未知字段字节，保证未来 Anki 加字段时更新无损。
+// `other`（field 255）保留 backend 自定义字节。
+// 每个公共 Config 字段都建模，无字段被丢弃。
+// 紧凑写法（单行多语句）是为减小文件体积，逻辑与 prost 对齐。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器, 线类型_长度分隔 } from '../core/ProtoWriter';
 

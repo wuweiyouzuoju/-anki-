@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// 首页统计接线契约测试（T6）：
+// - 服务索引 的 后端统计=43 / 统计方法.图表=2 与 backend.rs 构建产物一致；
+// - 统计服务 只经 后端会话 走 Graphs 调用，search 固定空串（全库）；
+// - 首页.ets 拉取失败静默降级（返回 null），快照照常构建，热力/记忆率回落空态。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';

@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// 图片遮罩编辑器 单元测试：仅测纯函数 生成Occlusions字符串 与 编号颜色。
+// 渲染交互（ArkUI Canvas + PanGesture）不在 node test runner 范围内，
+// 由真机验收覆盖（spec T5.5）。
+// 格式参考：third_party/anki/rslib/src/image_occlusion/imageocclusion.rs
+//   parse_image_cloze 与 cloze.rs multi_card_image_occlusion 测试。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -8,6 +13,7 @@ import {
 } from '../../entry/src/main/ets/model/图片遮罩模型.ts';
 
 test('生成Occlusions字符串_单个c1矩形', () => {
+  // spec T2.4 用例 1：1 个矩形 c1
   const 输入 = [
     { 形状: 'rect', 左: 0.2, 顶: 0.3, 宽: 0.4, 高: 0.1, 编号: 1 }
   ];
@@ -18,6 +24,7 @@ test('生成Occlusions字符串_单个c1矩形', () => {
 });
 
 test('生成Occlusions字符串_三个不同ordinal矩形', () => {
+  // spec T2.4 用例 2：c1/c2/c3 三个矩形串连
   const 输入 = [
     { 形状: 'rect', 左: 0.1, 顶: 0.1, 宽: 0.2, 高: 0.2, 编号: 1 },
     { 形状: 'rect', 左: 0.3, 顶: 0.3, 宽: 0.2, 高: 0.2, 编号: 2 },
@@ -31,6 +38,7 @@ test('生成Occlusions字符串_三个不同ordinal矩形', () => {
 });
 
 test('生成Occlusions字符串_整图遮罩边界值', () => {
+  // spec T2.4 用例 3：左=0, 顶=0, 宽=1, 高=1（整图遮罩）
   const 输入 = [
     { 形状: 'rect', 左: 0, 顶: 0, 宽: 1, 高: 1, 编号: 1 }
   ];
@@ -41,6 +49,7 @@ test('生成Occlusions字符串_整图遮罩边界值', () => {
 });
 
 test('生成Occlusions字符串_编号越界按c6输出', () => {
+  // spec T2.4 用例 4：编号=6 仍按 {{c6::...}} 输出，不强校验
   const 输入 = [
     { 形状: 'rect', 左: 0.1, 顶: 0.1, 宽: 0.1, 高: 0.1, 编号: 6 }
   ];
@@ -51,10 +60,13 @@ test('生成Occlusions字符串_编号越界按c6输出', () => {
 });
 
 test('生成Occlusions字符串_空列表返回空字符串', () => {
+  // 边界：空列表应返回空字符串（Anki Occlusions 字段允许为空，
+  // 但实际建卡时调用方负责保证至少 1 个遮罩）
   assert.equal(生成Occlusions字符串([]), '');
 });
 
 test('生成Occlusions字符串_浮点尾数四舍五入到4位', () => {
+  // 浮点尾数误差兜底：0.123456 → "0.1235"，0.987654 → "0.9877"
   const 输入 = [
     { 形状: 'rect', 左: 0.123456, 顶: 0.987654, 宽: 0.555555, 高: 0.0001, 编号: 1 }
   ];
@@ -65,6 +77,8 @@ test('生成Occlusions字符串_浮点尾数四舍五入到4位', () => {
 });
 
 test('生成Occlusions字符串_同ordinal多矩形', () => {
+  // 同 ordinal 的两个矩形：输出两个 {{c1::...}}，串连无分隔
+  // （Anki 端会把它们都作为 c1 的遮罩，复习时同时揭示）
   const 输入 = [
     { 形状: 'rect', 左: 0.1, 顶: 0.1, 宽: 0.2, 高: 0.2, 编号: 1 },
     { 形状: 'rect', 左: 0.5, 顶: 0.5, 宽: 0.2, 高: 0.2, 编号: 1 }
@@ -76,6 +90,7 @@ test('生成Occlusions字符串_同ordinal多矩形', () => {
 });
 
 test('编号颜色_c1到c5返回固定色', () => {
+  // c1 红 / c2 橙 / c3 黄 / c4 绿 / c5 蓝
   assert.equal(编号颜色(1), '#E53935');
   assert.equal(编号颜色(2), '#FB8C00');
   assert.equal(编号颜色(3), '#FDD835');
@@ -84,6 +99,7 @@ test('编号颜色_c1到c5返回固定色', () => {
 });
 
 test('编号颜色_越界返回默认灰', () => {
+  // 越界编号不报错，返回中性灰
   assert.equal(编号颜色(0), '#9E9E9E');
   assert.equal(编号颜色(6), '#9E9E9E');
   assert.equal(编号颜色(-1), '#9E9E9E');

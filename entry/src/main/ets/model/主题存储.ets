@@ -1,5 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID MODEL-THEME-STORE-001
+// @名称 主题存储
+//
+// @作用
+// 通过 HarmonyOS preferences 持久化用户选择的主题模式（system/light/dark），
+// 提供加载与保存两个异步入口。加载失败时回退到默认主题模式，保证学习入口不中断。
+//
+// @输入
+// （加载）无参数，从 preferences 读取
+// （保存）主题模式 枚举值
+//
+// @输出
+// 加载主题模式：Promise<主题模式>
+// 保存主题模式：Promise<void>
+//
+// @业务规则
+// preferences store 名 'jidecards_settings'、键名 'theme_mode' 是持久化协议字段，禁止修改。
+// AppStorage 键名 'abilityContext' 是与 Ability 启动代码约定的协议字段，禁止修改。
+// 加载时调用 规范化主题模式 把任意字符串安全转为 主题模式 枚举，非法值回退默认。
+//
+// @副作用
+// 读取/写入 HarmonyOS preferences（异步 IO）。
+// 偏好不可用时保留当前内存状态，不中断学习入口（catch 静默）。
+// ========================================================
+
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { 默认主题模式, 规范化主题模式, 主题模式 } from './主题设置';
@@ -14,6 +40,7 @@ function 取能力上下文(): common.UIAbilityContext | null {
   return 上下文 === undefined ? null : 上下文;
 }
 
+/** 从 preferences 加载主题模式；上下文缺失或读取失败时回退到 默认主题模式。 */
 export async function 加载主题模式(): Promise<主题模式> {
   const 上下文: common.UIAbilityContext | null = 取能力上下文();
   if (上下文 === null) {
@@ -28,6 +55,7 @@ export async function 加载主题模式(): Promise<主题模式> {
   }
 }
 
+/** 把主题模式写入 preferences 并 flush；上下文缺失或写入失败时静默跳过。 */
 export async function 保存主题模式(模式: 主题模式): Promise<void> {
   const 上下文: common.UIAbilityContext | null = 取能力上下文();
   if (上下文 === null) {
@@ -38,5 +66,6 @@ export async function 保存主题模式(模式: 主题模式): Promise<void> {
     await 存储.put(主题模式键, 模式);
     await 存储.flush();
   } catch (错误) {
+    // 偏好不可用时保留当前内存状态，不中断学习入口。
   }
 }

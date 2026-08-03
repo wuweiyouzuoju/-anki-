@@ -31,6 +31,7 @@ export function evaluateEnvironment(probe) {
   }
 
   if (probe.rustc) {
+    // 与 workspace rust-version = "1.92" 对齐：接受 1.92 系列的任意补丁版本。
     const version = String(probe.rustc).match(/(\d+)\.(\d+)\.\d+/);
     if (!version || version[1] !== '1' || version[2] !== '92') {
       problems.push(`Rust 1.92.x is required; found ${probe.rustc}.`);

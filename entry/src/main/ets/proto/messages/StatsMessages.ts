@@ -1,5 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-STATS-001
+// @名称 统计消息编解码
+//
+// @作用
+// 编解码 anki.stats.proto 消息（Anki 26.05），仅提取首页热力图与记忆率所需字段：
+// - GraphsRequest：search 固定为空（全库统计，与 rslib graph_data_for_search 的 all 分支一致）
+// - GraphsView：今日计数 + 按日复习计数（热力图）+ 记忆率 + FSRS 标志
+// 字段来源：third_party/anki/proto/anki/stats.proto
+// 语义来源：rslib/src/stats/graphs/
+//
+// @输入
+// 编码：days（统计天数）
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：GraphsView（today / retrievability / reviewCountsByDaysAgo / fsrs）
+//
+// @业务规则
+// reviews.count 的键为「距今天数」，0=今天，1=昨天，与 rslib reviews.rs 分桶一致。
+// retrievability.average 为 0-100 百分制，仅当存在带 FSRS 记忆状态的卡片时非零。
+// ReviewCountsAndTimes 的 time 字段（field 2）首页不用，跳过。
+// map<int32, Reviews> 的 key 是 int32 varint，负数按补码解释。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 
@@ -21,6 +50,7 @@ export interface RetrievabilitySummary {
   sumByNote: number;
 }
 
+/** 单日内按卡片阶段拆分的复习计数（ReviewCountsAndTimes.Reviews）。 */
 export interface ReviewKindCounts {
   learn: number;
   relearn: number;
@@ -32,10 +62,12 @@ export interface ReviewKindCounts {
 export interface GraphsView {
   today: TodayCounts | null;
   retrievability: RetrievabilitySummary | null;
+  /** 按日复习计数：键为距今天数（0=今天，1=昨天……），与 rslib reviews.rs 分桶一致。 */
   reviewCountsByDaysAgo: Map<number, ReviewKindCounts> | null;
   fsrs: boolean;
 }
 
+/** GraphsRequest：search 固定为空（全库统计，与 rslib graph_data_for_search 的 all 分支一致）。 */
 export function encodeGraphsRequest(days: number): Uint8Array {
   const w = new 协议写入器();
   if (days > 0) {
@@ -147,6 +179,7 @@ function decodeReviews(bytes: Uint8Array): ReviewKindCounts {
   return out;
 }
 
+/** map<int32, Reviews> 条目：field1=key（int32 varint，负数按补码），field2=value 子消息。 */
 function decodeReviewCountEntry(bytes: Uint8Array, out: Map<number, ReviewKindCounts>): void {
   const r = new 协议读取器(bytes);
   let daysAgo: number = 0;
@@ -179,7 +212,7 @@ function decodeReviewCountsAndTimes(bytes: Uint8Array): Map<number, ReviewKindCo
         decodeReviewCountEntry(r.读取字节(), out);
         break;
       default:
-        r.跳过字段(tag.线类型);
+        r.跳过字段(tag.线类型); // field2 time 图首页不用，跳过
     }
   }
   return out;

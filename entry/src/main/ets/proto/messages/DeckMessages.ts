@@ -1,5 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-DECK-001
+// @名称 牌组消息编解码
+//
+// @作用
+// 编解码 anki.decks.proto 消息（Anki 26.05）：
+// - Deck / DeckCommon / DeckNormal：牌组完整视图（含学习统计 + 配置限制）
+// - DeckTreeNode：主页计数树（递归结构，含 new/review/learn 计数）
+// - DeckNames / DeckId / DeckIds / RenameDeckRequest：牌组名称与ID 相关请求
+// 字段来源：third_party/anki/proto/anki/decks.proto
+//
+// @输入
+// 编码：Deck 结构 / now 时间戳 / (skipEmptyDefault, includeFiltered) 等
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：Deck / DeckTreeNode / DeckNameId[]
+//
+// @业务规则
+// proto3 optional 字段用 null 表示「未设置」；编码时跳过默认值，与 prost 对齐。
+// DeckCommon.other（field 255）原样往返保留 backend 自定义字节。
+// DeckTreeNode.children 递归解码，深度由后端控制。
+// kind=7（Filtered 牌组）新建流程不会产生，解码时跳过。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 
@@ -15,6 +44,7 @@ export interface DeckCommon {
   newStudied: number;
   learningStudied: number;
   millisecondsStudied: number;
+  /** 保留字节（field 255），原样往返 */
   other: Uint8Array | null;
 }
 
@@ -31,6 +61,7 @@ export interface DeckNormal {
   desiredRetention: number | null;
 }
 
+/** 仅覆盖普通牌组；NewDeck 模板与新建流程不会遇到 Filtered */
 export interface Deck {
   id: number;
   name: string;
@@ -247,6 +278,12 @@ export function encodeDeck(deck: Deck): Uint8Array {
   return w.转为字节();
 }
 
+/**
+ * 编码 RenameDeckRequest（decks.proto）：
+ * - field 1: int64 deck_id
+ * - field 2: string new_name
+ * 仅在 deckId 非 0、newName 非空时编码；后端 rename_deck 会自动级联重命名子牌组前缀。
+ */
 export function encodeRenameDeckRequest(deckId: number, newName: string): Uint8Array {
   const w = new 协议写入器();
   if (deckId !== 0) {
@@ -283,6 +320,7 @@ export function decodeDeck(bytes: Uint8Array): Deck {
         deck.normal = decodeNormal(r.读取字节());
         break;
       default:
+        // kind=7 Filtered 等不处理：新建流程不会产生
         r.跳过字段(tag.线类型);
     }
   }
@@ -380,6 +418,7 @@ export function encodeGetDeckNamesRequest(skipEmptyDefault: boolean, includeFilt
   return w.转为字节();
 }
 
+/** decks.DeckId：SetCurrentDeck 等的入参（字段来源：decks.proto 第 46 行） */
 export function encodeDeckId(deckId: number): Uint8Array {
   const w = new 协议写入器();
   if (deckId !== 0) {
@@ -388,6 +427,11 @@ export function encodeDeckId(deckId: number): Uint8Array {
   return w.转为字节();
 }
 
+/**
+ * 编码 DeckIds（decks.proto 第 50-52 行）：
+ * - field 1: repeated int64 dids（packed 或非 packed 均可，后端兼容）
+ * RemoveDecks RPC 的入参；后端 remove_decks_and_child_decks 会递归删除所有子牌组。
+ */
 export function encodeDeckIds(deckIds: number[]): Uint8Array {
   const w = new 协议写入器();
   for (let i = 0; i < deckIds.length; i++) {

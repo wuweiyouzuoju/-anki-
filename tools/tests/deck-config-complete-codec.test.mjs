@@ -106,10 +106,12 @@ test('DeckConfig form retains invalid float-array input until it can be correcte
 test('deck options keep five common fields visible and fold the rest into advanced settings', () => {
   const panel = readFileSync(new URL('../../entry/src/main/ets/components/牌组选项面板.ets', import.meta.url), 'utf8');
   const advanced = readFileSync(new URL('../../entry/src/main/ets/components/高级牌组选项面板.ets', import.meta.url), 'utf8');
+  // 7 个分组随高级设置移入 高级牌组选项面板（独立全屏磨砂覆盖层）
   for (const group of ['New', 'Lapses', 'Burying', 'Audio', 'Timer', 'FSRS', 'Advanced']) {
     assert.match(advanced, new RegExp(group, 'i'));
   }
   assert.match(panel, /deck_group_advanced_hub/);
+  // 牌组选项面板 入口触发 showAdvanced；7 个分组及 expanded 状态在 高级牌组选项面板
   assert.match(panel, /@State private showAdvanced: boolean = false/);
   assert.match(advanced, /@State private newExpanded: boolean = false/);
   assert.match(advanced, /@State private fsrsExpanded: boolean = false/);

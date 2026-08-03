@@ -1,5 +1,32 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-NOTETYPE-001
+// @名称 笔记类型消息编解码
+//
+// @作用
+// 只读解码 anki.notetypes.proto 消息（Anki 26.05），服务于「添加卡片」动态字段：
+// - NotetypeView：笔记类型视图（id/name/fields，按 ord 排序）
+// - NotetypeNames：所有笔记类型的 id+name 列表
+// 字段来源：third_party/anki/proto/anki/notetypes.proto
+//
+// @输入
+// 编码：notetypeId
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节（NotetypeId 子消息）
+// 解码：NotetypeView / NotetypeNameId[]
+//
+// @业务规则
+// 仅解码，不编码完整 Notetype（前端从不写 Notetype protobuf，避免破坏 Anki 源字节）。
+// NotetypeField.ord 解码后用作排序键，确保字段顺序与 Anki 桌面端一致。
+// NotetypeField 内的 Field config 等子字段只读跳过。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 
@@ -52,6 +79,7 @@ function decodeNotetypeField(bytes: Uint8Array): NotetypeField {
     } else if (tag.字段号 === 2) {
       field.name = reader.读取字符串();
     } else {
+      // Field config and any future fields are read-only for this flow.
       reader.跳过字段(tag.线类型);
     }
   }
@@ -70,6 +98,7 @@ export function decodeNotetype(bytes: Uint8Array): NotetypeView {
     } else if (tag.字段号 === 8) {
       result.fields.push(decodeNotetypeField(reader.读取字节()));
     } else {
+      // This UI never writes Notetype protobufs, so preserve its source bytes in Anki.
       reader.跳过字段(tag.线类型);
     }
   }

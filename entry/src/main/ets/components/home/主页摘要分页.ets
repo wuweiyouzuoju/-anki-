@@ -1,5 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID UI-HOME-SUMMARY-001
+// @名称 主页摘要分页
+//
+// @作用
+// 渲染主页顶部摘要 Swiper：今日摘要卡 + 月历卡。
+// 折叠态仅显示今日摘要卡（Swiper 高度 82 + hitTestBehavior None 禁用滑动）；
+// 展开态恢复 Swiper 滑动（高度 应用尺寸.滑动器高度 + indicator 显示）。
+// 替换原 首页.ets 的 @Builder 摘要分页()。
+//
+// @输入
+// 摘要折叠: boolean  折叠态标志
+// onToggleExpand: () => void  切换折叠/展开
+// 主页快照数据: 主页快照  今日完成/记忆率/复习计数等数据
+// 月历: 月历数据  月历标题与单日列表
+//
+// @输出
+// 渲染 Swiper(今日摘要卡 + 月历卡)，高度与交互随 摘要折叠 切换
+//
+// @业务规则
+// 始终渲染同一 Swiper 实例（不 if 切换），让 collapsed Prop 变化时 ▼ 旋转 .animation 生效
+// 折叠态 hitTestBehavior(None) 禁用滑动但允许子组件 onClick
+// loop=false：2 张卡不需要首末循环
+//
+// @副作用
+// 无。
+// ========================================================
+
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 今日摘要卡 } from '../今日摘要卡';
 import { 月历卡 } from '../月历卡';

@@ -1,5 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-COLLECTION-001
+// @名称 集合消息编解码
+//
+// @作用
+// 编解码 anki.collection.proto 消息（Anki 26.05）：
+// - OpenCollectionRequest / CloseCollectionRequest：打开/关闭集合
+// - OpChanges 族：写操作返回的实体变更标记（卡片/笔记/牌组/标签等）
+// - UndoStatus / OpChangesAfterUndo：撤销/重做链路
+// - CheckDatabaseResponse：数据库检查问题列表
+// 字段来源：third_party/anki/proto/anki/collection.proto
+//
+// @输入
+// 编码：OpenCollectionRequest / CloseCollectionRequest 参数
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：OpChanges / UndoStatus / OpChangesAfterUndo / 问题列表
+//
+// @业务规则
+// OpChangesWithId / OpChangesWithCount 仅提取需要的标量字段，跳过 changes 子消息。
+// proto3 默认值省略，与 prost 对齐。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 
@@ -23,6 +51,7 @@ export function encodeOpenCollectionRequest(req: OpenCollectionRequest): Uint8Ar
   return w.转为字节();
 }
 
+/** BackendCollectionService.CloseCollectionRequest, with schema downgrade disabled. */
 export function encodeCloseCollectionRequest(downgradeToSchema11: boolean = false): Uint8Array {
   const w = new 协议写入器();
   if (downgradeToSchema11) {
@@ -31,6 +60,7 @@ export function encodeCloseCollectionRequest(downgradeToSchema11: boolean = fals
   return w.转为字节();
 }
 
+/** OpChangesWithId：仅需 id，changes 子消息跳过 */
 export function decodeOpChangesWithId(bytes: Uint8Array): number {
   const r = new 协议读取器(bytes);
   let id = 0;
@@ -45,6 +75,7 @@ export function decodeOpChangesWithId(bytes: Uint8Array): number {
   return id;
 }
 
+/** OpChangesWithCount：仅需 count */
 export function decodeOpChangesWithCount(bytes: Uint8Array): number {
   const r = new 协议读取器(bytes);
   let count = 0;
@@ -59,6 +90,7 @@ export function decodeOpChangesWithCount(bytes: Uint8Array): number {
   return count;
 }
 
+/** OpChanges：各实体变更标记，Undo/BuryOrSuspend 等写操作的响应 */
 export interface OpChanges {
   card: boolean;
   note: boolean;
@@ -136,6 +168,7 @@ export function decodeOpChanges(bytes: Uint8Array): OpChanges {
   return out;
 }
 
+/** UndoStatus：undo/redo 为空串表示对应方向不可操作 */
 export interface UndoStatus {
   undo: string;
   redo: string;
@@ -164,6 +197,7 @@ export function decodeUndoStatus(bytes: Uint8Array): UndoStatus {
   return out;
 }
 
+/** OpChangesAfterUndo：Undo/Redo 的响应 */
 export interface OpChangesAfterUndo {
   changes: OpChanges | null;
   operation: string;
@@ -206,6 +240,7 @@ export function decodeOpChangesAfterUndo(bytes: Uint8Array): OpChangesAfterUndo 
   return out;
 }
 
+/** CheckDatabaseResponse：问题列表，空数组表示检查通过 */
 export function decodeCheckDatabaseResponse(bytes: Uint8Array): string[] {
   const r = new 协议读取器(bytes);
   const problems: string[] = [];

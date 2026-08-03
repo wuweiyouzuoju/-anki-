@@ -194,6 +194,42 @@
       "value": "牌组已创建"
     },
     {
+      "name": "easter_egg_got_it",
+      "value": "知道了"
+    },
+    {
+      "name": "welcome_title",
+      "value": "欢迎使用记得卡片 v1.0.2"
+    },
+    {
+      "name": "welcome_section1_title",
+      "value": "此次更新改动"
+    },
+    {
+      "name": "welcome_section1_body",
+      "value": "修复了一些ui交互"
+    },
+    {
+      "name": "welcome_section2_title",
+      "value": "获取牌组"
+    },
+    {
+      "name": "welcome_section2_body",
+      "value": "点击访问官方 ankiweb.net/shared/decks 下载社区共享牌组，导入后即可开始学习（推荐）"
+    },
+    { "name": "welcome_section2_way1_label", "value": "方式 1：" },
+    { "name": "welcome_section2_way2_label", "value": "方式 2：" },
+    { "name": "welcome_section2_qq_prefix", "value": "加入记得卡片 QQ 群 " },
+    { "name": "welcome_section2_qq_suffix", "value": "，获取牌组与学习资源" },
+    {
+      "name": "welcome_section3_title",
+      "value": "作者的话"
+    },
+    {
+      "name": "welcome_btn_start",
+      "value": "开始体验"
+    },
+    {
       "name": "import_close",
       "value": "关闭"
     },
@@ -378,16 +414,12 @@
       "value": "请注意查看牌组来源、内容质量和使用许可。"
     },
     {
-      "name": "ankiweb_guide_button_copy",
-      "value": "复制网址"
+      "name": "ankiweb_guide_button_open",
+      "value": "前往获取"
     },
     {
       "name": "ankiweb_guide_button_ok",
       "value": "我已了解"
-    },
-    {
-      "name": "ankiweb_guide_copied",
-      "value": "已复制网址"
     },
     {
       "name": "empty_decks_title",
@@ -786,6 +818,10 @@
     { "name": "about_ankiweb_title", "value": "AnkiWeb 共享牌组" },
     { "name": "about_ankiweb_summary", "value": "浏览社区分享的牌组资源，下载后导入本应用使用" },
     { "name": "about_ankiweb_open_failed", "value": "无法打开浏览器，网址已复制到剪贴板" },
+    { "name": "about_qq_group_title", "value": "QQ 群" },
+    { "name": "about_qq_group_summary", "value": "获取牌组与学习资源" },
+    { "name": "about_qq_group_number_label", "value": "群号" },
+    { "name": "about_qq_group_copied", "value": "QQ 群号已复制到剪贴板" },
     { "name": "about_rate_title", "value": "给我好评" },
     { "name": "about_rate_summary", "value": "在应用内直接评分，或前往应用市场评论" },
     { "name": "about_rate_already_title", "value": "已评分过" },

@@ -1,5 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-IMAGEOCCLUSION-001
+// @名称 图片遮罩消息编解码
+//
+// @作用
+// 编解码 anki.image_occlusion.proto 消息（Anki 26.05），服务于「图片遮盖建卡」流程：
+// - GetImageOcclusionFieldsRequest / Response：取该笔记类型 4 个字段在 fields 数组中的索引
+// - ImageOcclusionFieldIndexes：occlusions / image / header / back_extra 的 uint32 索引
+// - GetImageForOcclusionRequest / Response：按 path 取图片字节与最终文件名
+// AddImageOcclusionNotetype 入参为 generic.Empty，无字段，由服务层直接传 new Uint8Array(0)。
+// 字段来源：third_party/anki/proto/anki/image_occlusion.proto
+//
+// @输入
+// 编码：notetypeId / path
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：ImageOcclusionFieldIndexes / GetImageForOcclusionResponse
+//
+// @业务规则
+// proto3 默认值（uint32=0、string=''）不在网络上传输，解码时按默认值填充。
+// ImageOcclusionFieldIndexes.occlusions=0 是合法值（字段索引 0），解码必须保留。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 

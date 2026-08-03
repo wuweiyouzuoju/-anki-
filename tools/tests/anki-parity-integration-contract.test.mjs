@@ -13,15 +13,18 @@ test('home wires the Anki deck tree, action menu, and selected-deck flows', () =
   assert.match(index, /主页操作面板/);
   assert.match(index, /可见牌组行/);
   assert.match(index, /添加笔记页/);
+  // 数据迁移面板 现在挂在 数据迁移协调器 积木组件里
   assert.match(transferCoord, /数据迁移面板/);
   assert.match(index, /展开的牌组ID集合/);
   assert.match(index, /创建父牌组ID/);
   assert.match(index, /this\.创建父牌组ID = ''/);
   assert.match(index, /this\.创建父牌组ID = this\.选中的牌组ID/);
+  // 创建牌组协调器 接收 父牌组ID Prop（内部转发给 创建牌组面板 的 initialParentId）
   assert.match(index, /父牌组ID: this\.创建父牌组ID/);
   assert.match(detail, /添加卡片/);
   assert.match(detail, /创建子牌组/);
   assert.match(detail, /导出牌组/);
+  // B12 重构：牌组选项校验错误流上移到 首页.ets（牌组详情面板 仅上抛回调）
   assert.match(index, /校验问题/);
   assert.match(index, /issue\.消息键/);
 });

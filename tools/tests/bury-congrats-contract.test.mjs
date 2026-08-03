@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// 埋藏/暂停 + 完成页契约测试（T3）：
+// - 调度器服务 只经 后端会话 走 后端调度器(13) 的 11/12/13/14 方法索引；
+// - StudyPage 提供「埋藏/暂停」次级入口：BURY_USER（明天再见）/SUSPEND（手动恢复前不再出现），
+//   与上游 reviewer.py bury_current_card/suspend_current_card 语义一致，成功后直接取下一张；
+// - 完成页接 congratsInfo 真实数据（剩余学习卡/今日上限提示/恢复埋藏入口）；
+// - CongratsInfo 只有布尔标记、不给卡片 id，恢复必须走 UnburyDeck(deckId, ALL)
+//   （同桌面 overview.py on_unbury），不能走按 id 的 RestoreBuriedAndSuspendedCards；
+// - congratsInfo 失败降级为静态完成文案，不进入错误态。
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -31,6 +39,7 @@ test('scheduler method indexes map to CongratsInfo/Restore/UnburyDeck/BuryOrSusp
 });
 
 test('bury/suspend mode constants match scheduler.proto (SUSPEND=0, BURY_USER=2, UNBURY ALL=0)', () => {
+  // 上游 pylib/anki/scheduler/base.py：手动 bury_cards → BURY_USER；suspend_cards → SUSPEND
   assert.equal(BURY_SUSPEND_MODE_SUSPEND, 0);
   assert.equal(BURY_SUSPEND_MODE_BURY_USER, 2);
   assert.equal(UNBURY_MODE_ALL, 0);
@@ -63,6 +72,7 @@ test('scheduler service wraps bury/suspend, unbury, restore and congrats through
 test('study page bury/suspend entries use upstream reviewer semantics and refetch next card', () => {
   const page = read(STUDY_PAGE);
 
+  // 次级操作行：问题/答案两态均可见
   assert.match(page, /if \(this\.阶段 === 'question' \|\| this\.阶段 === 'answer'\) \{[\s\S]*?app\.string\.study_bury[\s\S]*?app\.string\.study_suspend/,
     'bury/suspend row visible in both question and answer phases');
   assert.match(page, /this\.埋藏或暂停当前卡\(BURY_SUSPEND_MODE_BURY_USER\)/,

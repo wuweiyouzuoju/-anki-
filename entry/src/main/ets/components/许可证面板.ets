@@ -1,5 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID UI-LICENSES-001
+// @名称 许可证面板
+//
+// @作用
+// 开源许可与第三方声明面板：应用许可、源码获取、用户权利、第三方组件与免责。
+// 磨砂玻璃遮罩 + 88% 卡片，可滚动浏览，点遮罩或右上角「完成」关闭。
+//
+// @输入
+// isDark: 是否深色主题（控制遮罩色与磨砂风格）
+//
+// @输出
+// onClose: 用户关闭时回调（点遮罩 / 完成按钮）
+//
+// @业务规则
+// 资源 key（licenses_title / licenses_confirm / licenses_overview_section /
+// licenses_overview_body / licenses_app_section / licenses_app_body /
+// licenses_source_section / licenses_source_body / licenses_rights_section /
+// licenses_rights_body / licenses_third_section / licenses_third_anki /
+// licenses_third_rust / licenses_third_ibestui / licenses_trademark_section /
+// licenses_trademark_body / licenses_disclaimer_section / licenses_disclaimer_body）
+// 作为 i18n 键保留英文。
+// licenseSection / licenseBody 为 @Builder 方法，已中文化（许可证段落 / 许可证正文）。
+// 2026-07-28：原关于页的 app_about_summary / data_notice / license_notice / anki_notice
+// 已迁移到本面板（overview 段落放 summary，其余内容被现有段落覆盖或合并）。
+//
+// @副作用
+// 无。本组件不写后端、不写存储；仅触发外部回调。
+// ========================================================
+
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
 
@@ -41,14 +71,17 @@ export struct 许可证面板 {
         .width('100%')
         .height('100%')
         .backgroundColor(this.isDark ? 'rgba(0,0,0,0.40)' : 'rgba(0,0,0,0.15)')
+        // 磨砂玻璃质感：模糊下层内容避免叠字，材质着色跟随应用内主题（思路参考：华为开发者文档 backgroundBlurStyle）
         .backgroundBlurStyle(BlurStyle.Thin, {
           colorMode: this.isDark ? ThemeColorMode.DARK : ThemeColorMode.LIGHT,
           adaptiveColor: AdaptiveColor.DEFAULT
         })
+        // 遮罩扩展进安全区，否则状态栏/导航条区域露出下层背景
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         .onClick(() => {
           this.onClose();
         })
+        // 过渡仅动 opacity/translate/scale 合成属性，不触发布局（思路参考：华为官方 TransitionEffect 示例）
         .transition(TransitionEffect.OPACITY.animation({ curve: Curve.EaseOut, duration: 200 }))
 
       Column({ space: 应用尺寸.间距_12 }) {

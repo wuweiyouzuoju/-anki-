@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// M3 契约测试：锁定服务/方法索引表（Anki 26.05 构建产物同源）与错误映射行为。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -18,6 +19,8 @@ import {
 import { 后端错误, 映射原生错误 } from '../../entry/src/main/ets/backend/错误类型.ts';
 import { 协议写入器 } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
 
+// 索引与 target/**​/build/anki-*​/out/backend.rs（Anki 26.05）match 分支一一对应；
+// 修改本表必须同时更新来源注释与升级 SOP 文档。
 test('service ids match the generated backend.rs dispatch table', () => {
   assert.equal(服务号.后端集合, 3);
   assert.equal(服务号.后端牌组, 7);
@@ -51,6 +54,7 @@ test('method ids match the generated backend.rs dispatch table', () => {
     导入集合包: 0, 导出集合包: 1,
     导入Anki包: 2, 导出Anki包: 4
   });
+  // Type-in-the-Answer 翻面拉取笔记字段：笔记方法.获取笔记=6 + 笔记类型方法.获取笔记类型=6
   assert.deepEqual({ ...笔记方法 }, {
     新建笔记: 0, 添加笔记: 1, 添加默认值: 3,
     获取笔记: 6, 笔记字段校验: 11
@@ -67,7 +71,7 @@ test('native status codes mirror rsharmony.h', () => {
 test('映射原生错误 decodes 后端错误 protobuf details', () => {
   const w = new 协议写入器();
   w.写入字符串(1, 'collection is already open');
-  w.写入变长整数(2, 5);
+  w.写入变长整数(2, 5); // DB_ERROR
   w.写入字符串(4, 'openCollection');
 
   const err = 映射原生错误({

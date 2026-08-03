@@ -1,8 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-SCHED-001
+// @名称 调度器消息编解码
+//
+// @作用
+// 编解码 anki.scheduler.proto / cards.proto / generic.proto 中复习链路相关消息（Anki 26.05）：
+// - SchedulingStatesRaw：5 个评分档位（current/again/hard/good/easy）的不透明原始字节
+// - QueuedCardsView：待复习队列（卡片列表 + new/learn/review 计数）
+// - CardAnswer：作答请求（cardId + 旧/新状态 + rating + 用时）
+// - CongratsInfo：完成页状态（剩余卡片/埋藏标记/牌组描述）
+// - BuryOrSuspend / UnburyDeck / CountsForDeckToday / SchedTimingToday / StringList
+// 字段来源：third_party/anki/proto/anki/scheduler.proto 等
+//
+// @输入
+// 编码：CardAnswerInput / (cardIds, mode) / deckId 等
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：QueuedCardsView / CongratsInfo / SchedulingStatesRaw / SchedTimingToday 等
+//
+// @业务规则
+// SchedulingState 是深层 oneof（New/Learning/Review/Relearning/Filtered…），
+// 前端不解其内容——按钮文案由后端 DescribeNextStates 给出。
+// 解码时把每个状态的原始字节原样保留（raw passthrough），作答时原样回写，
+// 保证字节级保真，避免前端维护易过期的 oneof 重编码。
+// custom_data（插件用）当前不填充：后端注释明确「不设置则不会更新」。
+// RATING_*/QUEUE_*/BURY_SUSPEND_MODE_*/UNBURY_MODE_* 常量与 proto 枚举值对齐。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 
+/** SchedulingState 的不透明原始字节，作答时原样回传 */
 export type RawSchedulingState = Uint8Array;
 
 export interface SchedulingStatesRaw {
@@ -13,11 +47,13 @@ export interface SchedulingStatesRaw {
   easy: RawSchedulingState;
 }
 
+/** 评分档位，与 CardAnswer.Rating 对应 */
 export const RATING_AGAIN = 0;
 export const RATING_HARD = 1;
 export const RATING_GOOD = 2;
 export const RATING_EASY = 3;
 
+/** 卡片所属队列，与 QueuedCards.Queue 对应 */
 export const QUEUE_NEW = 0;
 export const QUEUE_LEARNING = 1;
 export const QUEUE_REVIEW = 2;
@@ -60,6 +96,7 @@ export interface StudyCard {
   cardId: number;
   noteId: number;
   deckId: number;
+  /** 卡片模板序号（cards.proto Card.template_idx，对应 Anki 的 card_ord），用于 Cloze 拼写校验 */
   templateIdx: number;
   queue: number;
   states: SchedulingStatesRaw;
@@ -83,6 +120,7 @@ export function encodeGetQueuedCardsRequest(fetchLimit: number, intradayLearning
   return w.转为字节();
 }
 
+/** 只取学习链路需要的 Card 字段（id/note_id/deck_id/template_idx），其余跳过 */
 interface CardSummary {
   cardId: number;
   noteId: number;
@@ -149,6 +187,7 @@ function decodeQueuedCard(bytes: Uint8Array): StudyCard {
         card.states = decodeSchedulingStates(r.读取字节());
         break;
       default:
+        // context（牌组名/随机种子）UI 暂不需要
         r.跳过字段(tag.线类型);
     }
   }
@@ -212,6 +251,7 @@ export function encodeCardAnswer(answer: CardAnswerInput): Uint8Array {
   return w.转为字节();
 }
 
+/** cards.CardId：GetSchedulingStates / RenderExistingCard 等的入参 */
 export function encodeCardId(cardId: number): Uint8Array {
   const w = new 协议写入器();
   if (cardId !== 0) {
@@ -220,12 +260,14 @@ export function encodeCardId(cardId: number): Uint8Array {
   return w.转为字节();
 }
 
+/** cards.CardIds：RestoreBuriedAndSuspendedCards 的入参（packed repeated int64） */
 export function encodeCardIds(cardIds: number[]): Uint8Array {
   const w = new 协议写入器();
   w.写入打包64位整数(1, cardIds);
   return w.转为字节();
 }
 
+/** CongratsInfoResponse：完成页状态（剩余卡片/待解压标记/牌组描述） */
 export interface CongratsInfo {
   learnRemaining: number;
   secsUntilNextLearn: number;
@@ -288,10 +330,12 @@ export function decodeCongratsInfo(bytes: Uint8Array): CongratsInfo {
   return out;
 }
 
+/** BuryOrSuspendCardsRequest.Mode */
 export const BURY_SUSPEND_MODE_SUSPEND = 0;
 export const BURY_SUSPEND_MODE_BURY_SCHED = 1;
 export const BURY_SUSPEND_MODE_BURY_USER = 2;
 
+/** BuryOrSuspendCardsRequest：card_ids/note_ids 为 packed repeated int64 */
 export function encodeBuryOrSuspendCardsRequest(cardIds: number[], noteIds: number[], mode: number): Uint8Array {
   const w = new 协议写入器();
   w.写入打包64位整数(1, cardIds);
@@ -302,6 +346,7 @@ export function encodeBuryOrSuspendCardsRequest(cardIds: number[], noteIds: numb
   return w.转为字节();
 }
 
+/** UnburyDeckRequest.Mode */
 export const UNBURY_MODE_ALL = 0;
 export const UNBURY_MODE_SCHED_ONLY = 1;
 export const UNBURY_MODE_USER_ONLY = 2;
@@ -322,6 +367,7 @@ export interface SchedTimingToday {
   nextDayAt: number;
 }
 
+/** CountsForDeckTodayResponse：某牌组今日已完成的新卡/复习卡数（scheduler.proto 181 行） */
 export interface DeckTodayCounts {
   newCount: number;
   reviewCount: number;
@@ -359,6 +405,7 @@ export function decodeSchedTimingToday(bytes: Uint8Array): SchedTimingToday {
   return out;
 }
 
+/** generic.StringList：DescribeNextStates 的返回（按钮文案列表） */
 export function decodeStringList(bytes: Uint8Array): string[] {
   const r = new 协议读取器(bytes);
   const vals: string[] = [];
@@ -373,6 +420,7 @@ export function decodeStringList(bytes: Uint8Array): string[] {
   return vals;
 }
 
+/** 把 SchedulingStatesRaw 重新编码为 SchedulingStates 字节（DescribeNextStates 入参） */
 export function encodeSchedulingStates(states: SchedulingStatesRaw): Uint8Array {
   const w = new 协议写入器();
   if (states.current.length > 0) {

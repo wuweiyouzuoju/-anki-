@@ -23,6 +23,7 @@ test('home shell keeps adaptive breakpoints and a virtualized deck list', () => 
   assert.match(page, /value:\s*\['600vp',\s*'840vp'\]/);
   assert.match(page, /reference:\s*BreakpointsReference\.WindowSize/);
   assert.match(page, /@State\s+private\s+当前断点:\s*string\s*=\s*'xs'/);
+  // List 现在挂在 主页牌组列表 积木组件里
   assert.match(deckList, /^\s*List\(/m);
   assert.doesNotMatch(page, /\bHOME_SNAPSHOT\b/);
   assert.doesNotMatch(page, /阶段 1 · OHOS 可行性验证/);
@@ -78,6 +79,7 @@ test('large deck lists create rows lazily', () => {
   const model = read('entry/src/main/ets/model/主页模型.ets');
 
   assert.match(model, /export class 牌组列表数据源 implements IDataSource/);
+  // LazyForEach 现在挂在 主页牌组列表 积木组件里
   assert.match(deckList, /LazyForEach\(this\.牌组数据源/);
   assert.doesNotMatch(page, /\bHOME_SNAPSHOT\b|ForEach\([^)]*\.decks/);
 });
@@ -89,6 +91,9 @@ test('unavailable actions cannot fail the home shell when toast is unavailable',
   assert.notEqual(noticeMethod, null);
   assert.match(noticeMethod[0], /try\s*\{/);
   assert.match(noticeMethod[0], /catch\s*\(/);
+  // 显示提示 必须有至少一个调用点（除声明行外）
+  // 2026-07-28 清理死代码：删除了未被任何地方调用的 private 显示不可用提示() 方法，
+  // 改为验证 显示提示 有多个真实业务调用点（home_load_error / create_deck_done / transfer_done 等）。
   const callMatches = page.match(/this\.显示提示\(/g) || [];
   assert.ok(callMatches.length >= 2, '显示提示 should be called from at least one caller besides its declaration');
 });
@@ -100,8 +105,10 @@ test('home error state offers an in-place retry path', () => {
   const stringNames = new Set(strings.map((item) => item.name));
 
   assert.equal(stringNames.has('home_retry'), true, 'missing string resource: home_retry');
+  // error 块挂在 主页牌组列表 积木组件里，文案用 app.string.home_retry
   assert.match(deckList, /if \(this\.加载状态 === 'error'\)/);
   assert.match(deckList, /app\.string\.home_retry/);
+  // 首页.ets 把 onRetry 回调绑到 加载主页数据，确保重试触发数据重拉
   assert.match(page, /onRetry: \(\): void => \{\s*this\.加载主页数据\(\);?\s*\}/);
 });
 
@@ -111,6 +118,7 @@ test('revised home uses a full-window toolbar without greeting or bottom navigat
 
   assert.doesNotMatch(page, /app\.string\.home_title|app\.string\.home_subtitle/);
   assert.doesNotMatch(page, /bottomNavigation|bottomNavItem|sidePane|sideNavItem/);
+  // 顶部工具栏按钮文案移至 主页顶部工具栏 积木组件
   assert.match(toolbar, /app\.string\.top_settings/);
   assert.match(toolbar, /app\.string\.create_deck/);
   assert.match(page, /span:\s*\{\s*xs:\s*4,\s*sm:\s*5,\s*md:\s*8\s*\}/);
@@ -124,14 +132,18 @@ test('summary pager hosts two manually navigated cards without auto-looping', ()
   const page = read('entry/src/main/ets/pages/首页.ets');
   const summary = read('entry/src/main/ets/components/home/主页摘要分页.ets');
 
+  // Swiper 与卡组件移至 主页摘要分页 积木组件
   assert.match(summary, /Swiper\(\)/);
   assert.match(summary, /\.autoPlay\(false\)/);
+  // loop=false：2 张卡不需要首末循环；旧 loop=true 在边界依赖 cachedCount，
+  // 未设时首末衔接可能短暂白屏（HarmonyOS Swiper 官方文档明确）。
   assert.match(summary, /\.loop\(false\)/);
   for (const component of ['今日摘要卡', '月历卡']) {
     const componentPath = `entry/src/main/ets/components/${component}.ets`;
     assert.equal(existsSync(projectUrl(componentPath)), true, `${componentPath} must exist`);
     assert.match(summary, new RegExp(`${component}\\(\\{`));
   }
+  // 构建月历 仍在 首页.ets 加载主页数据 中调用（业务逻辑保留）
   assert.match(page, /构建月历/);
   assert.doesNotMatch(page, /streakDays/);
 });
@@ -224,6 +236,8 @@ test('calendar model builds a 5-or-6-week heat map based on actual month layout'
   const calendar = read(calendarPath);
   assert.match(calendar, /export interface 日历单日/);
   assert.match(calendar, /export interface 月历数据/);
+  // 旧实现固定 42 格（6 行），某些月份多空行 + 卡片高度溢出；改为动态 5/6 行：
+  // 月历最大周数=6 上限、日历列数=7 每行 7 格；周数 由 leading+days 决定。
   assert.match(calendar, /const 月历最大周数:\s*number\s*=\s*6/);
   assert.match(calendar, /const 日历列数:\s*number\s*=\s*7/);
   assert.match(calendar, /周数:\s*number/);

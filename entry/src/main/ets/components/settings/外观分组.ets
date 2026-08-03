@@ -8,12 +8,38 @@ import {
   颜色主题渐变档
 } from '../../model/颜色主题';
 
+// ========================================================
+// @块ID UI-APPEARANCE-001
+// @名称 外观与语言分组
+//
+// @作用
+// 提供主题（system/light/dark）+ 颜色主题（6 色）+ 语言（zh-Hans/en）三组设置的展示与切换。
+// 2026-07-28：对齐添加笔记页 settingSelectRow 形态——每行单 Select 下拉，替代原 chip 展开模式。
+//
+// @输入
+// 是否深色：当前是否深色模式（影响色板取值）。
+// 当前主题模式：system / light / dark 之一。
+// 当前颜色主题：aurora / forest / midnight / lagoon / sunset / lemon 之一。
+// 是否展开：本分组是否展开。
+// 主题模式切换回调 / 颜色主题切换回调 / 切换展开回调：父组件注入。
+//
+// @输出
+// 渲染外观与语言分组卡片；用户切换 Select 时触发对应回调。
+//
+// @副作用
+// 切换语言时直接调用 设置语言模式 持久化；
+// 颜色主题切换由父组件回调负责持久化（本组件不直接写）。
+// ========================================================
 @Component
 export struct 外观分组 {
   @Prop 是否深色: boolean = false;
   @Prop 当前主题模式: 主题模式 = 'system';
   @Prop 当前颜色主题: 颜色主题 = 'aurora';
   @Prop 是否展开: boolean = false;
+  // B12-Y5 2026-07-29 修复 Bug 1（深色模式下分组头部文字亮度不一致）：
+  // 子组件只靠 @Prop 是否深色 传播响应主题切换，但 @Prop 传播可能滞后于主壳 @StorageLink 重 build，
+  // 导致子组件在一帧内仍用旧色板。加 @StorageProp('themeMode') 让主题切换直接触发子组件重 build，
+  // 设置面板色板_取 内部 解析同步是否深色 会读到 AppStorage 新值返回正确色板。
   @StorageProp('themeMode') private 主题模式监听: string = 'system';
   切换展开回调: () => void = (): void => {};
   主题模式切换回调: (模式: 主题模式) => void = (模式: 主题模式): void => {};
@@ -43,6 +69,9 @@ export struct 外观分组 {
   }
 
   private 选择语言(模式: 语言模式): void {
+    // BUG-009 修复：onConfigurationUpdate 触发 UI 重建时，Select 重建会重新触发 onSelect，
+    // 导致 选择语言 被循环调用（日志确认近 2 秒内被调用 30+ 次，每 ~60ms 一次）。
+    // 去重检查：已是目标语言则直接 return，打断循环。
     const 切换前: 语言模式 = 当前语言模式();
     if (切换前 === 模式) {
       return;
@@ -50,6 +79,7 @@ export struct 外观分组 {
     设置语言模式(模式);
   }
 
+  // ---- 主题模式 Select 选项 / 索引 ----
   private 主题模式选项(): SelectOption[] {
     return [
       { value: this.取本地化文本($r('app.string.theme_system')) },
@@ -64,6 +94,7 @@ export struct 外观分组 {
     return 0;
   }
 
+  // ---- 颜色主题 Select 选项 / 索引 ----
   private 颜色主题选项(): SelectOption[] {
     const 主题列表: 颜色主题[] = ['aurora', 'forest', 'midnight', 'lagoon', 'sunset', 'lemon'];
     return 主题列表.map((主题: 颜色主题): SelectOption => ({ value: this.颜色主题展示名文本(主题) }));
@@ -75,6 +106,7 @@ export struct 外观分组 {
     return 索引 >= 0 ? 索引 : 0;
   }
 
+  // ---- 语言 Select 选项 / 索引 ----
   private 语言选项(): SelectOption[] {
     return [
       { value: this.取本地化文本($r('app.string.language_chinese')) },
@@ -86,6 +118,7 @@ export struct 外观分组 {
     return 当前语言模式() === 'en' ? 1 : 0;
   }
 
+  /** 把 颜色主题渐变档 返回的 3 档 hex 转为 linearGradient 需要的 [color, stop] 数组。 */
   private 色样档位(主题: 颜色主题): Array<[ResourceColor, number]> {
     const 色档: string[] = 颜色主题渐变档(主题);
     return [
@@ -121,6 +154,7 @@ export struct 外观分组 {
 
       if (this.是否展开) {
         Column({ space: 4 }) {
+          // 主题行 Select（system/light/dark）
           Row() {
             Text($r('app.string.appearance_theme'))
               .fontSize(15)
@@ -138,11 +172,13 @@ export struct 外观分组 {
           .width('100%')
           .height(48)
 
+          // 颜色主题行 Select（带渐变色条预览）
           Row() {
             Text($r('app.string.appearance_color_theme'))
               .fontSize(15)
               .fontColor(设置面板色板_取(this.是否深色).主文字)
               .layoutWeight(1)
+            // 当前主题渐变色条预览（18×12 圆角矩形，3 档色阶）
             Row()
               .width(18)
               .height(12)
@@ -164,6 +200,7 @@ export struct 外观分组 {
           .width('100%')
           .height(48)
 
+          // 语言行 Select（zh-Hans/en）
           Row() {
             Text($r('app.string.settings_language'))
               .fontSize(15)

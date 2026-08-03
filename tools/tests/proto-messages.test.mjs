@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// proto/messages 字节级测试：锁定各消息编解码与 proto 定义（Anki 26.05）一致。
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -36,6 +37,7 @@ test('OpenCollectionRequest encodes three paths in field order', () => {
     mediaFolderPath: '/c/media',
     mediaDbPath: '/c/media.db'
   });
+  // field1 len 19, field2 len 8, field3 len 11
   assert.equal(
     hex(bytes),
     '0a 13 2f 63 2f 63 6f 6c 6c 65 63 74 69 6f 6e 2e 61 6e 6b 69 32 ' +
@@ -50,6 +52,7 @@ test('BackendInit encodes repeated langs, folder and server flag', () => {
     localeFolderPath: '/l',
     server: true
   });
+  // "zh-CN"=5B, "en"=2B, "/l"=2B, bool=1
   assert.equal(
     hex(bytes),
     '0a 05 7a 68 2d 43 4e 0a 02 65 6e 12 02 2f 6c 18 01'
@@ -59,8 +62,8 @@ test('BackendInit encodes repeated langs, folder and server flag', () => {
 test('BackendError decodes message/kind/context and skips help/backtrace', () => {
   const w = new 协议写入器();
   w.写入字符串(1, 'collection is already open');
-  w.写入变长整数(2, 5);
-  w.写入变长整数(3, 0);
+  w.写入变长整数(2, 5); // DB_ERROR
+  w.写入变长整数(3, 0); // optional help_page 出现但为空值也应被跳过
   w.写入字符串(4, 'openCollection');
   w.写入字符串(5, 'stack...');
   const info = decodeBackendError(w.转为字节());
@@ -112,6 +115,7 @@ test('Deck roundtrips with common/normal sub-messages and reserved bytes', () =>
 });
 
 test('Deck encoding omits default-valued fields like prost', () => {
+  // 全默认牌组只带 name：只有 field2 出现在字节流中
   const bytes = encodeDeck({
     id: 0,
     name: '默认',
@@ -127,16 +131,16 @@ test('DeckTreeNode decodes nested children recursively', () => {
   const child = new 协议写入器();
   child.写入64位整数(1, 20);
   child.写入字符串(2, '四级');
-  child.写入变长整数(8, 3);
+  child.写入变长整数(8, 3); // new_count
   const root = new 协议写入器();
   root.写入64位整数(1, 10);
   root.写入字符串(2, '英语');
   root.写入子消息(3, child);
-  root.写入变长整数(4, 0);
-  root.写入变长整数(6, 11);
-  root.写入变长整数(7, 2);
-  root.写入变长整数(13, 100);
-  root.写入变长整数(14, 150);
+  root.写入变长整数(4, 0); // level
+  root.写入变长整数(6, 11); // review_count
+  root.写入变长整数(7, 2); // learn_count
+  root.写入变长整数(13, 100); // total_in_deck
+  root.写入变长整数(14, 150); // total_including_children
   root.写入布尔(16, false);
 
   const node = decodeDeckTreeNode(root.转为字节());
@@ -175,7 +179,7 @@ test('GetDeckNamesRequest flags and DeckNames decoding', () => {
 test('OpChangesWithId / OpChangesWithCount extract scalars and skip changes', () => {
   const w = new 协议写入器();
   const changes = new 协议写入器();
-  changes.写入布尔(3, true);
+  changes.写入布尔(3, true); // deck changed
   w.写入子消息(1, changes);
   w.写入64位整数(2, 1752902400999);
   assert.equal(decodeOpChangesWithId(w.转为字节()), 1752902400999);
@@ -195,13 +199,13 @@ test('ImportAnkiPackageRequest encodes path only', () => {
 
 test('ImportResponse tallies log buckets and found_notes', () => {
   const note = new 协议写入器();
-  note.写入64位整数(1, 1);
+  note.写入64位整数(1, 1); // NoteId 子消息字节无需真实，计数即可
   const log = new 协议写入器();
-  log.写入子消息(1, note);
-  log.写入子消息(1, note);
-  log.写入子消息(2, note);
-  log.写入子消息(3, note);
-  log.写入变长整数(10, 99);
+  log.写入子消息(1, note); // new
+  log.写入子消息(1, note); // new
+  log.写入子消息(2, note); // updated
+  log.写入子消息(3, note); // duplicate
+  log.写入变长整数(10, 99); // found_notes
   const resp = new 协议写入器();
   const changes = new 协议写入器();
   changes.写入布尔(2, true);
@@ -211,3 +215,5 @@ test('ImportResponse tallies log buckets and found_notes', () => {
   const summary = decodeImportResponse(resp.转为字节());
   assert.deepEqual(summary, { newNotes: 2, updatedNotes: 1, duplicateNotes: 1, foundNotes: 99 });
 });
+
+

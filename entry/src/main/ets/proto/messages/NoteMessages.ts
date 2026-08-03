@@ -1,5 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// ========================================================
+// @块ID PROTO-MSG-NOTE-001
+// @名称 笔记消息编解码
+//
+// @作用
+// 编解码 anki.notes.proto 消息（Anki 26.05），服务于「添加卡片」流程：
+// - EditableNote：笔记完整视图（id/guid/notetypeId/mtime/usn/tags/fields）
+// - AddNoteRequest / AddNoteResponse：新增笔记请求与返回的 noteId
+// - DefaultsForAddingRequest / DeckAndNotetype：默认牌组与笔记类型
+// - NoteFieldsCheckResponse：字段校验状态（正常/空/重复/缺 cloze 等）
+// 字段来源：third_party/anki/proto/anki/notes.proto
+//
+// @输入
+// 编码：EditableNote / (note, deckId) / homeDeckOfCurrentReviewCard
+// 解码：字节流
+//
+// @输出
+// 编码：Uint8Array 字节
+// 解码：noteId / DeckAndNotetype / NoteFieldsCheckResponse
+//
+// @业务规则
+// tags 与 fields 均为 repeated string，空串 tag 跳过不编码。
+// NoteFieldsCheckState 枚举值与 anki.notes.proto 一致。
+//
+// @副作用
+// 无
+// ========================================================
+
 import { 协议读取器 } from '../core/ProtoReader';
 import { 协议写入器 } from '../core/ProtoWriter';
 
