@@ -2,6 +2,7 @@
 
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { 后端会话 } from '../backend/后端会话';
 import { 牌组服务 } from '../backend/牌组服务';
 import { 统计服务 } from '../backend/统计服务';
@@ -15,6 +16,7 @@ import { 添加笔记页, 添加笔记页参数, 添加笔记牌组选项 } from
 import { 数据迁移意图, 数据迁移模式, 导出牌组选项 } from '../components/数据迁移面板';
 import { 同步面板 } from '../components/同步面板';
 import { 主页顶部工具栏 } from '../components/home/主页顶部工具栏';
+import { 主页更多面板 } from '../components/home/主页更多面板';
 import { 主页摘要分页 } from '../components/home/主页摘要分页';
 import { 主页牌组列表 } from '../components/home/主页牌组列表';
 import { 牌组选项协调器 } from '../components/home/牌组选项协调器';
@@ -32,6 +34,7 @@ import { 牌组配置表单, 校验问题 } from '../model/牌组配置表单';
 import { 牌组选项编辑 } from '../model/牌组选项编辑';
 import { 学习页, 学习页参数 } from './学习页';
 import { 浏览页, 浏览页参数 } from './浏览页';
+import { 统计页, 统计页参数 } from './统计页';
 import { 构建月历, 月历数据 } from '../model/日历模型';
 import { 构建主页快照 } from '../model/主页快照映射器';
 import type { GraphsView } from '../proto/messages/StatsMessages';
@@ -56,10 +59,8 @@ import { 加载全部牌组顺序, 保存牌组顺序 } from '../model/牌组顺
 import { 加载已隐藏牌组ID列表, 隐藏牌组, 取消隐藏全部牌组 } from '../model/隐藏牌组存储';
 import { 加载上次牌组ID, 保存上次牌组ID, 清除上次牌组ID } from '../model/上次牌组存储';
 import { 确保FSRS已开启一次, 加载FSRS开启状态, 设置FSRS开启状态 } from '../model/FSRS控制器';
-import { 是否已展示AnkiWeb引导, 标记已展示AnkiWeb引导 } from '../model/AnkiWeb引导存储';
 import { 是否已展示好评引导, 标记已展示好评引导 } from '../model/好评引导存储';
 import { 加载显示今日进度卡, 保存摘要展开状态, 加载摘要展开状态, 主页今日进度卡AppStorage键 } from '../model/主页偏好';
-import { AnkiWeb引导对话框 } from '../components/AnkiWeb引导对话框';
 import { 好评引导对话框 } from '../components/好评引导对话框';
 import { 应用主题 } from '../utils/主题控制器';
 import { 应用尺寸 } from '../utils/应用尺寸';
@@ -116,6 +117,8 @@ struct 首页 {
   @State private 显示创建牌组: boolean = false;
   @State private 创建父牌组ID: string = '';
   @State private 显示主页操作: boolean = false;
+  // 更多下拉菜单（设置/浏览/统计收纳）：左上角"更多"按钮触发
+  @State private 显示更多菜单: boolean = false;
   @State private 创建牌组中: boolean = false;
   @State private 创建牌组错误: string = '';
   @State private 展开的牌组ID集合: Set<string> = new Set<string>();
@@ -169,8 +172,6 @@ struct 首页 {
   private 上次牌组已恢复: boolean = false;
   // 首次启动欢迎弹窗：介绍基础操作/个性设置/作者的话，由 aboutToAppear → 显示欢迎弹窗一次 触发
   @State private 显示欢迎弹窗: boolean = false;
-  // AnkiWeb 资源引导弹窗：首次启动展示一次，由 aboutToAppear → 显示AnkiWeb引导一次 触发
-  @State private 显示AnkiWeb引导: boolean = false;
   // 好评引导弹窗：用户首次完成一份牌组学习回到主页后展示一次，
   // 由 开始学习 onPop → 检查学习完成标记 触发；频率由 好评引导存储 控制为「只弹一次」。
   @State private 显示好评引导: boolean = false;
@@ -187,9 +188,6 @@ struct 首页 {
     // 首次启动弹一次欢迎弹窗（preferences 持久化标记，仅展示一次）。
     // fire-and-forget：不阻塞首页加载；await 自然延迟弹窗时机到 UI 就绪后。
     this.显示欢迎弹窗一次();
-    // 首次启动弹一次 AnkiWeb 资源引导（preferences 持久化标记，仅展示一次）。
-    // fire-and-forget：不阻塞首页加载；await 自然延迟弹窗时机到 UI 就绪后。
-    this.显示AnkiWeb引导一次();
   }
 
   // ========================================================
@@ -220,45 +218,31 @@ struct 首页 {
     this.显示欢迎弹窗 = true;
   }
 
-  // ========================================================
-  // @块ID UI-PAGE-HOME-001
-  // @名称 显示AnkiWeb引导一次
-  //
-  // @作用
-  // 首次启动展示 AnkiWeb 资源引导弹窗；已展示过则跳过。
-  //
-  // @输入
-  // 无（读取 preferences 标记）
-  //
-  // @输出
-  // 设置 显示AnkiWeb引导 状态为 true 触发弹窗渲染
-  //
-  // @业务规则
-  // 先标记再弹窗：即使弹窗 UI 未显示，也保证「只弹一次」语义；最坏情况是用户没看到。
-  //
-  // @副作用
-  // 写 preferences 持久化「已展示」标记
-  // ========================================================
-  private async 显示AnkiWeb引导一次(): Promise<void> {
-    const 已展示: boolean = await 是否已展示AnkiWeb引导();
-    if (已展示) {
-      return;
-    }
-    await 标记已展示AnkiWeb引导();
-    this.显示AnkiWeb引导 = true;
-  }
-
   /** 页面每次可见都刷新（含从复习页返回），保证今日计数与队列状态同步。 */
   onPageShow(): void {
     this.加载主页数据();
   }
 
-  /** 系统返回键：窄屏详情打开时关详情而非退出 App；其他情况交给系统默认行为。 */
+  /**
+   * 系统返回键 / 屏幕边缘滑动返回：弹窗优先消费，主界面才走系统默认（退到后台）。
+   * Invariants: 按层级逆序消费——先二次确认类（数据迁移可能含未完成事务）→ 普通弹层 →
+   * 引导弹窗 → 牌组详情浮层；任一命中即关对应弹窗并 return true；都不命中 return false。
+   * Extension Points: 新增弹窗时在此链中按层级插入对应 @State 判断。
+   */
   onBackPress(): boolean {
-    if (this.显示牌组详情) {
-      this.显示牌组详情 = false;
-      return true;
-    }
+    if (this.显示数据迁移) { this.显示数据迁移 = false; return true; }
+    if (this.显示同步面板) { this.显示同步面板 = false; return true; }
+    if (this.显示设置) { this.显示设置 = false; return true; }
+    if (this.显示许可证) { this.显示许可证 = false; return true; }
+    if (this.显示牌组定制) { this.显示牌组定制 = false; return true; }
+    if (this.显示牌组选项) { this.显示牌组选项 = false; return true; }
+    if (this.显示创建牌组) { this.显示创建牌组 = false; return true; }
+    if (this.显示主页操作) { this.显示主页操作 = false; return true; }
+    if (this.显示更多菜单) { this.显示更多菜单 = false; return true; }
+    if (this.显示好评引导) { this.显示好评引导 = false; return true; }
+    if (this.显示节流奖励) { this.显示节流奖励 = false; return true; }
+    if (this.显示欢迎弹窗) { this.显示欢迎弹窗 = false; return true; }
+    if (this.显示牌组详情) { this.显示牌组详情 = false; return true; }
     return false;
   }
 
@@ -742,6 +726,15 @@ struct 首页 {
     const params: 浏览页参数 = {};
     this.页面栈.pushPath({
       name: 'BrowserPage',
+      param: params
+    });
+  }
+
+  /** 打开统计页（全库统计图表）。'StatsPage' 是 NavPathStack 跨页面寻址协议，保留英文。 */
+  private 打开统计页(): void {
+    const params: 统计页参数 = {};
+    this.页面栈.pushPath({
+      name: 'StatsPage',
       param: params
     });
   }
@@ -1559,9 +1552,6 @@ struct 首页 {
     const isPush: boolean = operation === NavigationOperation.PUSH;
     const 转场时长: number = 取全屏转场时长();
     const 转场曲线: ICurve = 取全屏转场曲线();
-    // 用 from.name / to.name 作为 key 查找 CustomTransition 注册的回调
-    // name 是 NavPathStack pushPath 时传的 'StudyPage' / 'AddNotePage'，比 navDestinationId 稳定
-    // NavContentInfo.name 类型为 string | undefined，未命名时回退空串查不到回调走系统转场
     const fromName: string = from.name ?? '';
     const toName: string = to.name ?? '';
     return {
@@ -1571,7 +1561,6 @@ struct 首页 {
         const from终点 = CustomTransition.getInstance().取终点回调(fromName);
         const to起点 = CustomTransition.getInstance().取起点回调(toName);
         const to终点 = CustomTransition.getInstance().取终点回调(toName);
-        // 设置 opacity 起点值：进入方从 0 淡入，退出方从 1 起始
         if (from起点 !== null) {
           from起点(isPush, true);
         }
@@ -1585,7 +1574,6 @@ struct 首页 {
             transitionProxy.finishTransition();
           }
         }, (): void => {
-          // 设置 opacity 终点值：进入方淡入到 1；退出方淡出到 0
           if (from终点 !== null) {
             from终点(isPush, true);
           }
@@ -1602,7 +1590,7 @@ struct 首页 {
   // @名称 页面映射
   //
   // @作用
-  // Navigation 目的地映射：学习页 / 添加笔记页 以 NavDestination 形式入栈展示。
+  // Navigation 目的地映射：学习页 / 浏览页 / 统计页 / 添加笔记页 以 NavDestination 形式入栈展示。
   //
   // @输入
   // name: NavPathStack 寻址字符串
@@ -1612,7 +1600,7 @@ struct 首页 {
   // 渲染对应 NavDestination 内容
   //
   // @业务规则
-  // 'StudyPage' / 'AddNotePage' 字符串是 NavPathStack 跨页面寻址协议，保留英文。
+  // 'StudyPage' / 'BrowserPage' / 'StatsPage' / 'AddNotePage' 字符串是 NavPathStack 跨页面寻址协议，保留英文。
   //
   // @副作用
   // 无（仅渲染）
@@ -1625,14 +1613,16 @@ struct 首页 {
         pageDeckName: (param as 学习页参数).deckName ?? '',
         pathStack: this.页面栈
       })
-    }
-    if (name === 'BrowserPage') {
+    } else if (name === 'BrowserPage') {
       浏览页({
         pageDeckId: (param as 浏览页参数).deckId ?? '',
         pathStack: this.页面栈
       })
-    }
-    if (name === 'AddNotePage') {
+    } else if (name === 'StatsPage') {
+      统计页({
+        pathStack: this.页面栈
+      })
+    } else if (name === 'AddNotePage') {
       添加笔记页({
         pageDeckId: (param as 添加笔记页参数).deckId ?? '',
         pageDeckName: (param as 添加笔记页参数).deckName ?? '',
@@ -1647,11 +1637,8 @@ struct 首页 {
       Stack() {
         Column() {
           主页顶部工具栏({
-            on设置点击: (): void => {
-              this.显示设置 = true;
-            },
-            on浏览点击: (): void => {
-              this.打开浏览页();
+            on更多点击: (): void => {
+              this.显示更多菜单 = true;
             },
             on创建牌组点击: (): void => {
               this.显示主页操作 = true;
@@ -1874,6 +1861,27 @@ struct 首页 {
           })
         }
 
+        // 更多下拉菜单：设置/浏览/统计 三项收纳
+        if (this.显示更多菜单) {
+          主页更多面板({
+            设置回调: (): void => {
+              this.显示更多菜单 = false;
+              this.显示设置 = true;
+            },
+            浏览回调: (): void => {
+              this.显示更多菜单 = false;
+              this.打开浏览页();
+            },
+            统计回调: (): void => {
+              this.显示更多菜单 = false;
+              this.打开统计页();
+            },
+            关闭回调: (): void => {
+              this.显示更多菜单 = false;
+            }
+          })
+        }
+
         // 窄屏详情显隐（方案 C 2026-07-25）：显示牌组详情=true 时 牌组详情面板 盖住列表。
         // 牌组详情面板 在根 Stack 内，作为 @Entry 后代，@Consume 能找到 @Provide。
         // B12-Y3 2026-07-28：详情面板必须在 3 个协调器弹窗之前渲染，否则弹窗被详情面板遮挡，
@@ -2011,19 +2019,9 @@ struct 首页 {
         //   这里仅关闭状态；即使弹窗未显示也已标记，保证「只弹一次」语义）
         if (this.显示欢迎弹窗) {
           欢迎弹窗({
+            是否深色: this.是否深色(),
             onClose: (): void => {
               this.显示欢迎弹窗 = false;
-            }
-          })
-            .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
-        }
-
-        // AnkiWeb 资源引导弹窗：首次启动展示一次，挂载在最顶层确保覆盖其他弹窗
-        if (this.显示AnkiWeb引导) {
-          AnkiWeb引导对话框({
-            isDark: this.是否深色(),
-            onClose: (): void => {
-              this.显示AnkiWeb引导 = false;
             }
           })
         }

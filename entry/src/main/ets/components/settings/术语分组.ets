@@ -101,6 +101,27 @@ export struct 术语分组 {
       标签资源: $r('app.string.glossary_shortcuts_label'),
       帮助标题资源: $r('app.string.glossary_shortcuts_label'),
       帮助正文资源: $r('app.string.glossary_shortcuts_help')
+    },
+    // 浏览页新功能（T6/T8/T9/T11）集中查阅入口，正文复用浏览页 ⓘ 帮助文案
+    {
+      标签资源: $r('app.string.browser_action_sidebar'),
+      帮助标题资源: $r('app.string.browser_help_sidebar_title'),
+      帮助正文资源: $r('app.string.browser_help_sidebar_body')
+    },
+    {
+      标签资源: $r('app.string.browser_action_find_replace'),
+      帮助标题资源: $r('app.string.browser_help_find_replace_title'),
+      帮助正文资源: $r('app.string.browser_help_find_replace_body')
+    },
+    {
+      标签资源: $r('app.string.browser_help_batch_title'),
+      帮助标题资源: $r('app.string.browser_help_batch_title'),
+      帮助正文资源: $r('app.string.browser_help_batch_body')
+    },
+    {
+      标签资源: $r('app.string.glossary_browser_info_label'),
+      帮助标题资源: $r('app.string.glossary_browser_info_label'),
+      帮助正文资源: $r('app.string.glossary_browser_info_help')
     }
   ];
 

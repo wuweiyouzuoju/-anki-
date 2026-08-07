@@ -13,13 +13,13 @@ import {
 // @名称 外观与语言分组
 //
 // @作用
-// 提供主题（system/light/dark）+ 颜色主题（6 色）+ 语言（zh-Hans/en）三组设置的展示与切换。
+// 提供主题（system/light/dark）+ 颜色主题（7 色）+ 语言（zh-Hans/en）三组设置的展示与切换。
 // 2026-07-28：对齐添加笔记页 settingSelectRow 形态——每行单 Select 下拉，替代原 chip 展开模式。
 //
 // @输入
 // 是否深色：当前是否深色模式（影响色板取值）。
 // 当前主题模式：system / light / dark 之一。
-// 当前颜色主题：aurora / forest / midnight / lagoon / sunset / lemon 之一。
+// 当前颜色主题：aurora / forest / midnight / lagoon / sunset / lemon / minimal_gray 之一。
 // 是否展开：本分组是否展开。
 // 主题模式切换回调 / 颜色主题切换回调 / 切换展开回调：父组件注入。
 //
@@ -96,12 +96,12 @@ export struct 外观分组 {
 
   // ---- 颜色主题 Select 选项 / 索引 ----
   private 颜色主题选项(): SelectOption[] {
-    const 主题列表: 颜色主题[] = ['aurora', 'forest', 'midnight', 'lagoon', 'sunset', 'lemon'];
+    const 主题列表: 颜色主题[] = ['aurora', 'forest', 'midnight', 'lagoon', 'sunset', 'lemon', 'minimal_gray'];
     return 主题列表.map((主题: 颜色主题): SelectOption => ({ value: this.颜色主题展示名文本(主题) }));
   }
 
   private 颜色主题索引(): number {
-    const 主题列表: 颜色主题[] = ['aurora', 'forest', 'midnight', 'lagoon', 'sunset', 'lemon'];
+    const 主题列表: 颜色主题[] = ['aurora', 'forest', 'midnight', 'lagoon', 'sunset', 'lemon', 'minimal_gray'];
     const 索引 = 主题列表.indexOf(this.当前颜色主题);
     return 索引 >= 0 ? 索引 : 0;
   }
@@ -193,7 +193,7 @@ export struct 外观分组 {
               .controlSize(ControlSize.SMALL)
               .margin({ left: 8 })
               .onSelect((索引: number): void => {
-                const 主题列表: 颜色主题[] = ['aurora', 'forest', 'midnight', 'lagoon', 'sunset', 'lemon'];
+                const 主题列表: 颜色主题[] = ['aurora', 'forest', 'midnight', 'lagoon', 'sunset', 'lemon', 'minimal_gray'];
                 this.颜色主题切换回调(主题列表[索引]);
               })
           }

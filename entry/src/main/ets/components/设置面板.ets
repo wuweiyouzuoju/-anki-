@@ -13,6 +13,9 @@ import { 颜色主题, 颜色键 } from '../model/颜色主题';
 //   数据库检查逻辑因此保留在主壳内联，未抽到子组件。
 import { 设置语言模式 } from '../model/语言存储';
 import { 集合服务 } from '../backend/集合服务';
+import { 标签服务 } from '../backend/标签服务';
+import { 链接服务 } from '../backend/链接服务';
+import { HelpPage } from '../proto/messages/LinksMessages';
 import { 设置面板色板_取 } from '../utils/设置面板配色';
 import type { SyncAuth } from '../proto/messages/SyncMessages';
 import { 外观分组 } from './settings/外观分组';
@@ -21,6 +24,7 @@ import { 布局分组 } from './settings/布局分组';
 import { 数据分组 } from './settings/数据分组';
 import { 同步分组 } from './settings/同步分组';
 import { 术语分组 } from './settings/术语分组';
+import { 媒体管理面板 } from './settings/媒体管理面板';
 import { 字段帮助面板 } from './字段帮助面板';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
@@ -73,6 +77,8 @@ export struct 设置面板 {
   };
   // AnkiWeb 共享牌组网址（与 AnkiWeb引导对话框.ets 同款字面量，作为外部网址保留原文）
   private readonly AnkiWeb网址: string = 'https://ankiweb.net/shared/decks';
+  // Anki 官方文档 URL（后端 LinksService.HelpPageLink 不可用时的兜底常量，与 docs.ankiweb.net 一致）
+  private readonly Anki文档网址: string = 'https://docs.ankiweb.net';
   // 官方 QQ 群号（关于分组入口点击复制到剪贴板，与 欢迎弹窗 中 QQ群号 保持一致）
   private readonly QQ群号: string = '726837065';
   // 本应用 bundleName，用于拼接应用市场 DeepLink 跳转本应用详情页（好评回退路径）
@@ -119,8 +125,14 @@ export struct 设置面板 {
   @State private 显示说明浮层: boolean = false;
   @State private 说明标题: Resource = $r('app.string.settings_fsrs_label');
   @State private 说明正文: Resource = $r('app.string.settings_fsrs_help');
+  // 媒体管理面板：从数据管理分组入口打开，挂在根 Stack 顶层
+  @State private 显示媒体管理: boolean = false;
+  // 清除未用标签状态：数据管理分组入口 → 确认对话框 → 调后端
+  @State private 清除标签忙碌: boolean = false;
 
   private readonly 集合服务实例: 集合服务 = new 集合服务();
+  private readonly 标签服务实例: 标签服务 = new 标签服务();
+  private readonly 链接服务实例: 链接服务 = new 链接服务();
 
   private 取本地化文本(资源: Resource): string {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id);
@@ -169,6 +181,60 @@ export struct 设置面板 {
   // 契约测试要求保留 this.遮罩色() 调用形式；色板统一来自 设置面板色板。
   private 遮罩色(): string {
     return 设置面板色板_取(this.是否深色).遮罩;
+  }
+
+  // ========================================================
+  // @名称 清除未用标签
+  //
+  // @作用
+  // 数据管理分组「清除未用标签」入口 → AlertDialog 二次确认 → 调 标签服务.清除未用标签。
+  // 成功 toast 显示清除数量，失败 toast 显示错误。
+  //
+  // @副作用
+  // 调后端 标签服务.清除未用标签，修改 Anki collection（可撤销）。
+  // ========================================================
+  private 请求清除未用标签(): void {
+    if (this.清除标签忙碌) {
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: this.取本地化文本($r('app.string.settings_clear_unused_tags')),
+      message: this.取本地化文本($r('app.string.settings_clear_unused_tags_confirm')),
+      autoCancel: true,
+      alignment: DialogAlignment.Center,
+      primaryButton: {
+        value: $r('app.string.cancel'),
+        action: (): void => {}
+      },
+      secondaryButton: {
+        value: $r('app.string.settings_clear_unused_tags'),
+        fontColor: $r('app.color.error_text'),
+        action: (): void => { this.执行清除未用标签(); }
+      }
+    });
+  }
+
+  private async 执行清除未用标签(): Promise<void> {
+    this.清除标签忙碌 = true;
+    try {
+      const count: number = await this.标签服务实例.清除未用标签();
+      if (count > 0) {
+        this.getUIContext().getPromptAction().showToast({
+          message: this.取本地化文本($r('app.string.settings_clear_unused_tags_success'))
+            .replace('%d', String(count))
+        });
+      } else {
+        this.getUIContext().getPromptAction().showToast({
+          message: this.取本地化文本($r('app.string.settings_clear_unused_tags_empty'))
+        });
+      }
+    } catch (错误) {
+      console.info(`SettingsPanel: 清除未用标签失败 错误=${错误}`);
+      this.getUIContext().getPromptAction().showToast({
+        message: this.取本地化文本($r('app.string.settings_clear_unused_tags_error'))
+      });
+    }
+    this.清除标签忙碌 = false;
   }
 
   /** 选中态主色：直接引用 @StorageLink 动作主色链接 让颜色主题切换时 @Builder 重执行（与 外观分组 同款）。 */
@@ -223,7 +289,7 @@ export struct 设置面板 {
   //
   // @作用
   // 渲染关于分组展开后的内容：应用介绍 + 反馈子项（可折叠）+ 赞助子项（可折叠）
-  // + AnkiWeb 资源入口 + 许可证入口。
+  // + AnkiWeb 资源入口 + 许可证入口 + Anki 官方文档入口。
   // 反馈子项含 app.string.feedback_email 资源引用；赞助子项含 app.media.sponsor_qrcode 资源引用。
   //
   // @输入
@@ -282,6 +348,65 @@ export struct 设置面板 {
       await 系统剪贴板.setData(剪贴数据);
       this.getUIContext().getPromptAction().showToast({
         message: $r('app.string.about_ankiweb_open_failed')
+      });
+    } catch (错误) {
+      // 复制失败静默；用户仍可在关于分组看到网址文本手动抄录
+    }
+  }
+
+  // ========================================================
+  // @块ID UI-SETTINGS-PANEL-007
+  // @名称 打开 Anki 官方文档
+  //
+  // @作用
+  // 点击设置页底部「查看 Anki 官方文档」入口行：
+  // 优先调后端 LinksService.HelpPageLink(INDEX) 取官方文档 URL（按 locale 选站点），
+  // 后端不可用或返回空串时兜底用本地常量 Anki文档网址；再用系统浏览器打开。
+  // 若系统无可用浏览器（startAbility 失败），兜底把网址复制到剪贴板并 toast 提示。
+  //
+  // @输入
+  // 无（读 this.Anki文档网址 / this.链接服务实例）
+  //
+  // @输出
+  // 调系统 startAbility 打开网址；失败时写系统剪贴板 + 弹 toast。
+  //
+  // @业务规则
+  // 不在 app 内嵌 Web 组件打开文档（与 打开AnkiWeb网址 一致，交给系统浏览器处理）。
+  //
+  // @副作用
+  // 调后端 链接服务.获取帮助页链接（NAPI 桥）；
+  // 调系统 startAbility（可能拉起系统浏览器）；
+  // 失败时写系统剪贴板（pasteboard）+ 弹 toast。
+  // ========================================================
+  private async 打开Anki官方文档(): Promise<void> {
+    let 网址: string = this.Anki文档网址;
+    try {
+      const 后端网址: string = await this.链接服务实例.获取帮助页链接(HelpPage.INDEX);
+      if (后端网址 !== '') {
+        网址 = 后端网址;
+      }
+    } catch (错误) {
+      // 后端不可用：兜底用本地常量网址，确保用户仍能打开文档
+    }
+    const 上下文: common.UIAbilityContext =
+      this.getUIContext().getHostContext() as common.UIAbilityContext;
+    上下文.startAbility({
+      action: 'ohos.want.action.viewData',
+      uri: 网址
+    }).catch((错误: Error): void => {
+      // 兜底：复制网址到剪贴板 + toast 提示用户手动打开
+      this.复制Anki文档网址到剪贴板(网址);
+    });
+  }
+
+  private async 复制Anki文档网址到剪贴板(网址: string): Promise<void> {
+    try {
+      const 剪贴数据: pasteboard.PasteData =
+        pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, 网址);
+      const 系统剪贴板: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard();
+      await 系统剪贴板.setData(剪贴数据);
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.about_anki_docs_open_failed')
       });
     } catch (错误) {
       // 复制失败静默；用户仍可在关于分组看到网址文本手动抄录
@@ -590,6 +715,34 @@ export struct 设置面板 {
       .onClick(() => {
         this.打开许可证回调();
       })
+
+      Divider().color(设置面板色板_取(this.是否深色).分隔线).strokeWidth(1)
+
+      // Anki 官方文档入口行（设置页底部）：点击用系统浏览器打开 docs.ankiweb.net
+      // 优先调后端 LinksService.HelpPageLink 取 URL（按 locale 选站点），失败兜底本地常量
+      Row() {
+        Column({ space: 2 }) {
+          Text($r('app.string.about_anki_docs_title'))
+            .fontSize(15)
+            .fontColor(设置面板色板_取(this.是否深色).主文字)
+          Text(this.Anki文档网址)
+            .fontSize(12)
+            .fontColor(设置面板色板_取(this.是否深色).弱化文字)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Blank()
+        Text('›')
+          .fontSize(20)
+          .fontColor(设置面板色板_取(this.是否深色).弱化文字)
+      }
+      .width('100%')
+      .height(58)
+      .onClick(() => {
+        this.打开Anki官方文档();
+      })
     }
     .width('100%')
   }
@@ -814,7 +967,9 @@ export struct 设置面板 {
             是否展开: this.数据分组展开,
             切换展开回调: (): void => { this.数据分组展开 = !this.数据分组展开; },
             点击导出导入回调: (): void => { this.导出数据回调(); },
-            点击已隐藏牌组回调: (): void => { this.点击已隐藏牌组回调(); }
+            点击已隐藏牌组回调: (): void => { this.点击已隐藏牌组回调(); },
+            点击媒体管理回调: (): void => { this.显示媒体管理 = true; },
+            点击清除未用标签回调: (): void => { this.请求清除未用标签(); }
           })
         }
 
@@ -861,6 +1016,15 @@ export struct 设置面板 {
           正文: this.说明正文,
           onClose: (): void => { this.显示说明浮层 = false; }
         })
+      }
+
+      // 媒体管理面板：数据管理分组入口打开，挂在根 Stack 顶层
+      if (this.显示媒体管理) {
+        媒体管理面板({
+          isDark: this.是否深色,
+          onClose: (): void => { this.显示媒体管理 = false; }
+        })
+          .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
       }
     }
     .width('100%')

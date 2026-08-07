@@ -135,11 +135,11 @@ export struct 许可证面板 {
         .align(Alignment.Top)
       }
       .width('88%')
-      .constraintSize({ maxWidth: 480 })
+      .constraintSize({ maxWidth: 480, maxHeight: '88%' })
       .height('88%')
       .padding(应用尺寸.卡片内边距)
       .backgroundColor($r('app.color.surface_card'))
-      .borderRadius(应用尺寸.圆角_面板)
+      .borderRadius(应用尺寸.圆角_卡片)
       .onClick(() => {
       })
       .transition(TransitionEffect.asymmetric(

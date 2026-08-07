@@ -6,7 +6,9 @@ import type { SyncAuth } from '../../proto/messages/SyncMessages';
 import {
   清除同步凭证,
   加载同步凭证,
-  保存同步凭证
+  保存同步凭证,
+  加载媒体同步开关,
+  设置媒体同步开关
 } from '../../model/同步凭证存储';
 import type { 同步凭证信息 } from '../../model/同步凭证存储';
 import { 分类同步错误 } from '../../model/同步流程';
@@ -71,6 +73,8 @@ export struct 同步分组 {
   @State private 账号名: string = '';
   /** 错误提示（面板内红字） */
   @State private 错误文本: string = '';
+  /** 媒体同步开关（对齐 Anki 桌面端 Preferences → Sync → "Sync media"）。 */
+  @State private 媒体同步开启: boolean = true;
 
   // ---- 内部（非 @State，不参与 UI 刷新） ----
   /** 登录成功后持有的会话凭证（hkey + endpoint） */
@@ -93,6 +97,8 @@ export struct 同步分组 {
     } else {
       this.当前状态 = '未登录';
     }
+    // 读取媒体同步开关（默认 true）
+    this.媒体同步开启 = 加载媒体同步开关();
   }
 
   private 取本地化文本(资源: Resource): string {
@@ -347,6 +353,31 @@ export struct 同步分组 {
       .width('100%')
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })
+    // 媒体同步开关（对齐 Anki 桌面端 Preferences → Sync → "Sync media"）。
+    // 关闭后 syncCollection 传 syncMedia=false，跳过媒体阶段。
+    Row() {
+      Column({ space: 2 }) {
+        Text($r('app.string.settings_sync_media_toggle'))
+          .fontSize(15)
+          .fontColor(色板.主文字)
+        Text($r('app.string.settings_sync_media_toggle_hint'))
+          .fontSize(12)
+          .fontColor(色板.三级文字)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Toggle({ type: ToggleType.Switch, isOn: this.媒体同步开启 })
+        .selectedColor(this.解析主色按钮背景())
+        .onChange((值: boolean): void => {
+          this.媒体同步开启 = 值;
+          设置媒体同步开关(值);
+        })
+    }
+    .width('100%')
+    .padding({ top: 4, bottom: 4 })
     Row({ space: 8 }) {
       Button($r('app.string.sync_backup_first'))
         .layoutWeight(1)

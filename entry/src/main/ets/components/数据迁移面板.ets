@@ -47,6 +47,7 @@
 import type { 整库导出选项, 牌组导出选项 } from '../model/数据传输模型';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 设置面板色板_取 } from '../utils/设置面板配色';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { 颜色键 } from '../model/颜色主题';
 
 export type 数据迁移模式 = 'exportDeck' | 'exportPersonalData' | 'importDeck' | 'importPersonalData';
@@ -262,6 +263,7 @@ export struct 数据迁移面板 {
         .fontColor($r('app.color.text_primary'))
         .layoutWeight(1)
       Toggle({ type: ToggleType.Switch, isOn: 是否开启 })
+        .selectedColor(this.主色按钮背景)
         .onChange(改变回调)
     }
     .width('100%')
@@ -280,6 +282,8 @@ export struct 数据迁移面板 {
         })
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         .onClick(() => { if (!this.busy) this.onClose(); })
+        // 过渡仅动 opacity/translate/scale 合成属性，不触发布局（思路参考：华为官方 TransitionEffect 示例）
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       Column({ space: 应用尺寸.间距_12 }) {
       // === Header：标题 + 副标题 + 右上角 × ===
@@ -363,6 +367,7 @@ export struct 数据迁移面板 {
               .fontSize(应用尺寸.字号_正文)
               .onClick(() => this.打开旧版帮助())
             Toggle({ type: ToggleType.Switch, isOn: this.旧版兼容 })
+              .selectedColor(this.主色按钮背景)
               .onChange((值: boolean) => { this.旧版兼容 = 值; })
           }
           .width('100%')
@@ -390,6 +395,7 @@ export struct 数据迁移面板 {
               .fontColor($r('app.color.text_primary'))
               .layoutWeight(1)
             Toggle({ type: ToggleType.Checkbox, isOn: this.已确认替换个人数据 })
+              .selectedColor(this.主色按钮背景)
               .onChange((是否开启: boolean) => { this.已确认替换个人数据 = 是否开启; })
           }
           .width('100%')
@@ -435,12 +441,20 @@ export struct 数据迁移面板 {
         .justifyContent(FlexAlign.Center)
       }
     }
-    .width('75%')
+    .width('88%')
     // B12-Y2 2026-07-22：maxWidth 400 → 480（与 创建牌组面板/设置面板 等其他弹层一致）
-    .constraintSize({ maxWidth: 480 })
+    .constraintSize({ maxWidth: 480, maxHeight: '88%' })
     .padding(应用尺寸.卡片内边距)
     .backgroundColor($r('app.color.surface_card'))
     .borderRadius(应用尺寸.圆角_卡片)
+    // 居中浮卡：缩放+淡入过渡（思路参考：华为官方 TransitionEffect 示例）
+    .transition(TransitionEffect.asymmetric(
+      TransitionEffect.opacity(0)
+        .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+        .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
+      TransitionEffect.opacity(0)
+        .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
+    ))
     }
   }
 }

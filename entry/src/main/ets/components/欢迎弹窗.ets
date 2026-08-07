@@ -26,10 +26,15 @@
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { 应用尺寸 } from '../utils/应用尺寸';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
+import { 颜色键 } from '../model/颜色主题';
 
 @Component
 export struct 欢迎弹窗 {
   onClose: () => void = () => {};
+  @Prop 是否深色: boolean = false;
+  // 跟随用户选择的颜色主题（与首页"创建牌组"按钮同款绑定）
+  @StorageProp(颜色键.主色按钮背景) private 主色按钮背景色: string = '#2F5FD0';
 
   // 同系列应用 + 本应用包名（用于跳转应用市场详情页）
   private static readonly 包名_记得卡片: string = 'com.jide.kapian';
@@ -48,9 +53,10 @@ export struct 欢迎弹窗 {
         .height('100%')
         .backgroundColor('rgba(0,0,0,0.35)')
         .backgroundBlurStyle(BlurStyle.Thin, {
-          colorMode: ThemeColorMode.LIGHT,
+          colorMode: this.是否深色 ? ThemeColorMode.DARK : ThemeColorMode.LIGHT,
           adaptiveColor: AdaptiveColor.DEFAULT
         })
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
         .onClick(() => this.onClose())
 
       // 内容卡（居中，最大宽度 380）
@@ -124,6 +130,11 @@ export struct 欢迎弹窗 {
           .fontColor($r('app.color.text_secondary'))
           .copyOption(CopyOptions.LocalDevice)
           .width('100%')
+          // 提示：获取牌组方式可在设置-关于中再次查看
+          Text($r('app.string.welcome_section2_hint'))
+            .fontSize(应用尺寸.字号_正文_中)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
@@ -170,7 +181,7 @@ export struct 欢迎弹窗 {
             .height(应用尺寸.按钮高度)
             .fontSize(应用尺寸.字号_按钮)
             .fontWeight(FontWeight.Medium)
-            .backgroundColor($r('app.color.action_primary'))
+            .backgroundColor(this.主色按钮背景色)
             .fontColor($r('app.color.action_on_primary'))
             .onClick(() => this.onClose())
         }
@@ -178,10 +189,16 @@ export struct 欢迎弹窗 {
         .padding({ left: 20, right: 20, top: 4, bottom: 20 })
       }
       .width('88%')
-      .constraintSize({ maxWidth: 380 })
+      .constraintSize({ maxWidth: 480, maxHeight: '88%' })
       .backgroundColor($r('app.color.surface_page'))
-      .borderRadius(应用尺寸.圆角_指标卡)
-      .shadow({ radius: 24, color: 'rgba(0,0,0,0.18)', offsetX: 0, offsetY: 4 })
+      .borderRadius(应用尺寸.圆角_卡片)
+      .transition(TransitionEffect.asymmetric(
+        TransitionEffect.opacity(0)
+          .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
+        TransitionEffect.opacity(0)
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
+      ))
     }
     .width('100%')
     .height('100%')

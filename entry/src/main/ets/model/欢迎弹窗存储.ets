@@ -34,7 +34,7 @@ const 存储名: string = 'jidecards_settings';
 const 欢迎已展示键: string = 'welcome_shown';
 const 上下文键: string = 'abilityContext';
 // 当前应用版本号：发版时同步修改此处与 welcome_title 的 vX.Y.Z
-const 当前版本: string = '1.0.2';
+const 当前版本: string = '1.6.6';
 
 function 取上下文(): common.UIAbilityContext | null {
   const 上下文: common.UIAbilityContext | undefined =
@@ -50,7 +50,11 @@ export async function 是否已展示欢迎弹窗(): Promise<boolean> {
   try {
     const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
     const 值: preferences.ValueType = await 存储.get(欢迎已展示键, '');
-    return 值 === 当前版本;
+    // 新安装（值为空）或老用户升级（值是旧版本号）→ 未展示，需弹窗
+    if (值 !== 当前版本) {
+      return false;
+    }
+    return true;
   } catch (错误) {
     return false;
   }

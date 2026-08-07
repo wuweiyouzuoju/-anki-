@@ -1,0 +1,100 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// ========================================================
+// @名称 主页更多面板
+//
+// @作用
+// 首页"更多"按钮触发的下拉动作菜单（顶部弹出形态，纯 UI 积木）。
+// 与 主页操作面板 同模式：透明承接层 + 左上角下拉的 3 个条目（设置/浏览/统计）。
+// 触发按钮在左上角，菜单锚定其下方弹出，手指零移动；
+// 不加 dim/磨砂遮罩，透明层承接外部点击关闭。
+//
+// @输入
+// 设置回调 / 浏览回调 / 统计回调 / 关闭回调（均由父级 Index 注入）。
+//
+// @输出
+// 渲染一个全屏 Stack：透明承接层 + 左上角下拉的 3 个动作条目。
+//
+// @Invariants
+// - 与 主页操作面板 同布局/同过渡：opacity 淡入淡出，禁止上下位移
+// - 锚定 TopStart（左上角），与 主页操作面板 的 TopEnd（右上角）对称
+//
+// @Extension Points
+// - 条目数量可扩展（如未来加"导出数据"等）
+//
+// @副作用
+// 无。点击事件通过回调上抛，由父级处理实际跳转。
+// ========================================================
+
+import { 应用尺寸 } from '../../utils/应用尺寸';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../../utils/转场时长';
+
+@Component
+export struct 主页更多面板 {
+  设置回调: () => void = (): void => {};
+  浏览回调: () => void = (): void => {};
+  统计回调: () => void = (): void => {};
+  关闭回调: () => void = (): void => {};
+
+  build() {
+    Stack() {
+      // 透明承接层：不遮暗不模糊，仅让菜单外点击可关闭
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        .onClick((): void => this.关闭回调())
+
+      Column() {
+        Text($r('app.string.top_settings'))
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .height(应用尺寸.行动按钮高度)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => this.设置回调())
+        Divider()
+          .color($r('app.color.border_subtle'))
+          .strokeWidth(应用尺寸.卡片边框)
+          .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+        Text($r('app.string.browser_title'))
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .height(应用尺寸.行动按钮高度)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => this.浏览回调())
+        Divider()
+          .color($r('app.color.border_subtle'))
+          .strokeWidth(应用尺寸.卡片边框)
+          .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+        Text($r('app.string.stats_page_title'))
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .height(应用尺寸.行动按钮高度)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => this.统计回调())
+      }
+      .width(200)
+      .backgroundColor($r('app.color.surface_card'))
+      .borderRadius(应用尺寸.圆角_卡片)
+      .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
+      .margin({ top: 64, left: 应用尺寸.页面内边距_水平 })
+      .onClick(() => {
+        // 阻断点击穿透到遮罩
+      })
+      // 淡入淡出过渡（评价要求：禁止上下位移，改为纯 OPACITY）
+      .transition(TransitionEffect.asymmetric(
+        TransitionEffect.opacity(0)
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
+        TransitionEffect.opacity(0)
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
+      ))
+    }
+    .width('100%')
+    .height('100%')
+    .alignContent(Alignment.TopStart)
+  }
+}

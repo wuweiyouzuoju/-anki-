@@ -29,7 +29,9 @@
 // 选中背景 = primaryContainer，保留旧键名兼容既有组件。
 // ========================================================
 
+import { common } from '@kit.AbilityKit';
 import { 颜色主题, 颜色键, 解析主题色板 } from '../model/颜色主题';
+import { 应用系统栏样式 } from './主题控制器';
 
 export function 应用颜色主题(主题: 颜色主题, 是否深色: boolean): void {
   const 色板 = 解析主题色板(主题, 是否深色);
@@ -57,4 +59,11 @@ export function 应用颜色主题(主题: 颜色主题, 是否深色: boolean):
   AppStorage.setOrCreate<string>(颜色键.热力4, 色板.热力4);
   // 页面背景极淡主题色
   AppStorage.setOrCreate<string>(颜色键.页面底色微染, 色板.页面底色微染);
+  // 同步系统栏与界面同色：状态栏/导航栏使用刚写入的页面底色微染。
+  // 早期初始化（abilityContext 尚未写入 AppStorage）时跳过，由 EntryAbility.onWindowStageCreate 兜底。
+  const 上下文: common.UIAbilityContext | undefined =
+    AppStorage.get<common.UIAbilityContext>('abilityContext');
+  if (上下文 !== undefined) {
+    应用系统栏样式(上下文, 是否深色);
+  }
 }

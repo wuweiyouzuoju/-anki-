@@ -13,7 +13,6 @@ import { 后端会话 } from '../backend/后端会话';
 import { 笔记服务, 笔记字段校验错误 } from '../backend/笔记服务';
 import { 笔记类型服务 } from '../backend/笔记类型服务';
 import { 图片遮罩服务 } from '../backend/图片遮罩服务';
-import type { 图片遮罩字段索引 } from '../backend/图片遮罩服务';
 import { 媒体服务 } from '../backend/媒体服务';
 import { 文本中的填空编号 } from '../model/填空解析器';
 import { 生成Occlusions字符串 } from '../model/图片遮罩模型';
@@ -160,6 +159,16 @@ export struct 添加笔记页 {
   aboutToDisappear(): void {
     // 注销自定义转场回调，避免内存泄漏与野回调
     CustomTransition.getInstance().注销NavParam('AddNotePage');
+  }
+
+  /**
+   * 系统返回键 / 屏幕边缘滑动返回：编辑器/帮助浮层打开时优先关闭，否则走 NavPathStack 默认 pop。
+   * Invariants: 图片遮盖编辑器优先于帮助浮层（编辑器更靠上层）。
+   */
+  onBackPress(): boolean {
+    if (this.图片遮盖_显示编辑器) { this.图片遮盖_显示编辑器 = false; return true; }
+    if (this.显示帮助) { this.显示帮助 = false; return true; }
+    return false;
   }
 
   /** 暗色模式判断：主题模式值=system 时跟随系统，否则按显式选择。与 学习页.ets 同语义。 */
@@ -712,10 +721,8 @@ export struct 添加笔记页 {
   // ImageOcclusion 模式下的提交流程：
   //   1. 校验已选图、至少 1 个遮罩
   //   2. 读 URI 字节 → 媒体服务.添加媒体文件 写入 collection.media 得最终文件名
-  //   3. 图片遮罩服务.获取图片遮罩字段 取字段索引
-  //   4. 笔记服务.新建笔记 创建笔记对象，按索引填 Occlusions / Image / Header / Back Extra
-  //   5. 笔记服务.添加笔记 提交
-  //   6. pop 返回牌组详情（与既有 Basic / Cloze 流程一致）
+  //   3. 图片遮罩服务.添加图片遮罩笔记 一键落库（image_path + occlusions + header + back_extra + tags + notetype_id）
+  //   4. pop 返回牌组详情（与既有 Basic / Cloze 流程一致）
   //
   // @输入
   // 无（读 图片遮盖_源图Uri / 图片遮盖_遮罩列表 / 图片遮盖_标题 / 图片遮盖_额外 / 已选笔记类型ID / 牌组ID）
@@ -725,11 +732,14 @@ export struct 添加笔记页 {
   //
   // @业务规则
   // 防重入：处理中 / 牌组ID=0 / 已选笔记类型ID=0 时直接返回（与 提交 同守卫）。
-  // 字段值数组按 字段名列表 长度初始化为空串，再按 4 个索引填值。
+  // 走 AddImageOcclusionNote 专用 RPC 而非通用「新建笔记 + 添加笔记」路径——
+  //   后端内部自动按 ImageOcclusion 字段索引填值，前端无需先取字段索引、再手动填字段。
   // 文件名基于时间戳生成，扩展名 .img（后端会按 collection.media 已存在文件去重返回最终名）。
+  // 牌组ID 由后端按当前选中牌组写入（AddImageOcclusionNote 不接受 deckId 参数，
+  //   使用 collection 的 current deck；用户在牌组详情页点「加卡」进入时 current deck 已切到该牌组）。
   //
   // @副作用
-  // 调后端 添加媒体文件 / 获取图片遮罩字段 / 新建笔记 / 添加笔记；读写 处理中 状态；成功后 pop 页面栈。
+  // 调后端 添加媒体文件 / 添加图片遮罩笔记；读写 处理中 状态；成功后 pop 页面栈。
   // ========================================================
   private async 图片遮盖_提交(): Promise<void> {
     if (this.处理中 || this.牌组ID === 0 || this.已选笔记类型ID === 0) {
@@ -751,46 +761,22 @@ export struct 添加笔记页 {
       const 字节: Uint8Array = this.读取图片字节(this.图片遮盖_源图Uri);
       const 期望文件名: string = `image-occlusion-${Date.now()}.img`;
       const 最终文件名: string = await this.媒体服务实例.添加媒体文件(期望文件名, 字节);
-      // 3. 取 ImageOcclusion 字段索引
-      const 索引: 图片遮罩字段索引 =
-        await this.图片遮罩服务实例.获取图片遮罩字段(this.已选笔记类型ID);
-      // 4. 创建笔记对象，按索引填字段
-      const 笔记: EditableNote = await this.笔记服务实例.新建笔记(this.已选笔记类型ID);
-      const 字段数: number = this.字段名列表.length;
-      const 字段值: string[] = new Array<string>(字段数).fill('');
-      if (索引.遮罩 < 字段数) {
-        字段值[索引.遮罩] = 生成Occlusions字符串(this.图片遮盖_遮罩列表);
-      }
-      if (索引.图片 < 字段数) {
-        字段值[索引.图片] = `<img src="${最终文件名}">`;
-      }
-      if (索引.标题 < 字段数) {
-        字段值[索引.标题] = this.图片遮盖_标题;
-      }
-      if (索引.额外 < 字段数) {
-        字段值[索引.额外] = this.图片遮盖_额外;
-      }
-      笔记.fields = 字段值;
-      笔记.tags = this.解析标签();
-      // 5. 提交
-      await this.笔记服务实例.添加笔记(笔记, this.牌组ID);
+      // 3. 调添加图片遮罩笔记 RPC 落库（后端内部按 ImageOcclusion 字段索引自动填值）
+      await this.图片遮罩服务实例.添加图片遮罩笔记({
+        imagePath: 最终文件名,
+        occlusions: 生成Occlusions字符串(this.图片遮盖_遮罩列表),
+        header: this.图片遮盖_标题,
+        backExtra: this.图片遮盖_额外,
+        tags: this.解析标签(),
+        notetypeId: this.已选笔记类型ID
+      });
       // 笔记添加成功：写 AppStorage 标志位通知首页/牌组详情面板立即刷新统计计数。
       // 不依赖 NavPathStack.onPop 回调（不同设备/API 版本偶发不触发），用 @StorageLink + @Watch 兜底。
       AppStorage.setOrCreate<number>('noteAddedTick', Date.now());
-      // 6. pop 返回牌组详情
+      // 4. pop 返回牌组详情
       this.pathStack.pop();
     } catch (错误) {
-      if (错误 instanceof 笔记字段校验错误) {
-        if (错误.messageKey === 'add_note_empty_error') {
-          this.错误信息 = this.取本地化文案($r('app.string.add_note_empty_error'));
-        } else if (错误.messageKey === 'add_note_duplicate_error') {
-          this.错误信息 = this.取本地化文案($r('app.string.add_note_duplicate_error'));
-        } else {
-          this.错误信息 = this.取本地化文案($r('app.string.add_note_cloze_missing'));
-        }
-      } else {
-        this.错误信息 = 错误 instanceof Error ? 错误.message : `${错误}`;
-      }
+      this.错误信息 = 错误 instanceof Error ? 错误.message : `${错误}`;
     } finally {
       this.处理中 = false;
     }

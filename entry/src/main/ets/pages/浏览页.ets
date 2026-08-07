@@ -44,6 +44,8 @@ import { 卡片服务 } from '../backend/卡片服务';
 import { 牌组服务 } from '../backend/牌组服务';
 import { 调度器服务 } from '../backend/调度器服务';
 import { 统计服务 } from '../backend/统计服务';
+import { 标签服务 } from '../backend/标签服务';
+import { 配置服务 } from '../backend/配置服务';
 import type {
   BrowserColumn,
   BrowserRow,
@@ -59,6 +61,8 @@ import type { EditableNote } from '../proto/messages/NoteMessages';
 import type { Card } from '../proto/messages/CardsMessages';
 import type { CardStatsView } from '../proto/messages/StatsMessages';
 import type { DeckTreeNode } from '../proto/messages/DeckMessages';
+import type { TagTreeNode } from '../proto/messages/TagsMessages';
+import { ConfigKeyBool } from '../proto/messages/ConfigMessages';
 import { BURY_SUSPEND_MODE_SUSPEND } from '../proto/messages/SchedulerMessages';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { CustomTransition } from '../utils/自定义转场';
@@ -68,8 +72,12 @@ import { 搜索框 } from '../components/browser/搜索框';
 import { 卡片表格, 浏览行数据 } from '../components/browser/卡片表格';
 import { 浏览编辑区 } from '../components/browser/浏览编辑区';
 import { 批量操作栏 } from '../components/browser/批量操作栏';
+import { 字段帮助面板 } from '../components/字段帮助面板';
+import { 按下态按钮 } from '../components/common/按下态按钮';
 import { 卡片信息 } from '../components/browser/卡片信息';
 import { 查找替换对话框 } from '../components/browser/查找替换对话框';
+import { 浏览侧边栏, 已保存搜索项 } from '../components/browser/浏览侧边栏';
+import { 卡片预览页 } from '../components/browser/卡片预览页';
 import { 颜色键 } from '../model/颜色主题';
 import { 加载主题模式 } from '../model/主题存储';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
@@ -105,6 +113,8 @@ export struct 浏览页 {
   private readonly 牌组服务实例: 牌组服务 = new 牌组服务();
   private readonly 调度器服务实例: 调度器服务 = new 调度器服务();
   private readonly 统计服务实例: 统计服务 = new 统计服务();
+  private readonly 标签服务实例: 标签服务 = new 标签服务();
+  private readonly 配置服务实例: 配置服务 = new 配置服务();
 
   @State private 阶段: 浏览阶段 = 'loading';
   @State private 错误详情: string = '';
@@ -113,10 +123,13 @@ export struct 浏览页 {
   @State private 结果ID列表: number[] = [];
   @State private 行列表: 浏览行数据[] = [];
   @State private 列定义: BrowserColumn[] = [];
-  /** 顶部牌组选择器当前索引（0=全部牌组，1+=扁平化牌组列表对应项）。 */
-  @State private 当前牌组索引: number = 0;
   /** NavDestination 透明度（由 customNavContentTransition 回调控制，实现淡入淡出转场）。 */
   @State private 转场透明度: number = 1;
+
+  // 字段帮助浮层（与设置面板同模式：子组件上抛 → 父组件根 Stack 统一渲染）
+  @State private 显示说明浮层: boolean = false;
+  @State private 说明标题: Resource = $r('app.string.browser_help_sidebar_title');
+  @State private 说明正文: Resource = $r('app.string.browser_help_sidebar_body');
 
   // T7 浏览编辑区状态：行点击后懒加载笔记 + 字段名，弹层内编辑字段/标签，保存调 更新笔记
   @State private 显示编辑区: boolean = false;
@@ -152,11 +165,36 @@ export struct 浏览页 {
   @State private 查找替换忙碌: boolean = false;
   @State private 查找替换错误: string = '';
 
+  // T6 侧边栏状态：顶部条按钮触发抽屉，含牌组/标签/已保存搜索三区
+  // 牌组树复用 this.牌组树（T8 改牌组弹层已加载）；标签树 + 已保存搜索 + 分区折叠状态独立加载
+  @State private 显示侧边栏: boolean = false;
+  @State private 侧边栏忙碌: boolean = false;
+  @State private 侧边栏错误: string = '';
+  @State private 标签树: TagTreeNode | null = null;
+  @State private 已保存搜索列表: 已保存搜索项[] = [];
+  @State private 侧边栏牌组折叠: boolean = false;
+  @State private 侧边栏标签折叠: boolean = false;
+  @State private 侧边栏已保存搜索折叠: boolean = false;
+
+  // T6 标签管理状态：侧边栏长按标签 → 弹操作菜单 → 重命名/删除/补全
+  @State private 显示标签重命名: boolean = false;
+  @State private 标签重命名忙碌: boolean = false;
+  @State private 标签重命名错误: string = '';
+  @State private 重命名原标签名: string = '';
+  @State private 重命名新标签名: string = '';
+  @State private 标签操作忙碌: boolean = false;
+
+  // T5 卡片预览状态：Cards 模式下点击行 → 弹全屏预览；底部「编辑字段」→ 关闭预览并打开 浏览编辑区
+  @State private 显示预览: boolean = false;
+  @State private 预览初始索引: number = 0;
+  @State private 预览媒体目录: string = '';
+
   // 主题模式：编辑区 isDark 判断用（与 学习页/添加笔记页 同语义）
   @State private 主题模式值: 主题模式 = 'system';
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
 
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景色: string = '#2F5FD0';
+  @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
 
   async aboutToAppear(): Promise<void> {
@@ -184,12 +222,13 @@ export struct 浏览页 {
     });
   }
 
-  /** 加载牌组树供顶部选择器 + T8 改牌组弹层共用。 */
+  /** 加载牌组树供顶部选择器 + T8 改牌组弹层共用。失败抛出由调用方处理。 */
   private async 加载牌组树(): Promise<void> {
     try {
       this.牌组树 = await this.牌组服务实例.获取牌组树();
     } catch (错误) {
       console.info(`BrowserPage: 加载牌组树失败 错误=${错误}`);
+      throw new Error(`${错误}`);
     }
   }
 
@@ -213,6 +252,27 @@ export struct 浏览页 {
 
   aboutToDisappear(): void {
     CustomTransition.getInstance().注销NavParam('BrowserPage');
+  }
+
+  /**
+   * 系统返回键 / 屏幕边缘滑动返回：弹窗优先消费，否则走 NavPathStack 默认 pop 回首页。
+   * Invariants: 按层级逆序消费——先二次确认类（删除/挂起可能丢数据）→ 对话框 → 抽屉 →
+   * 全屏预览 → 行内弹层 → 浮层；任一命中即关对应弹窗并 return true；都不命中 return false。
+   * Extension Points: 新增弹窗时在此链中按层级插入对应 @State 判断。
+   */
+  onBackPress(): boolean {
+    if (this.显示删除确认) { this.显示删除确认 = false; return true; }
+    if (this.显示挂起确认) { this.显示挂起确认 = false; return true; }
+    if (this.显示标签重命名) { this.显示标签重命名 = false; return true; }
+    if (this.显示查找替换) { this.显示查找替换 = false; return true; }
+    if (this.显示侧边栏) { this.显示侧边栏 = false; return true; }
+    if (this.显示预览) { this.显示预览 = false; return true; }
+    if (this.显示改牌组弹层) { this.显示改牌组弹层 = false; return true; }
+    if (this.显示标志弹层) { this.显示标志弹层 = false; return true; }
+    if (this.显示编辑区) { this.显示编辑区 = false; return true; }
+    if (this.显示卡片信息) { this.显示卡片信息 = false; return true; }
+    if (this.显示说明浮层) { this.显示说明浮层 = false; return true; }
+    return false;
   }
 
   private 取能力上下文(): common.UIAbilityContext | null {
@@ -413,6 +473,68 @@ export struct 浏览页 {
   }
 
   // ========================================================
+  // @名称 T5 行点击路由
+  //
+  // @作用
+  // 行点击分发：Cards 模式 → 弹全屏预览（T5）；Notes 模式 → 直接打开 浏览编辑区（T7）。
+  // Cards 模式下，预览页底部「编辑字段」按钮再经 打开编辑区For 进入编辑区。
+  //
+  // @输入
+  // 行ID: 当前行 ID（cards 模式=cardId，notes 模式=noteId）
+  //
+  // @输出
+  // 无（按模式触发 预览弹层 或 编辑区弹层）
+  //
+  // @业务规则
+  // - Cards 模式单击行不直接进编辑区，先弹预览让用户看正反面
+  // - Notes 模式无卡片预览概念，维持原行为直接进编辑区
+  // ========================================================
+  private 行点击处理(行ID: number): void {
+    if (this.浏览模式值 === 'cards') {
+      this.打开预览(行ID);
+    } else {
+      this.行点击(行ID);
+    }
+  }
+
+  // ========================================================
+  // @名称 T5 打开预览
+  //
+  // @作用
+  // 在 结果ID列表 中定位行ID索引，设置预览初始索引和媒体目录，弹全屏预览。
+  //
+  // @输入
+  // 行ID: cardId（待预览的卡片 ID）
+  //
+  // @输出
+  // 设 预览初始索引 / 预览媒体目录 / 显示预览=true
+  //
+  // @业务规则
+  // - 索引未命中（行ID 不在 结果ID列表）时静默返回（不应发生，兜底）
+  // - 媒体目录从 abilityContext.filesDir 拼接（与 学习页 同语义）
+  // ========================================================
+  private 打开预览(行ID: number): void {
+    const 索引: number = this.结果ID列表.indexOf(行ID);
+    if (索引 < 0) {
+      console.info(`BrowserPage: 打开预览失败 行ID=${行ID} 不在结果列表`);
+      return;
+    }
+    const 上下文: common.UIAbilityContext | null = this.取能力上下文();
+    if (上下文 === null) {
+      return;
+    }
+    this.预览初始索引 = 索引;
+    this.预览媒体目录 = `${上下文.filesDir}/collection.media`;
+    this.显示预览 = true;
+  }
+
+  /** T5 预览页「编辑字段」回调：关闭预览，复用 行点击 进编辑区（Cards 模式下 行ID 即 cardId）。 */
+  private 打开编辑区For(卡片ID: number): void {
+    this.显示预览 = false;
+    this.行点击(卡片ID);
+  }
+
+  // ========================================================
   // @块ID UI-PAGE-BROWSER-004
   // @名称 保存编辑
   //
@@ -510,45 +632,6 @@ export struct 浏览页 {
       this.扁平化牌组树(this.牌组树, '', 输出);
     }
     return 输出;
-  }
-
-  /** 顶部牌组选择器选项：第 0 项="全部牌组"，后续=扁平化牌组列表。 */
-  private 牌组选项(): SelectOption[] {
-    const 选项: SelectOption[] = [{ value: this.取本地化文案($r('app.string.browser_deck_all')) }];
-    const 列表: 牌组项[] = this.扁平化牌组树为列表();
-    for (const 项 of 列表) {
-      选项.push({ value: 项.名 });
-    }
-    return 选项;
-  }
-
-  /** 顶部牌组选择器当前显示名（Select.value 必须传 string 不能传 Resource）。 */
-  private 取当前牌组显示名(): string {
-    if (this.当前牌组索引 === 0) {
-      return this.取本地化文案($r('app.string.browser_deck_all'));
-    }
-    const 列表: 牌组项[] = this.扁平化牌组树为列表();
-    const 项: 牌组项 | undefined = 列表[this.当前牌组索引 - 1];
-    return 项 !== undefined ? 项.名 : this.取本地化文案($r('app.string.browser_deck_all'));
-  }
-
-  /**
-   * 顶部牌组选择器 onSelect：选牌组后注入 deck:"牌组名" 到搜索文本触发搜索。
-   * 与 Anki 桌面端侧边栏点牌组同语义（替换搜索框为 deck:xxx）。
-   * 牌组名含 :: 需加引号；选"全部"清空搜索文本。
-   */
-  private 选牌组(索引: number): void {
-    this.当前牌组索引 = 索引;
-    if (索引 === 0) {
-      this.搜索文本 = '';
-    } else {
-      const 列表: 牌组项[] = this.扁平化牌组树为列表();
-      const 项: 牌组项 | undefined = 列表[索引 - 1];
-      if (项 !== undefined) {
-        this.搜索文本 = `deck:"${项.名}"`;
-      }
-    }
-    this.执行搜索();
   }
 
   /** 标志文案：0=无/1=红/2=橙/3=绿/4=蓝。 */
@@ -657,6 +740,26 @@ export struct 浏览页 {
     } catch (错误) {
       this.批量错误 = this.取本地化文案($r('app.string.browser_action_suspend_error'));
       console.info(`BrowserPage: 批量挂起失败 错误=${错误}`);
+    } finally {
+      this.批量忙碌 = false;
+    }
+  }
+
+  /** 执行批量恢复：调 恢复埋藏与暂停的卡片(选中ID)。仅 cards 模式。恢复后重新搜索以反映最新状态。 */
+  private async 执行批量恢复(): Promise<void> {
+    this.批量忙碌 = true;
+    this.批量错误 = '';
+    try {
+      const 卡片IDs: number[] = await this.解析选中为卡片ID();
+      if (卡片IDs.length === 0) {
+        return;
+      }
+      await this.调度器服务实例.恢复埋藏与暂停的卡片(卡片IDs);
+      this.退出多选();
+      await this.执行搜索();
+    } catch (错误) {
+      this.批量错误 = this.取本地化文案($r('app.string.browser_action_restore_error'));
+      console.info(`BrowserPage: 批量恢复失败 错误=${错误}`);
     } finally {
       this.批量忙碌 = false;
     }
@@ -826,6 +929,293 @@ export struct 浏览页 {
     return Array.from(noteIdSet);
   }
 
+  // ========================================================
+  // @名称 T6 侧边栏
+  //
+  // @作用
+  // 顶部条按钮触发抽屉式侧边栏，含牌组/标签/已保存搜索三区。
+  // 点击节点替换搜索文本（deck:"xxx" / tag:"xxx" / 已保存搜索串）；
+  // 长按节点追加 AND 条件到搜索文本。
+  // 分区折叠状态持久化到 Anki 配置表（COLLAPSE_DECKS/TAGS/SAVED_SEARCHES）。
+  //
+  // @业务规则
+  // - 牌组树复用 this.牌组树（T8 已加载），首次打开侧边栏时若为 null 再加载一次
+  // - 标签树 + 已保存搜索 + 折叠状态在打开侧边栏时一次性加载（失败不阻塞，分区显示空提示）
+  // - 已保存搜索 JSON 格式：[{ name, search }, ...]，空串或非数组视为无已保存搜索
+  //
+  // @副作用
+  // 调后端 标签服务.标签树 / 配置服务.获取配置JSON / 获取配置布尔 / 设置配置布尔；
+  // 读 Anki collection 配置表，折叠状态变更会写配置表。
+  // ========================================================
+
+  /** 打开侧边栏：并行加载牌组树（若 null）+ 标签树 + 已保存搜索 + 分区折叠状态。失败收集到错误条。 */
+  private async 打开侧边栏(): Promise<void> {
+    this.显示侧边栏 = true;
+    this.侧边栏忙碌 = true;
+    this.侧边栏错误 = '';
+    const 错误列表: string[] = [];
+    // 并行加载；已保存搜索 + 折叠状态失败时容错（key 不存在是正常的），不加入错误列表
+    const 牌组任务: Promise<void> = this.牌组树 === null
+      ? this.加载牌组树().catch((e: ESObject): void => {
+        错误列表.push(`牌组(${this.取错误摘要(e)})`);
+      })
+      : Promise.resolve();
+    const 标签任务: Promise<void> = this.加载标签树().catch((e: ESObject): void => {
+      错误列表.push(`标签(${this.取错误摘要(e)})`);
+    });
+    const 搜索任务: Promise<void> = this.加载已保存搜索();
+    const 折叠任务: Promise<void> = this.加载侧边栏折叠状态();
+    await Promise.all([牌组任务, 标签任务, 搜索任务, 折叠任务]);
+    if (错误列表.length > 0) {
+      this.侧边栏错误 = `${this.取本地化文案($r('app.string.browser_sidebar_load_error'))}：${错误列表.join('、')}`;
+    }
+    this.侧边栏忙碌 = false;
+  }
+
+  /** 从后端错误或通用 Error 中提取简短摘要，用于错误条显示。 */
+  private 取错误摘要(错误: ESObject): string {
+    try {
+      const msg: string = 错误?.message ?? `${错误}`;
+      // 后端错误 message 可能很长，截取前 40 字符
+      return msg.length > 40 ? msg.substring(0, 40) + '…' : msg;
+    } catch {
+      return '未知';
+    }
+  }
+
+  /** 加载标签树（失败置 null 并抛出，由 打开侧边栏 收集到错误条）。 */
+  private async 加载标签树(): Promise<void> {
+    try {
+      this.标签树 = await this.标签服务实例.标签树();
+    } catch (错误) {
+      console.info(`BrowserPage: 加载标签树失败 错误=${错误}`);
+      this.标签树 = null;
+      throw new Error(`${错误}`);
+    }
+  }
+
+  /** 加载已保存搜索（Anki 桌面端存在 config 表 savedSearches key 下，JSON 数组）。
+   *  key 不存在时后端返回错误，视为无已保存搜索（容错不抛出）。 */
+  private async 加载已保存搜索(): Promise<void> {
+    try {
+      const json: string = await this.配置服务实例.获取配置JSON('savedSearches');
+      if (json === '' || json === 'null') {
+        this.已保存搜索列表 = [];
+        return;
+      }
+      const 解析结果: object = JSON.parse(json);
+      if (!Array.isArray(解析结果)) {
+        this.已保存搜索列表 = [];
+        return;
+      }
+      // 仅保留 name + search 字段（防御性，忽略其他字段）
+      const 列表: 已保存搜索项[] = [];
+      for (let i: number = 0; i < 解析结果.length; i++) {
+        const 项: 已保存搜索项 = 解析结果[i] as 已保存搜索项;
+        const name: string = 项.name;
+        const search: string = 项.search;
+        if (name !== '' && search !== '') {
+          列表.push({ name, search });
+        }
+      }
+      this.已保存搜索列表 = 列表;
+    } catch (错误) {
+      // savedSearches key 不存在时后端返回错误，视为无已保存搜索（容错不抛出）
+      console.info(`BrowserPage: 加载已保存搜索失败（可能 key 不存在）错误=${错误}`);
+      this.已保存搜索列表 = [];
+    }
+  }
+
+  /** 加载三区折叠状态（COLLAPSE_DECKS/TAGS/SAVED_SEARCHES）。失败保持默认 false。 */
+  private async 加载侧边栏折叠状态(): Promise<void> {
+    try {
+      // ArkTS 禁止解构声明，改用数组索引访问
+      const 折叠状态: boolean[] = await Promise.all([
+        this.配置服务实例.获取配置布尔(ConfigKeyBool.COLLAPSE_DECKS),
+        this.配置服务实例.获取配置布尔(ConfigKeyBool.COLLAPSE_TAGS),
+        this.配置服务实例.获取配置布尔(ConfigKeyBool.COLLAPSE_SAVED_SEARCHES)
+      ]);
+      this.侧边栏牌组折叠 = 折叠状态[0];
+      this.侧边栏标签折叠 = 折叠状态[1];
+      this.侧边栏已保存搜索折叠 = 折叠状态[2];
+    } catch (错误) {
+      console.info(`BrowserPage: 加载侧边栏折叠状态失败 错误=${错误}`);
+    }
+  }
+
+  /** 切换分区折叠状态并持久化（undoable=false 不进撤销栈，与 Anki 桌面端一致）。 */
+  private async 切换侧边栏折叠(分区: 'decks' | 'tags' | 'saved_searches'): Promise<void> {
+    let key: ConfigKeyBool;
+    let 新值: boolean;
+    if (分区 === 'decks') {
+      key = ConfigKeyBool.COLLAPSE_DECKS;
+      新值 = !this.侧边栏牌组折叠;
+      this.侧边栏牌组折叠 = 新值;
+    } else if (分区 === 'tags') {
+      key = ConfigKeyBool.COLLAPSE_TAGS;
+      新值 = !this.侧边栏标签折叠;
+      this.侧边栏标签折叠 = 新值;
+    } else {
+      key = ConfigKeyBool.COLLAPSE_SAVED_SEARCHES;
+      新值 = !this.侧边栏已保存搜索折叠;
+      this.侧边栏已保存搜索折叠 = 新值;
+    }
+    try {
+      await this.配置服务实例.设置配置布尔({ key, value: 新值, undoable: false });
+    } catch (错误) {
+      console.info(`BrowserPage: 持久化折叠状态失败 分区=${分区} 错误=${错误}`);
+    }
+  }
+
+  /** 侧边栏点牌组 → 替换搜索为 deck:"xxx"。 */
+  private 选牌组节点(牌组名: string): void {
+    this.搜索文本 = `deck:"${牌组名}"`;
+    this.显示侧边栏 = false;
+    this.执行搜索();
+  }
+
+  /** 侧边栏点标签 → 替换搜索为 tag:"xxx"。 */
+  private 选标签节点(标签名: string): void {
+    this.搜索文本 = `tag:"${标签名}"`;
+    this.显示侧边栏 = false;
+    this.执行搜索();
+  }
+
+  /** 侧边栏点已保存搜索 → 替换搜索文本为已保存的搜索串。 */
+  private 选已保存搜索(搜索串: string): void {
+    this.搜索文本 = 搜索串;
+    this.显示侧边栏 = false;
+    this.执行搜索();
+  }
+
+  /** 侧边栏长按牌组 → 追加 AND deck:"xxx" 到搜索文本。 */
+  private 追加牌组条件(牌组名: string): void {
+    const 条件: string = `deck:"${牌组名}"`;
+    this.搜索文本 = this.搜索文本 === '' ? 条件 : `${this.搜索文本} ${条件}`;
+    this.显示侧边栏 = false;
+    this.执行搜索();
+  }
+
+  /** 侧边栏长按标签 → 追加 AND tag:"xxx" 到搜索文本。 */
+  private 追加标签条件(标签名: string): void {
+    const 条件: string = `tag:"${标签名}"`;
+    this.搜索文本 = this.搜索文本 === '' ? 条件 : `${this.搜索文本} ${条件}`;
+    this.显示侧边栏 = false;
+    this.执行搜索();
+  }
+
+  // ========================================================
+  // @名称 T6 标签管理
+  //
+  // @作用
+  // 侧边栏长按标签弹操作菜单（追加搜索/重命名/删除/补全），
+  // 重命名弹自定义对话框收集新名，删除弹 AlertDialog 二次确认，
+  // 补全直接调用后端。操作后刷新标签树。
+  //
+  // @业务规则
+  // - 重命名：currentPrefix=原标签名，newPrefix=用户输入
+  // - 删除：按前缀删除标签及子标签，返回受影响笔记数
+  // - 补全：input=标签名，matchLimit=20，返回匹配列表（当前仅 toast 结果）
+  // - 操作成功后刷新标签树，失败在标签重命名错误条或 toast 显示
+  //
+  // @副作用
+  // 调后端 标签服务.重命名标签 / 移除标签 / 补全标签；修改 Anki collection。
+  // ========================================================
+
+  /** 标签菜单「重命名」→ 打开重命名对话框。 */
+  private 请求重命名标签(标签名: string): void {
+    this.重命名原标签名 = 标签名;
+    this.重命名新标签名 = 标签名;
+    this.标签重命名错误 = '';
+    this.标签重命名忙碌 = false;
+    this.显示标签重命名 = true;
+  }
+
+  /** 执行重命名标签：调后端 RenameTags，成功后刷新标签树。 */
+  private async 执行重命名标签(): Promise<void> {
+    if (this.重命名新标签名 === '' || this.重命名新标签名 === this.重命名原标签名) {
+      this.标签重命名错误 = this.取本地化文案($r('app.string.browser_tag_rename_empty'));
+      return;
+    }
+    this.标签重命名忙碌 = true;
+    this.标签重命名错误 = '';
+    try {
+      const count: number = await this.标签服务实例.重命名标签({
+        currentPrefix: this.重命名原标签名,
+        newPrefix: this.重命名新标签名
+      });
+      this.显示标签重命名 = false;
+      this.显示侧边栏 = false;
+      this.getUIContext().getPromptAction().showToast({
+        message: this.取本地化文案($r('app.string.browser_tag_rename_success')).replace('%d', String(count))
+      });
+      // 刷新标签树（侧边栏下次打开时获取最新数据）
+      this.标签树 = null;
+    } catch (错误) {
+      console.info(`BrowserPage: 重命名标签失败 错误=${错误}`);
+      this.标签重命名错误 = this.取本地化文案($r('app.string.browser_tag_rename_error'));
+    }
+    this.标签重命名忙碌 = false;
+  }
+
+  /** 标签菜单「删除」→ 弹 AlertDialog 二次确认。 */
+  private 请求删除标签(标签名: string): void {
+    const message: string = this.取本地化文案($r('app.string.browser_tag_delete_confirm'))
+      .replace('%s', 标签名);
+    this.getUIContext().showAlertDialog({
+      title: this.取本地化文案($r('app.string.browser_tag_delete')),
+      message: message,
+      autoCancel: true,
+      alignment: DialogAlignment.Center,
+      primaryButton: {
+        value: $r('app.string.cancel'),
+        action: (): void => {}
+      },
+      secondaryButton: {
+        value: $r('app.string.browser_tag_delete'),
+        fontColor: $r('app.color.error_text'),
+        action: (): void => { this.执行删除标签(标签名); }
+      }
+    });
+  }
+
+  /** 执行删除标签：调后端 RemoveTags，成功后刷新标签树。 */
+  private async 执行删除标签(标签名: string): Promise<void> {
+    this.标签操作忙碌 = true;
+    try {
+      const count: number = await this.标签服务实例.移除标签(标签名);
+      this.显示侧边栏 = false;
+      this.getUIContext().getPromptAction().showToast({
+        message: this.取本地化文案($r('app.string.browser_tag_delete_success')).replace('%d', String(count))
+      });
+      this.标签树 = null;
+    } catch (错误) {
+      console.info(`BrowserPage: 删除标签失败 错误=${错误}`);
+      this.getUIContext().getPromptAction().showToast({
+        message: this.取本地化文案($r('app.string.browser_tag_delete_error'))
+      });
+    }
+    this.标签操作忙碌 = false;
+  }
+
+  /** 标签菜单「补全」→ 调后端 CompleteTag，toast 显示匹配结果。 */
+  private async 执行补全标签(标签名: string): Promise<void> {
+    this.标签操作忙碌 = true;
+    try {
+      const 响应 = await this.标签服务实例.补全标签({ input: 标签名, matchLimit: 20 });
+      const count: number = 响应.tags.length;
+      this.getUIContext().getPromptAction().showToast({
+        message: this.取本地化文案($r('app.string.browser_tag_complete_success')).replace('%d', String(count))
+      });
+    } catch (错误) {
+      console.info(`BrowserPage: 补全标签失败 错误=${错误}`);
+      this.getUIContext().getPromptAction().showToast({
+        message: this.取本地化文案($r('app.string.browser_tag_complete_error'))
+      });
+    }
+    this.标签操作忙碌 = false;
+  }
+
   /** 返回主页。 */
   private 返回(): void {
     this.pathStack.pop();
@@ -833,43 +1223,54 @@ export struct 浏览页 {
 
   @Builder
   private 顶部条() {
-    // 操作层：返回按钮(左) + 查找替换按钮 + 牌组选择器(右)
+    // 与主页顶部工具栏同款布局：左 返回+筛选，右 查找替换，胶囊按钮 + 淡色边框
+    // 帮助说明不在顶部条挂 ⓘ：筛选无 ⓘ；查找替换的 ⓘ 收纳进弹窗内部
     Row() {
-      Button($r('app.string.study_back'))
-        .height(应用尺寸.按钮高度)
-        .padding({ left: 应用尺寸.间距_12, right: 应用尺寸.间距_12 })
-        .fontSize(应用尺寸.字号_按钮)
-        .fontColor($r('app.color.text_primary'))
-        .backgroundColor($r('app.color.surface_card'))
-        .onClick((): void => this.返回())
+      按下态按钮({
+        文案: $r('app.string.study_back'),
+        选中态背景: this.主色容器色,
+        字色: $r('app.color.text_primary'),
+        点击回调: (): void => this.返回()
+      })
 
-      // T9 查找替换入口：点击弹出对话框，支持仅选中笔记或全部笔记两种范围
-      Button($r('app.string.browser_action_find_replace'))
-        .height(应用尺寸.按钮高度)
-        .padding({ left: 应用尺寸.间距_12, right: 应用尺寸.间距_12 })
-        .fontSize(应用尺寸.字号_按钮)
-        .fontColor($r('app.color.text_primary'))
-        .backgroundColor($r('app.color.surface_card'))
-        .enabled(this.阶段 === 'list')
-        .onClick((): void => {
-          this.查找替换错误 = '';
-          this.显示查找替换 = true;
-        })
+      按下态按钮({
+        文案: $r('app.string.browser_action_sidebar'),
+        选中态背景: this.主色容器色,
+        字色: $r('app.color.text_primary'),
+        点击回调: (): void => {
+          if (this.阶段 !== 'list') {
+            return;
+          }
+          this.侧边栏错误 = '';
+          this.打开侧边栏();
+        }
+      })
 
       Blank()
 
-      // 牌组选择器（同外观分组极光蓝 Select 形态，controlSize SMALL）
-      Select(this.牌组选项())
-        .selected(this.当前牌组索引)
-        .value(this.取当前牌组显示名())
-        .controlSize(ControlSize.SMALL)
-        .onSelect((索引: number): void => {
-          this.选牌组(索引);
-        })
+      // T9 查找替换入口：点击弹出对话框，帮助说明在弹窗标题旁的 ⓘ 内
+      按下态按钮({
+        文案: $r('app.string.browser_action_find_replace'),
+        选中态背景: this.主色容器色,
+        字色: $r('app.color.text_primary'),
+        点击回调: (): void => {
+          if (this.阶段 !== 'list') {
+            return;
+          }
+          this.查找替换错误 = '';
+          this.显示查找替换 = true;
+        }
+      })
     }
     .width('100%')
-    .height(56)
-    .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8 })
+    .height(应用尺寸.工具栏高度)
+    .padding({
+      left: 应用尺寸.页面内边距_水平,
+      right: 应用尺寸.页面内边距_水平,
+      top: 应用尺寸.间距_8,
+      bottom: 应用尺寸.间距_8
+    })
+    .backgroundColor(this.页面底色微染值)
     .alignItems(VerticalAlign.Center)
   }
 
@@ -907,7 +1308,7 @@ export struct 浏览页 {
               行列表: this.行列表,
               结果总数: this.结果ID列表.length,
               已加载行数: this.行列表.length,
-              onRowClick: (行ID: number): void => { this.行点击(行ID); },
+              onRowClick: (行ID: number): void => { this.行点击处理(行ID); },
               onLongPress: (): void => {},
               onLoadMore: (): void => { this.加载更多(); },
               onInfoClick: (行ID: number): void => { this.打开卡片信息(行ID); },
@@ -932,9 +1333,18 @@ export struct 浏览页 {
                 this.批量错误 = '';
                 this.显示挂起确认 = true;
               },
+              on恢复: (): void => {
+                this.批量错误 = '';
+                this.执行批量恢复();
+              },
               on删除: (): void => {
                 this.批量错误 = '';
                 this.显示删除确认 = true;
+              },
+              onHelp: (): void => {
+                this.说明标题 = $r('app.string.browser_help_batch_title');
+                this.说明正文 = $r('app.string.browser_help_batch_body');
+                this.显示说明浮层 = true;
               }
             })
           }
@@ -953,6 +1363,22 @@ export struct 浏览页 {
         .width('100%')
         .height('100%')
         .backgroundColor(this.页面底色微染值)
+
+        // T5 卡片预览弹层：Cards 模式下点击行 → 全屏预览正反面；底部「编辑字段」→ 打开编辑区
+        if (this.显示预览) {
+          卡片预览页({
+            isDark: this.是否深色(),
+            卡片ID列表: this.结果ID列表,
+            初始索引: this.预览初始索引,
+            媒体目录: this.预览媒体目录,
+            onClose: (): void => {
+              this.显示预览 = false;
+            },
+            onEditField: (卡片ID: number): void => {
+              this.打开编辑区For(卡片ID);
+            }
+          })
+        }
 
         // T7 浏览编辑区弹层：Stack + if 控制挂载/卸载（与 添加笔记页.ets 的 字段帮助面板/图片遮罩编辑器 同机制）
         if (this.显示编辑区) {
@@ -1007,8 +1433,138 @@ export struct 浏览页 {
               仅选中: boolean
             ): Promise<boolean> => {
               return this.执行查找替换(查找, 替换, 字段名, 正则, 区分大小写, 仅选中);
+            },
+            onHelp: (): void => {
+              this.说明标题 = $r('app.string.browser_help_find_replace_title');
+              this.说明正文 = $r('app.string.browser_help_find_replace_body');
+              this.显示说明浮层 = true;
+            },
+            onRegexHelp: (): void => {
+              this.说明标题 = $r('app.string.browser_find_regex');
+              this.说明正文 = $r('app.string.browser_find_regex_help');
+              this.显示说明浮层 = true;
             }
           })
+        }
+
+        // T6 侧边栏抽屉：顶部条按钮触发，含牌组/标签/已保存搜索三区
+        if (this.显示侧边栏) {
+          浏览侧边栏({
+            isDark: this.是否深色(),
+            busy: this.侧边栏忙碌,
+            errorMessage: this.侧边栏错误,
+            牌组树: this.牌组树,
+            标签树: this.标签树,
+            已保存搜索列表: this.已保存搜索列表,
+            牌组折叠: this.侧边栏牌组折叠,
+            标签折叠: this.侧边栏标签折叠,
+            已保存搜索折叠: this.侧边栏已保存搜索折叠,
+            onClose: (): void => {
+              this.显示侧边栏 = false;
+            },
+            onSelectDeck: (牌组名: string): void => { this.选牌组节点(牌组名); },
+            onSelectTag: (标签名: string): void => { this.选标签节点(标签名); },
+            onSelectSavedSearch: (搜索串: string): void => { this.选已保存搜索(搜索串); },
+            onAppendDeck: (牌组名: string): void => { this.追加牌组条件(牌组名); },
+            onAppendTag: (标签名: string): void => { this.追加标签条件(标签名); },
+            onRenameTag: (标签名: string): void => { this.请求重命名标签(标签名); },
+            onDeleteTag: (标签名: string): void => { this.请求删除标签(标签名); },
+            onCompleteTag: (标签名: string): void => { this.执行补全标签(标签名); },
+            onToggle折叠: (分区: 'decks' | 'tags' | 'saved_searches'): void => {
+              this.切换侧边栏折叠(分区);
+            }
+          })
+        }
+
+        // T6 标签重命名对话框：侧边栏长按标签 → 重命名 → 弹此对话框
+        if (this.显示标签重命名) {
+          Stack() {
+            Column()
+              .width('100%')
+              .height('100%')
+              .backgroundColor(this.是否深色() ? 'rgba(0,0,0,0.40)' : 'rgba(0,0,0,0.15)')
+              .onClick((): void => {
+                if (!this.标签重命名忙碌) { this.显示标签重命名 = false; }
+              })
+
+            Column({ space: 应用尺寸.间距_14 }) {
+              Text($r('app.string.browser_tag_rename_title'))
+                .fontSize(应用尺寸.字号_面板标题)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+                .width('100%')
+
+              Column({ space: 应用尺寸.间距_4 }) {
+                Text($r('app.string.browser_tag_rename_current'))
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.text_secondary'))
+                Text(this.重命名原标签名)
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .width('100%')
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+
+              Column({ space: 应用尺寸.间距_4 }) {
+                Text($r('app.string.browser_tag_rename_new'))
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.text_secondary'))
+                TextInput({ text: this.重命名新标签名, placeholder: this.取本地化文案($r('app.string.browser_tag_rename_placeholder')) })
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.surface_page'))
+                  .borderRadius(应用尺寸.圆角_面板)
+                  .height(应用尺寸.按钮高度)
+                  .width('100%')
+                  .enabled(!this.标签重命名忙碌)
+                  .onChange((值: string): void => {
+                    this.重命名新标签名 = 值;
+                  })
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+
+              if (this.标签重命名错误 !== '') {
+                Text(this.标签重命名错误)
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.error_text'))
+                  .width('100%')
+              }
+
+              Row({ space: 应用尺寸.间距_12 }) {
+                Button($r('app.string.browser_detail_cancel'))
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.surface_page'))
+                  .borderRadius(应用尺寸.圆角_胶囊)
+                  .enabled(!this.标签重命名忙碌)
+                  .onClick((): void => {
+                    this.显示标签重命名 = false;
+                  })
+
+                Button(this.标签重命名忙碌 ? $r('app.string.browser_tag_rename_running') : $r('app.string.browser_detail_confirm'))
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.action_on_primary'))
+                  .backgroundColor(this.主色按钮背景色)
+                  .borderRadius(应用尺寸.圆角_胶囊)
+                  .enabled(!this.标签重命名忙碌)
+                  .onClick((): void => {
+                    this.执行重命名标签();
+                  })
+              }
+              .width('100%')
+            }
+            .width('85%')
+            .constraintSize({ maxWidth: 460 })
+            .padding(应用尺寸.卡片内边距)
+            .backgroundColor($r('app.color.surface_card'))
+            .borderRadius(应用尺寸.圆角_卡片)
+          }
         }
 
         // T8 改牌组选择器弹层
@@ -1221,6 +1777,15 @@ export struct 浏览页 {
             .borderRadius(应用尺寸.圆角_卡片)
           }
         }
+
+      // 字段帮助浮层（与设置面板同模式：根 Stack 顶层统一渲染）
+      if (this.显示说明浮层) {
+        字段帮助面板({
+          标题: this.说明标题,
+          正文: this.说明正文,
+          onClose: (): void => { this.显示说明浮层 = false; }
+        })
+      }
       }
       .width('100%')
       .height('100%')

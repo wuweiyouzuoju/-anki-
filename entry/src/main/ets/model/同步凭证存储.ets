@@ -36,12 +36,21 @@
 
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 
 const 存储名: string = 'jidecards_sync';
 const HKEY键: string = 'sync_hkey';
 const 端点键: string = 'sync_endpoint';
 const 用户名键: string = 'sync_username';
 const 上下文键: string = 'abilityContext';
+// 媒体同步待完成标志：集合同步成功后置 true，媒体同步成功后置 false。
+// 用于"集合同步完成但媒体同步被中断（删后台/进程被杀）"场景：再次同步时 syncStatus
+// 只检查集合层面返回 NO_CHANGES，但媒体尚未同步完——此时凭此标志继续媒体阶段。
+const 媒体待同步键: string = 'media_sync_pending';
+// 媒体同步开关：对齐 Anki 桌面端 Preferences → Sync → "Sync media"。
+// 默认 true（保持既有行为）。用户关闭后 syncCollection 传 syncMedia=false，
+// rslib 不会挂起媒体同步任务，同步面板也不进媒体阶段。
+const 媒体同步开关键: string = 'sync_media_enabled';
 
 // ========================================================
 // @块ID MODEL-SYNC-AUTH-002
@@ -229,8 +238,128 @@ export function 清除同步凭证(): void {
     存储.deleteSync(HKEY键);
     存储.deleteSync(端点键);
     存储.deleteSync(用户名键);
+    存储.deleteSync(媒体待同步键);
     静默落盘(存储);
   } catch (错误) {
     // 偏好不可用时静默。
+  }
+}
+
+// ========================================================
+// @块ID MODEL-SYNC-AUTH-007
+// @名称 媒体同步待完成标志
+//
+// @作用
+// 记录"集合同步已成功，媒体同步尚未完成"的状态。
+// 解决"集合同步成功 → 媒体同步被中断（删后台/进程被杀）→ 再次同步 syncStatus
+// 返回 NO_CHANGES → 不进媒体阶段 → 媒体永远无法同步"的死锁。
+//
+// @输入
+// 无（读取）；boolean（设置）
+//
+// @输出
+// 设置媒体待同步(值): void
+// 加载媒体待同步(): boolean
+//
+// @业务规则
+// 集合同步成功（syncCollection done / fullUploadOrDownload done）后置 true。
+// 媒体同步成功后置 false。
+// 媒体同步中止/出错时不改变（保持 true，下次同步继续媒体阶段）。
+// 注销时清除（随 清除同步凭证 一起清）。
+//
+// @副作用
+// 读写 preferences 的 media_sync_pending 键。
+// ========================================================
+
+const 同步日志域: number = 0x4342;
+const 同步日志标签: string = 'jidecards';
+
+/** 设置媒体同步待完成标志。用 string '1'/'0' 存储（避免 boolean 序列化潜在问题）。 */
+export function 设置媒体待同步(值: boolean): void {
+  const 存储: preferences.Preferences | null = 打开存储();
+  if (存储 === null) {
+    hilog.error(同步日志域, 同步日志标签, 'media_sync_pending: 打开存储失败，无法写入');
+    return;
+  }
+  try {
+    存储.putSync(媒体待同步键, 值 ? '1' : '0');
+    静默落盘(存储);
+    hilog.info(同步日志域, 同步日志标签, 'media_sync_pending: 已写入 %{public}s', 值 ? '1' : '0');
+  } catch (错误) {
+    hilog.error(同步日志域, 同步日志标签, 'media_sync_pending: putSync 异常 %{public}s',
+      错误 instanceof Error ? 错误.message : `${错误}`);
+  }
+}
+
+/** 读取媒体同步待完成标志；偏好不可用或未设置时返回 false。 */
+export function 加载媒体待同步(): boolean {
+  const 存储: preferences.Preferences | null = 打开存储();
+  if (存储 === null) {
+    hilog.error(同步日志域, 同步日志标签, 'media_sync_pending: 打开存储失败，返回 false');
+    return false;
+  }
+  try {
+    const 值: preferences.ValueType = 存储.getSync(媒体待同步键, '0');
+    const 结果: boolean = 值 === '1' || 值 === true;
+    hilog.info(同步日志域, 同步日志标签,
+      'media_sync_pending: 读取 raw=%{public}s result=%{public}s', `${值}`, 结果 ? 'true' : 'false');
+    return 结果;
+  } catch (错误) {
+    hilog.error(同步日志域, 同步日志标签, 'media_sync_pending: getSync 异常 %{public}s',
+      错误 instanceof Error ? 错误.message : `${错误}`);
+    return false;
+  }
+}
+
+// ========================================================
+// @块ID MODEL-SYNC-AUTH-008
+// @名称 媒体同步开关
+//
+// @作用
+// 对齐 Anki 桌面端 Preferences → Sync → "Sync media"。
+// 用户可关闭媒体同步（如 AnkiWeb 上有大量孤儿媒体文件不想下载）。
+// 关闭后：syncCollection 传 syncMedia=false（rslib 不挂起媒体同步任务），
+// 同步面板跳过媒体阶段直接显示完成。
+//
+// @输入
+// 设置媒体同步开关(值): boolean
+// 加载媒体同步开关(): boolean
+//
+// @输出
+// 无（设置）；boolean（读取，默认 true 保持既有行为）
+//
+// @业务规则
+// 默认 true（首次安装保持与历史版本一致）。
+// 开关变化立即落盘，下次同步生效。
+//
+// @副作用
+// 读写 preferences 的 sync_media_enabled 键（用 '1'/'0' string 存储）。
+// ========================================================
+
+/** 设置媒体同步开关。用 string '1'/'0' 存储（与 媒体待同步 一致）。 */
+export function 设置媒体同步开关(值: boolean): void {
+  const 存储: preferences.Preferences | null = 打开存储();
+  if (存储 === null) {
+    return;
+  }
+  try {
+    存储.putSync(媒体同步开关键, 值 ? '1' : '0');
+    静默落盘(存储);
+  } catch (错误) {
+    // 偏好不可用时仅丢失持久化。
+  }
+}
+
+/** 读取媒体同步开关；偏好不可用或未设置时返回 true（保持既有行为）。 */
+export function 加载媒体同步开关(): boolean {
+  const 存储: preferences.Preferences | null = 打开存储();
+  if (存储 === null) {
+    return true;
+  }
+  try {
+    const 值: preferences.ValueType = 存储.getSync(媒体同步开关键, '1');
+    return 值 === '1' || 值 === true;
+  } catch (错误) {
+    return true;
   }
 }

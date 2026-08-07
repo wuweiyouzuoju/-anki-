@@ -4,33 +4,43 @@
 // @块ID PROTO-MSG-STATS-001
 // @名称 统计消息编解码
 //
-// @作用
-// 编解码 anki.stats.proto 消息（Anki 26.05），仅提取首页热力图与记忆率所需字段：
+// @意图
+// 编解码 anki.stats.proto 消息（Anki 26.05），覆盖统计页与首页所需全部字段：
 // - GraphsRequest：search 固定为空（全库统计，与 rslib graph_data_for_search 的 all 分支一致）
-// - GraphsView：今日计数 + 按日复习计数（热力图）+ 记忆率 + FSRS 标志
-// 字段来源：third_party/anki/proto/anki/stats.proto
-// 语义来源：rslib/src/stats/graphs/
+// - GraphsView：完整图表（今日/月历/预测/小时分布/牌组 breakdown/难度/间隔/记忆率/FSRS 标志/真实保留率）
+// - GraphPreferences：图表偏好（周首日 / 卡片计数分离 inactive / 浏览链接 / 预测显示 backlog）
 //
-// @输入
-// 编码：days（统计天数）
-// 解码：字节流
+// @Invariants
+// - 仅解码统计页与首页用到的字段；未知字段跳过保证向前兼容（新版 Anki 加字段不崩）
+// - proto3 optional 用 null；repeated 子消息用数组；map 用 Map<number, ...>
+// - int32/int64 负数按二进制补码解释（prost sign-extend 后再编码为 varint）
 //
-// @输出
-// 编码：Uint8Array 字节
-// 解码：GraphsView（today / retrievability / reviewCountsByDaysAgo / fsrs）
+// @ExtensionPoints
+// - 新增图表分区：在 GraphsView 接口加字段 + decodeGraphsResponse 加 case + 测试覆盖
+// - 新增偏好项：在 GraphPreferences 接口加字段 + encode/decode 同步 + 测试覆盖
+//
+// @字段来源
+// third_party/anki/proto/anki/stats.proto（GraphsResponse + GraphPreferences）
+// @语义来源
+// rslib/src/stats/graphs/
 //
 // @业务规则
 // reviews.count 的键为「距今天数」，0=今天，1=昨天，与 rslib reviews.rs 分桶一致。
 // retrievability.average 为 0-100 百分制，仅当存在带 FSRS 记忆状态的卡片时非零。
-// ReviewCountsAndTimes 的 time 字段（field 2）首页不用，跳过。
+// ReviewCountsAndTimes 的 time 字段（field 2）首页不用，跳过（统计页也只用 count）。
 // map<int32, Reviews> 的 key 是 int32 varint，负数按补码解释。
+// Hours.repeated Hour 是 24 元素向量（一天的 0-23 时），四个时间段分别对应 1月/3月/1年/全部。
+// Buttons.ButtonCounts.learning/young/mature 是 4 元素向量（对应评分按钮 1-4）。
+// CardCounts.includingInactive 包含埋藏/暂停（但其 suspended/buried 计数为 0）；
+// excludingInactive 将埋藏/暂停单独计数。
+// FutureDue.future_due 键为「距今天数」（可为负数表示 backlog），daily_load 为日均负载。
 //
 // @副作用
 // 无
 // ========================================================
 
 import { 协议读取器 } from '../core/ProtoReader';
-import { 协议写入器 } from '../core/ProtoWriter';
+import { 协议写入器, 线类型_长度分隔 } from '../core/ProtoWriter';
 
 export interface TodayCounts {
   answerCount: number;
@@ -59,12 +69,127 @@ export interface ReviewKindCounts {
   filtered: number;
 }
 
+/** Buttons.ButtonCounts：4 元素向量（对应评分按钮 1-4）。 */
+export interface ButtonCounts {
+  learning: number[];
+  young: number[];
+  mature: number[];
+}
+
+/** GraphsResponse.buttons：4 个时间窗口的按钮统计。 */
+export interface Buttons {
+  oneMonth: ButtonCounts | null;
+  threeMonths: ButtonCounts | null;
+  oneYear: ButtonCounts | null;
+  allTime: ButtonCounts | null;
+}
+
+/** GraphsResponse.CardCounts.Counts：按卡片状态分桶。 */
+export interface CardCountsBreakdown {
+  newCards: number;
+  learn: number;
+  relearn: number;
+  young: number;
+  mature: number;
+  suspended: number;
+  buried: number;
+}
+
+/** GraphsResponse.card_counts：含/排除 inactive 两种口径。 */
+export interface CardCounts {
+  /** 含埋藏/暂停（但 suspended/buried 计数为 0）。 */
+  includingInactive: CardCountsBreakdown | null;
+  /** 排除埋藏/暂停（suspended/buried 单独计数）。 */
+  excludingInactive: CardCountsBreakdown | null;
+}
+
+/** Hours.Hour：单小时总复习数与正确数。 */
+export interface HourBucket {
+  total: number;
+  correct: number;
+}
+
+/** GraphsResponse.hours：4 个时间段的 24 小时分布（一天的 0-23 时）。 */
+export interface Hours {
+  oneMonth: HourBucket[];
+  threeMonths: HourBucket[];
+  oneYear: HourBucket[];
+  allTime: HourBucket[];
+}
+
+/** GraphsResponse.Eases / difficulty：难度分布 + 平均值。 */
+export interface Eases {
+  /** map<uint32, uint32>：键为难度桶（per mill / 10），值为卡片数。 */
+  eases: Map<number, number> | null;
+  average: number;
+}
+
+/** GraphsResponse.Intervals：间隔分布。 */
+export interface Intervals {
+  /** map<uint32, uint32>：键为间隔桶（天），值为卡片数。 */
+  intervals: Map<number, number> | null;
+}
+
+/** GraphsResponse.FutureDue：未来到期预测。 */
+export interface FutureDue {
+  /** map<int32, uint32>：键为距今天数（可为负数表示 backlog）。 */
+  futureDue: Map<number, number> | null;
+  haveBacklog: boolean;
+  dailyLoad: number;
+}
+
+/** GraphsResponse.Added：新增卡片按日分布。 */
+export interface Added {
+  /** map<int32, uint32>：键为距今天数。 */
+  added: Map<number, number> | null;
+}
+
+/** TrueRetentionStats.TrueRetention：通过/未通过计数。 */
+export interface TrueRetention {
+  youngPassed: number;
+  youngFailed: number;
+  maturePassed: number;
+  matureFailed: number;
+}
+
+/** GraphsResponse.true_retention：6 个时间窗口的真实保留率。 */
+export interface TrueRetentionStats {
+  today: TrueRetention | null;
+  yesterday: TrueRetention | null;
+  week: TrueRetention | null;
+  month: TrueRetention | null;
+  year: TrueRetention | null;
+  allTime: TrueRetention | null;
+}
+
 export interface GraphsView {
   today: TodayCounts | null;
   retrievability: RetrievabilitySummary | null;
   /** 按日复习计数：键为距今天数（0=今天，1=昨天……），与 rslib reviews.rs 分桶一致。 */
   reviewCountsByDaysAgo: Map<number, ReviewKindCounts> | null;
   fsrs: boolean;
+  /** 按评分按钮统计（1-4）× 时间窗口。 */
+  buttons: Buttons | null;
+  /** 卡片状态分桶（含/排除 inactive）。 */
+  cardCounts: CardCounts | null;
+  /** 按小时分布（4 个时间段）。 */
+  hours: Hours | null;
+  /** SM-2 难度分布 + 平均值。 */
+  eases: Eases | null;
+  /** 间隔分布。 */
+  intervals: Intervals | null;
+  /** 未来到期预测。 */
+  futureDue: FutureDue | null;
+  /** 新增卡片按日分布。 */
+  added: Added | null;
+  /** 日切小时（0-23）。 */
+  rolloverHour: number;
+  /** FSRS 难度分布 + 平均值。 */
+  difficulty: Eases | null;
+  /** FSRS 稳定性分布。 */
+  stability: Intervals | null;
+  /** 真实保留率（6 个时间窗口）。 */
+  trueRetention: TrueRetentionStats | null;
 }
 
 /** GraphsRequest：search 固定为空（全库统计，与 rslib graph_data_for_search 的 all 分支一致）。 */
@@ -227,34 +352,567 @@ function decodeReviewCountsAndTimes(bytes: Uint8Array): Map<number, ReviewKindCo
   return out;
 }
 
-export function decodeGraphsResponse(bytes: Uint8Array): GraphsView {
+// ========================================================
+// 新增图表分区 decode（forecast/hours/decks/ease/interval 等）
+// ========================================================
+
+/** packed repeated uint32（wire type 2 载荷）。 */
+function decodeUint32Array(bytes: Uint8Array): number[] {
   const r = new 协议读取器(bytes);
-  const out: GraphsView = {
-    today: null,
-    retrievability: null,
-    reviewCountsByDaysAgo: null,
-    fsrs: false
-  };
+  const out: number[] = [];
+  while (!r.已读完) {
+    out.push(r.读取变长整数());
+  }
+  return out;
+}
+
+/** map<uint32, uint32> 条目：field1=key，field2=value。 */
+function decodeUint32Uint32Entry(bytes: Uint8Array, out: Map<number, number>): void {
+  const r = new 协议读取器(bytes);
+  let key: number = 0;
+  let value: number = 0;
   let tag;
   while ((tag = r.读取标签()) !== null) {
     switch (tag.字段号) {
-      case 4:
-        out.today = decodeToday(r.读取字节());
+      case 1:
+        key = r.读取变长整数();
         break;
-      case 9:
-        out.reviewCountsByDaysAgo = decodeReviewCountsAndTimes(r.读取字节());
+      case 2:
+        value = r.读取变长整数();
         break;
-      case 12:
-        out.retrievability = decodeRetrievability(r.读取字节());
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  out.set(key, value);
+}
+
+/** map<int32, uint32> 条目：field1=key（int32 varint，负数按补码），field2=value。 */
+function decodeInt32Uint32Entry(bytes: Uint8Array, out: Map<number, number>): void {
+  const r = new 协议读取器(bytes);
+  let key: number = 0;
+  let value: number = 0;
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        key = Number(BigInt.asIntN(32, r.读取大变长整数()));
         break;
-      case 13:
-        out.fsrs = r.读取布尔();
+      case 2:
+        value = r.读取变长整数();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  out.set(key, value);
+}
+
+/** 解码 Buttons.ButtonCounts（4 元素向量 × 3 个按钮类别）。
+ * proto3 repeated uint32 默认 packed（wire type 2），但解析器必须同时接受 unpacked
+ * （每个值单独 wire type 0）。prost 一直发 packed，此处兼容两种以符合 proto3 规范。 */
+function decodeButtonCounts(bytes: Uint8Array): ButtonCounts {
+  const r = new 协议读取器(bytes);
+  const out: ButtonCounts = { learning: [], young: [], mature: [] };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        if (tag.线类型 === 线类型_长度分隔) {
+          out.learning = decodeUint32Array(r.读取字节());
+        } else {
+          out.learning.push(r.读取变长整数());
+        }
+        break;
+      case 2:
+        if (tag.线类型 === 线类型_长度分隔) {
+          out.young = decodeUint32Array(r.读取字节());
+        } else {
+          out.young.push(r.读取变长整数());
+        }
+        break;
+      case 3:
+        if (tag.线类型 === 线类型_长度分隔) {
+          out.mature = decodeUint32Array(r.读取字节());
+        } else {
+          out.mature.push(r.读取变长整数());
+        }
         break;
       default:
         r.跳过字段(tag.线类型);
     }
   }
   return out;
+}
+
+/** 解码 GraphsResponse.buttons（4 个时间窗口）。 */
+function decodeButtons(bytes: Uint8Array): Buttons {
+  const r = new 协议读取器(bytes);
+  const out: Buttons = {
+    oneMonth: null,
+    threeMonths: null,
+    oneYear: null,
+    allTime: null
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.oneMonth = decodeButtonCounts(r.读取字节());
+        break;
+      case 2:
+        out.threeMonths = decodeButtonCounts(r.读取字节());
+        break;
+      case 3:
+        out.oneYear = decodeButtonCounts(r.读取字节());
+        break;
+      case 4:
+        out.allTime = decodeButtonCounts(r.读取字节());
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 CardCounts.Counts（按状态分桶）。 */
+function decodeCardCountsBreakdown(bytes: Uint8Array): CardCountsBreakdown {
+  const r = new 协议读取器(bytes);
+  const out: CardCountsBreakdown = {
+    newCards: 0,
+    learn: 0,
+    relearn: 0,
+    young: 0,
+    mature: 0,
+    suspended: 0,
+    buried: 0
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.newCards = r.读取变长整数();
+        break;
+      case 2:
+        out.learn = r.读取变长整数();
+        break;
+      case 3:
+        out.relearn = r.读取变长整数();
+        break;
+      case 4:
+        out.young = r.读取变长整数();
+        break;
+      case 5:
+        out.mature = r.读取变长整数();
+        break;
+      case 6:
+        out.suspended = r.读取变长整数();
+        break;
+      case 7:
+        out.buried = r.读取变长整数();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 GraphsResponse.card_counts（含/排除 inactive）。 */
+function decodeCardCounts(bytes: Uint8Array): CardCounts {
+  const r = new 协议读取器(bytes);
+  const out: CardCounts = {
+    includingInactive: null,
+    excludingInactive: null
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.includingInactive = decodeCardCountsBreakdown(r.读取字节());
+        break;
+      case 2:
+        out.excludingInactive = decodeCardCountsBreakdown(r.读取字节());
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 Hours.Hour（单小时计数）。 */
+function decodeHourBucket(bytes: Uint8Array): HourBucket {
+  const r = new 协议读取器(bytes);
+  const out: HourBucket = { total: 0, correct: 0 };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.total = r.读取变长整数();
+        break;
+      case 2:
+        out.correct = r.读取变长整数();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 GraphsResponse.hours（4 个时间段，每个是 repeated Hour 子消息）。
+ * repeated Hour 在 wire format 中是同一 field 号多次出现（非 packed），
+ * 每次 wire type 2（子消息），与 CardStatsResponse.revlog 同模式。 */
+function decodeHours(bytes: Uint8Array): Hours {
+  const r = new 协议读取器(bytes);
+  const out: Hours = {
+    oneMonth: [],
+    threeMonths: [],
+    oneYear: [],
+    allTime: []
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.oneMonth.push(decodeHourBucket(r.读取字节()));
+        break;
+      case 2:
+        out.threeMonths.push(decodeHourBucket(r.读取字节()));
+        break;
+      case 3:
+        out.oneYear.push(decodeHourBucket(r.读取字节()));
+        break;
+      case 4:
+        out.allTime.push(decodeHourBucket(r.读取字节()));
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 Eases / difficulty：map<uint32, uint32> + average。 */
+function decodeEases(bytes: Uint8Array): Eases {
+  const r = new 协议读取器(bytes);
+  const out: Eases = { eases: null, average: 0 };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1: {
+        if (out.eases === null) {
+          out.eases = new Map<number, number>();
+        }
+        decodeUint32Uint32Entry(r.读取字节(), out.eases);
+        break;
+      }
+      case 2:
+        out.average = r.读取浮点();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 Intervals / stability：map<uint32, uint32>。 */
+function decodeIntervals(bytes: Uint8Array): Intervals {
+  const r = new 协议读取器(bytes);
+  const out: Intervals = { intervals: null };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1: {
+        if (out.intervals === null) {
+          out.intervals = new Map<number, number>();
+        }
+        decodeUint32Uint32Entry(r.读取字节(), out.intervals);
+        break;
+      }
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 FutureDue：map<int32, uint32> + have_backlog + daily_load。 */
+function decodeFutureDue(bytes: Uint8Array): FutureDue {
+  const r = new 协议读取器(bytes);
+  const out: FutureDue = { futureDue: null, haveBacklog: false, dailyLoad: 0 };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1: {
+        if (out.futureDue === null) {
+          out.futureDue = new Map<number, number>();
+        }
+        decodeInt32Uint32Entry(r.读取字节(), out.futureDue);
+        break;
+      }
+      case 2:
+        out.haveBacklog = r.读取布尔();
+        break;
+      case 3:
+        out.dailyLoad = r.读取变长整数();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 Added：map<int32, uint32>。 */
+function decodeAdded(bytes: Uint8Array): Added {
+  const r = new 协议读取器(bytes);
+  const out: Added = { added: null };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1: {
+        if (out.added === null) {
+          out.added = new Map<number, number>();
+        }
+        decodeInt32Uint32Entry(r.读取字节(), out.added);
+        break;
+      }
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 TrueRetention。 */
+function decodeTrueRetention(bytes: Uint8Array): TrueRetention {
+  const r = new 协议读取器(bytes);
+  const out: TrueRetention = {
+    youngPassed: 0,
+    youngFailed: 0,
+    maturePassed: 0,
+    matureFailed: 0
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.youngPassed = r.读取变长整数();
+        break;
+      case 2:
+        out.youngFailed = r.读取变长整数();
+        break;
+      case 3:
+        out.maturePassed = r.读取变长整数();
+        break;
+      case 4:
+        out.matureFailed = r.读取变长整数();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 TrueRetentionStats（6 个时间窗口）。 */
+function decodeTrueRetentionStats(bytes: Uint8Array): TrueRetentionStats {
+  const r = new 协议读取器(bytes);
+  const out: TrueRetentionStats = {
+    today: null,
+    yesterday: null,
+    week: null,
+    month: null,
+    year: null,
+    allTime: null
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.today = decodeTrueRetention(r.读取字节());
+        break;
+      case 2:
+        out.yesterday = decodeTrueRetention(r.读取字节());
+        break;
+      case 3:
+        out.week = decodeTrueRetention(r.读取字节());
+        break;
+      case 4:
+        out.month = decodeTrueRetention(r.读取字节());
+        break;
+      case 5:
+        out.year = decodeTrueRetention(r.读取字节());
+        break;
+      case 6:
+        out.allTime = decodeTrueRetention(r.读取字节());
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+export function decodeGraphsResponse(bytes: Uint8Array): GraphsView {
+  const r = new 协议读取器(bytes);
+  const out: GraphsView = {
+    today: null,
+    retrievability: null,
+    reviewCountsByDaysAgo: null,
+    fsrs: false,
+    buttons: null,
+    cardCounts: null,
+    hours: null,
+    eases: null,
+    intervals: null,
+    futureDue: null,
+    added: null,
+    rolloverHour: 0,
+    difficulty: null,
+    stability: null,
+    trueRetention: null
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    // 单字段解码失败时附字段号 + 线类型，便于定位是哪个图表分区的数据触发了
+    // "proto:length-delimited field exceeds input" 等错误。
+    try {
+      switch (tag.字段号) {
+        case 1:
+          out.buttons = decodeButtons(r.读取字节());
+          break;
+        case 2:
+          out.cardCounts = decodeCardCounts(r.读取字节());
+          break;
+        case 3:
+          out.hours = decodeHours(r.读取字节());
+          break;
+        case 4:
+          out.today = decodeToday(r.读取字节());
+          break;
+        case 5:
+          out.eases = decodeEases(r.读取字节());
+          break;
+        case 6:
+          out.intervals = decodeIntervals(r.读取字节());
+          break;
+        case 7:
+          out.futureDue = decodeFutureDue(r.读取字节());
+          break;
+        case 8:
+          out.added = decodeAdded(r.读取字节());
+          break;
+        case 9:
+          out.reviewCountsByDaysAgo = decodeReviewCountsAndTimes(r.读取字节());
+          break;
+        case 10:
+          out.rolloverHour = r.读取变长整数();
+          break;
+        case 11:
+          out.difficulty = decodeEases(r.读取字节());
+          break;
+        case 12:
+          out.retrievability = decodeRetrievability(r.读取字节());
+          break;
+        case 13:
+          out.fsrs = r.读取布尔();
+          break;
+        case 14:
+          out.stability = decodeIntervals(r.读取字节());
+          break;
+        case 15:
+          out.trueRetention = decodeTrueRetentionStats(r.读取字节());
+          break;
+        default:
+          r.跳过字段(tag.线类型);
+      }
+    } catch (e) {
+      const 原始信息 = e instanceof Error ? e.message : `${e}`;
+      throw new Error(`stats field ${tag.字段号} (wire ${tag.线类型}): ${原始信息}`);
+    }
+  }
+  return out;
+}
+
+// ========================================================
+// GraphPreferences 编解码（统计偏好）
+// ========================================================
+
+/** GraphPreferences.Weekday：周首日（与 stats.proto 对齐，仅枚举 Anki 支持的 4 值）。 */
+export enum Weekday {
+  SUNDAY = 0,
+  MONDAY = 1,
+  FRIDAY = 5,
+  SATURDAY = 6
+}
+
+export interface GraphPreferences {
+  calendarFirstDayOfWeek: Weekday;
+  cardCountsSeparateInactive: boolean;
+  browserLinksSupported: boolean;
+  futureDueShowBacklog: boolean;
+}
+
+/** 解码 GraphPreferences（GetGraphPreferences 响应）。 */
+export function decodeGraphPreferences(bytes: Uint8Array): GraphPreferences {
+  const r = new 协议读取器(bytes);
+  const out: GraphPreferences = {
+    calendarFirstDayOfWeek: Weekday.SUNDAY,
+    cardCountsSeparateInactive: false,
+    browserLinksSupported: false,
+    futureDueShowBacklog: false
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.calendarFirstDayOfWeek = r.读取变长整数() as Weekday;
+        break;
+      case 2:
+        out.cardCountsSeparateInactive = r.读取布尔();
+        break;
+      case 3:
+        out.browserLinksSupported = r.读取布尔();
+        break;
+      case 4:
+        out.futureDueShowBacklog = r.读取布尔();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/**
+ * 编码 GraphPreferences（SetGraphPreferences 请求）。
+ * 与 prost 一致：proto3 默认值（SUNDAY=0 / false）省略不写。
+ */
+export function encodeGraphPreferences(prefs: GraphPreferences): Uint8Array {
+  const w = new 协议写入器();
+  if (prefs.calendarFirstDayOfWeek !== Weekday.SUNDAY) {
+    w.写入变长整数(1, prefs.calendarFirstDayOfWeek);
+  }
+  if (prefs.cardCountsSeparateInactive) {
+    w.写入布尔(2, true);
+  }
+  if (prefs.browserLinksSupported) {
+    w.写入布尔(3, true);
+  }
+  if (prefs.futureDueShowBacklog) {
+    w.写入布尔(4, true);
+  }
+  return w.转为字节();
+}
+
+/** 编码 generic.Empty（GetGraphPreferences 请求，零字节）。 */
+export function encodeEmpty(): Uint8Array {
+  return new Uint8Array(0);
 }
 
 // ========================================================

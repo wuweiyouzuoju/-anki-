@@ -10,7 +10,10 @@ import type {
 } from '../proto/messages/SyncMessages';
 import {
   清除同步凭证,
-  保存同步端点
+  保存同步端点,
+  设置媒体待同步,
+  加载媒体待同步,
+  加载媒体同步开关
 } from '../model/同步凭证存储';
 import {
   应用新端点,
@@ -22,6 +25,7 @@ import {
 import type { 集合同步结果走向, 同步状态动作 } from '../model/同步流程';
 import { 设置面板色板_取, 设置面板色板 } from '../utils/设置面板配色';
 import { 应用尺寸 } from '../utils/应用尺寸';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { 颜色键 } from '../model/颜色主题';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
@@ -285,6 +289,20 @@ export struct 同步面板 {
       hilog.info(同步日志域, 同步日志标签, 'sync: syncStatus done required=%{public}d action=%{public}s newEndpoint=%{public}s',
         状态响应.required, 动作, 状态端点);
       if (动作 === 'none') {
+        // 集合层面无变化。但若上次媒体同步被中断（删后台/进程被杀），
+        // media_sync_pending 仍为 true——此时需继续媒体阶段，否则媒体永远无法同步。
+        // 但若用户已关闭媒体同步开关，不再继续媒体阶段，并清除残留标志。
+        if (加载媒体同步开关() && 加载媒体待同步()) {
+          hilog.info(同步日志域, 同步日志标签,
+            'sync: syncStatus=NO_CHANGES but media_sync_pending=true, resuming media phase');
+          this.集合已同步 = true;
+          this.启动媒体阶段(鉴权);
+          return;
+        }
+        if (!加载媒体同步开关() && 加载媒体待同步()) {
+          // 媒体同步已禁用，清除残留的待完成标志。
+          设置媒体待同步(false);
+        }
         this.状态文案 = this.取本地化文案($r('app.string.sync_up_to_date'));
         this.当前阶段 = 'done';
         // 服务端认为已最新，但本地 UI 可能未反映上次（中止的）同步写入 DB 的数据，刷新牌组列表。
@@ -292,8 +310,12 @@ export struct 同步面板 {
         return;
       }
 
-      hilog.info(同步日志域, 同步日志标签, 'sync: calling syncCollection syncMedia=true');
-      const 集合响应: SyncCollectionResponse = await this.同步服务实例.同步集合(鉴权, true);
+      // 读取媒体同步开关（对齐 Anki 桌面端 Preferences → Sync → "Sync media"）。
+      // 关闭时 syncMedia=false（rslib 不挂起媒体同步任务），同步面板跳过媒体阶段。
+      const 媒体同步开启: boolean = 加载媒体同步开关();
+      hilog.info(同步日志域, 同步日志标签, 'sync: calling syncCollection syncMedia=%{public}s',
+        媒体同步开启 ? 'true' : 'false');
+      const 集合响应: SyncCollectionResponse = await this.同步服务实例.同步集合(鉴权, 媒体同步开启);
       if (this.是否请求中止) {
         this.完成中止();
         return;
@@ -311,6 +333,18 @@ export struct 同步面板 {
       if (走向 === 'done') {
         // outcome=done = 集合已原子提交到本地 DB；标记以便后续中止时刷新牌组列表。
         this.集合已同步 = true;
+        // 媒体同步开关关闭（对齐 Anki 桌面端 "Sync media" 开关）：不进媒体阶段，直接完成。
+        if (!媒体同步开启) {
+          hilog.info(同步日志域, 同步日志标签, 'sync: syncCollection done, media sync disabled, skipping media phase');
+          // 媒体同步已禁用，清除待完成标志（避免上次中断的媒体同步残留标志干扰）。
+          设置媒体待同步(false);
+          this.状态文案 = this.取本地化文案($r('app.string.sync_success'));
+          this.当前阶段 = 'done';
+          this.同步完成回调();
+          return;
+        }
+        // 集合同步成功，媒体同步待完成——若媒体同步被中断，下次同步凭此标志继续。
+        设置媒体待同步(true);
         this.启动媒体阶段(鉴权);
         return;
       }
@@ -362,9 +396,20 @@ export struct 同步面板 {
       是否上传 ? 'true' : 'false', this.待定服务器USN === null ? 'null' : `${this.待定服务器USN}`);
     this.同步服务实例.全量上传或下载(鉴权, 是否上传, this.待定服务器USN)
       .then((): void => {
-        hilog.info(同步日志域, 同步日志标签, 'sync: fullUploadOrDownload done, entering media phase');
         // 全量上传/下载完成 = 集合已写入本地 DB；标记以便后续中止时刷新牌组列表。
         this.集合已同步 = true;
+        // 媒体同步开关关闭：不进媒体阶段，直接完成。
+        if (!加载媒体同步开关()) {
+          hilog.info(同步日志域, 同步日志标签, 'sync: fullUploadOrDownload done, media sync disabled, skipping media phase');
+          设置媒体待同步(false);
+          this.状态文案 = this.取本地化文案($r('app.string.sync_success'));
+          this.当前阶段 = 'done';
+          this.同步完成回调();
+          return;
+        }
+        hilog.info(同步日志域, 同步日志标签, 'sync: fullUploadOrDownload done, entering media phase');
+        // 集合同步成功，媒体同步待完成——若媒体同步被中断，下次同步凭此标志继续。
+        设置媒体待同步(true);
         this.启动媒体阶段(鉴权);
       })
       .catch((error: Error): void => {
@@ -475,6 +520,8 @@ export struct 同步面板 {
               this.媒体进度文案 = '';
               this.状态文案 = this.取本地化文案($r('app.string.sync_success'));
               this.当前阶段 = 'done';
+              // 媒体同步成功，清除待完成标志。
+              设置媒体待同步(false);
               this.同步完成回调();
             } else if (this.媒体检查次数 >= 30) {
               // 30 秒内媒体同步从未进入 active 状态：sync_media_blocking 可能秒退返回 Ok
@@ -655,6 +702,7 @@ export struct 同步面板 {
             this.关闭回调();
           }
         })
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       Column({ space: 应用尺寸.间距_12 }) {
         this.头部行()
@@ -677,10 +725,17 @@ export struct 同步面板 {
         }
       }
       .width('88%')
-      .constraintSize({ maxWidth: 480 })
+      .constraintSize({ maxWidth: 480, maxHeight: '88%' })
       .padding(20)
       .backgroundColor(this.取色板().背景)
-      .borderRadius(16)
+      .borderRadius(应用尺寸.圆角_卡片)
+      .transition(TransitionEffect.asymmetric(
+        TransitionEffect.opacity(0)
+          .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
+        TransitionEffect.opacity(0)
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
+      ))
     }
     .width('100%')
     .height('100%')

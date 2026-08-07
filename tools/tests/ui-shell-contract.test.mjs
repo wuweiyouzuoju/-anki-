@@ -119,7 +119,8 @@ test('revised home uses a full-window toolbar without greeting or bottom navigat
   assert.doesNotMatch(page, /app\.string\.home_title|app\.string\.home_subtitle/);
   assert.doesNotMatch(page, /bottomNavigation|bottomNavItem|sidePane|sideNavItem/);
   // 顶部工具栏按钮文案移至 主页顶部工具栏 积木组件
-  assert.match(toolbar, /app\.string\.top_settings/);
+  // 2026-07-20 后：原设置/浏览/统计 3 按钮合并为「更多」按钮（study_more），右侧保留「创建牌组」
+  assert.match(toolbar, /app\.string\.study_more/);
   assert.match(toolbar, /app\.string\.create_deck/);
   assert.match(page, /span:\s*\{\s*xs:\s*4,\s*sm:\s*5,\s*md:\s*8\s*\}/);
   assert.match(page, /span:\s*\{\s*xs:\s*0,\s*sm:\s*3,\s*md:\s*4\s*\}/);

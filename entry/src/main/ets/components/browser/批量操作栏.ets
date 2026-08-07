@@ -5,7 +5,7 @@
 //
 // @作用
 // 浏览页 T8 批量操作栏：多选模式下固定在底部的按钮组。
-// 阶段 3 实现 4 个已有后端能力的操作：改牌组 / 设置标志 / 挂起 / 删除。
+// 阶段 3 实现 5 个已有后端能力的操作：改牌组 / 设置标志 / 挂起 / 恢复 / 删除。
 // 其余 4 个（标签 / 重调度 / 重新定位 / 改笔记类型）待后端能力补齐后扩展。
 //
 // @输入
@@ -14,7 +14,7 @@
 // 选中数: 当前选中行数（按钮文案展示用）
 //
 // @输出
-// on改牌组 / on设置标志 / on挂起 / on删除: 四个操作回调，父级负责弹层确认与落盘
+// on改牌组 / on设置标志 / on挂起 / on恢复 / on删除: 五个操作回调，父级负责弹层确认与落盘
 //
 // @Invariants
 // - 本组件不直接调后端，所有操作经回调上抛
@@ -40,7 +40,10 @@ export struct 批量操作栏 {
   on改牌组: () => void = (): void => {};
   on设置标志: () => void = (): void => {};
   on挂起: () => void = (): void => {};
+  on恢复: () => void = (): void => {};
   on删除: () => void = (): void => {};
+  // 帮助按钮上抛：由父组件（浏览页）统一渲染 字段帮助面板
+  onHelp: () => void = (): void => {};
 
   // 按钮按下态背景色（走主题系统，与 首页/学习页 主色容器同源）
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
@@ -56,6 +59,13 @@ export struct 批量操作栏 {
 
   build() {
     Row({ space: 应用尺寸.间距_8 }) {
+      // 帮助按钮：点击上抛到父组件弹出批量操作说明（4 个操作不便每个加 ⓘ，统一入口）
+      Text($r('app.string.field_help_button'))
+        .fontSize(应用尺寸.字号_正文)
+        .fontColor($r('app.color.text_secondary'))
+        .padding({ left: 应用尺寸.间距_4, right: 应用尺寸.间距_4 })
+        .onClick((): void => { this.onHelp(); })
+
       Button($r('app.string.browser_action_change_deck'))
         .layoutWeight(1)
         .height(应用尺寸.按钮高度)
@@ -98,16 +108,30 @@ export struct 批量操作栏 {
         })
         .onClick((): void => { this.on挂起(); })
 
-      Button($r('app.string.browser_action_delete'))
+      Button($r('app.string.browser_action_restore'))
         .layoutWeight(1)
         .height(应用尺寸.按钮高度)
         .fontSize(应用尺寸.字号_按钮)
-        .fontColor($r('app.color.error_text'))
+        .fontColor($r('app.color.text_primary'))
         .backgroundColor(this.按钮背景(3))
         .borderRadius(应用尺寸.圆角_胶囊)
         .enabled(!this.busy)
         .onTouch((e: TouchEvent): void => {
           if (e.type === TouchType.Down) { this.已按下 = 3; }
+          else if (e.type === TouchType.Up || e.type === TouchType.Cancel) { this.已按下 = -1; }
+        })
+        .onClick((): void => { this.on恢复(); })
+
+      Button($r('app.string.browser_action_delete'))
+        .layoutWeight(1)
+        .height(应用尺寸.按钮高度)
+        .fontSize(应用尺寸.字号_按钮)
+        .fontColor($r('app.color.error_text'))
+        .backgroundColor(this.按钮背景(4))
+        .borderRadius(应用尺寸.圆角_胶囊)
+        .enabled(!this.busy)
+        .onTouch((e: TouchEvent): void => {
+          if (e.type === TouchType.Down) { this.已按下 = 4; }
           else if (e.type === TouchType.Up || e.type === TouchType.Cancel) { this.已按下 = -1; }
         })
         .onClick((): void => { this.on删除(); })

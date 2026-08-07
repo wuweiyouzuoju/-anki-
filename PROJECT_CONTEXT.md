@@ -12,10 +12,10 @@
 - **SchedulingStates 必须 raw passthrough**（字节级保真，禁止前端解码/重编码 oneof 结构）
 - **Service 不持有 UI 状态**（失败抛 BackendError 由 UI 决定回滚）
 - **panic 在 FFI 内 catch_unwind**（绝不跨语言边界，返回 STATUS_NATIVE_FATAL）
-- **Anki proto 不可改**（proto 定义在 `third_party/anki/proto/anki/*.proto`，submodule 在归档项目 `往期淘汰作品/jidecards/third_party/` 下，jidecards01 当前未引 submodule）
+- **Anki proto 不可改**（proto 定义在 jidecards01 自带的 `third_party/anki/proto/anki/*.proto` submodule）
 - **装机绝不能 uninstall 清数据**：collection.anki2 + collection.media 在 sandbox 目录，uninstall 即永久删除。`install -r` 失败时先 `force-stop` 再 `install -r`，仍失败清 build 重构建
 - **i18n 优先**：所有用户可见字符串必须走 `$r('app.string.xxx')` + `localized` / `localizedFmt`，禁止硬编码中文（`i18n-contract.test.mjs` 会拦截）
-- **`target/` 目录必须是真实目录**（不是 junction / symlink）：当前 Rust 工具链未在本机配置，复用归档项目 `往期淘汰作品/jidecards/target/` 编译产物；若重新初始化 Rust 工具链后可改回自编译
+- **`target/` 目录必须是真实目录**（不是 junction / symlink）：本机已配置 Rust 工具链（cargo/rustc 1.97.1，2026-08-06 核实），jidecards01 有自己的 `third_party/anki` submodule 与 `target/` 编译产物，不再依赖归档项目
 
 ## 项目定位
 
@@ -27,8 +27,8 @@
 
 - 工具链诊断：`npm run doctor`
 - Node 契约测试（含 i18n / proto / service / UI shell）：`npm test`
-- Rust FFI 主机测试：`tools\build-native.ps1 -Target host-test`（**当前不可用**，本机无 Rust 工具链）
-- 完整构建（Rust + ArkTS + HAP）：`npm run build:app`（**当前部分可用**，Rust 编译步骤因工具链缺失会失败，需手动复用 `往期淘汰作品/jidecards/target/` 产物；仅 ArkTS + hvigor 阶段可用）
+- Rust FFI 主机测试：`tools\build-native.ps1 -Target host-test`
+- 完整构建（Rust + ArkTS + HAP）：`npm run build:app`
 - 命令行构建 HAP（已验证可用）：
   ```powershell
   $env:DEVECO_SDK_HOME="C:\Program Files\Huawei\DevEco Studio\sdk"
@@ -60,6 +60,10 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | Rust FFI | `native/rsharmony/` | panic 在 FFI 内 catch_unwind，绝不跨语言边界；返回 STATUS_NATIVE_FATAL |
 | 设置面板 | `entry/src/main/ets/components/设置面板.ets` | 各分组（外观/布局/数据/术语/调度器/同步）独立私有方法；aboutGroup 内含"给我好评" |
 | 颜色主题展示名 | `entry/src/main/ets/components/settings/外观分组.ets` | **走 i18n** `getStringByNameSync('theme_color_' + 主题)`，不再硬编码 |
+| 统计页 | `entry/src/main/ets/pages/统计页.ets` + `entry/src/main/ets/components/stats/` | NavDestination；阶段状态机 loading→data/error；9 个图表分区（@BuilderParam slot）；偏好面板可弹层；Scroll 布局 |
+| 统计图表组件 | `entry/src/main/ets/components/stats/*.ets` | 纯展示层；@Prop 数据 + @StorageProp 主题色；**build 方法必须单根 Column**（if/else 分支 + @Builder 渲染内容）；@Builder 内不能写 const/let，数据通过参数传入 |
+| 媒体管理面板 | `entry/src/main/ets/components/settings/媒体管理面板.ets` | Stack 遮罩+面板；持有 媒体服务 实例直接调后端；检查中/处理中防重入；清空回收站需二次确认 |
+| 卡片预览页 | `entry/src/main/ets/components/browser/卡片预览页.ets` | Web 组件复用 卡片渲染服务；支持翻面 + 左右滑切上下张；底部"编辑字段"进浏览编辑区 |
 
 ## 常见任务路由
 
@@ -67,7 +71,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 |---|---|---|
 | 新增 Anki 域 Service | `backend/<Xxx>Service.ts` + `proto/messages/<Xxx>Messages.ts` + `backend/服务索引.ts` | SERVICE 编号取自 Anki `backend.rs`（奇数）；参考 `StatsService.ts`(只读) / `DeckConfigService.ts`(整体回写) / `DeckService.ts`(多方法) |
 | 修改学习链路 | `pages/学习页.ets` + `backend/{调度器服务,卡片渲染服务}.ts` | `answering` 防重入；phase 守卫；禁止解码 SchedulingStates oneof；切卡必须重置 phase 为 loading |
-| 修改/新增 protobuf | `proto/messages/<Xxx>Messages.ts` + `proto/core/{ProtoReader,ProtoWriter}.ts` | 字段来源必须 `third_party/anki/proto/anki/*.proto`（submodule 在归档项目下）；保留字段(field 255)原样往返 |
+| 修改/新增 protobuf | `proto/messages/<Xxx>Messages.ts` + `proto/core/{ProtoReader,ProtoWriter}.ts` | 字段来源必须 `third_party/anki/proto/anki/*.proto`（jidecards01 自带 submodule）；保留字段(field 255)原样往返 |
 | 修改 FSRS 参数 | `proto/messages/牌组配置Messages.ts` + `model/FSRS控制器.ets` | **前端不实现算法**；DeckConfig 整体回写；`fsrsReschedule` 在 view 没有，开启时设 true |
 | 修改 ArkUI 组件 | `components/<Xxx>.ets`；设置分组 `components/settings/<Xxx>分组.ets` | `@StorageLink(COLOR_KEYS.*)` 跟随主题；回调上抛，不直接调持久化（语言切换例外） |
 | 修改主题 | `model/颜色主题.ets` + `utils/{颜色主题管理器,主题控制器}.ets` | 种子色需 WCAG AA 验证；深色模式 primaryContainer 需马卡龙化（blendHex 与白混合 0.65） |
@@ -83,6 +87,10 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 升级版本号 | `AppScope/app.json5` 的 versionCode + versionName | versionCode 递增；提交应用市场前需真机回归 + decisions.md 记录 |
 | 修改浏览页 | `pages/浏览页.ets` + `components/browser/{搜索框,卡片表格,浏览编辑区}.ets` + `backend/{搜索服务,笔记服务,笔记类型服务,卡片服务}.ts` | phase 状态机 loading→list→error；搜索串由后端构建搜索串生成（前端不拼字符串）；行数据懒加载（浏览器行按ID）；T7 行点击弹 浏览编辑区 编辑笔记字段/标签，Cards 模式经 卡片服务.获取卡片 拿 noteId 再查笔记；浏览编辑区纯展示层不直接调 Service，onSave 回调上抛由父级落盘 |
 | 新增浏览器列 | `proto/messages/SearchMessages.ts` 的 BrowserColumn 接口 + 后端 全部浏览器列 RPC 返回 | 列 key 来自 Anki 后端预定义；手机端默认显示 Question+Deck+Due 三列（长按表头配置） |
+| 修改统计页 | `pages/统计页.ets` + `components/stats/*.ets` + `backend/统计服务.ts` + `proto/messages/StatsMessages.ts` | 阶段状态机 loading→data/error；图表用 Text+Column+Row+Stack（不引第三方库）；偏好走 GraphPreferences RPC；**统计图表组件 build 方法必须单根 Column** |
+| 修改媒体管理 | `components/settings/媒体管理面板.ets` + `backend/媒体服务.ts` | Stack 遮罩+面板；检查中/处理中防重入；清空回收站需 showAlertDialog 二次确认；getStringSync 带参用展开运算符 |
+| 修改卡片预览 | `components/browser/卡片预览页.ets` + `backend/卡片渲染服务.ts` | Web 组件复用 渲染既有卡片；翻面 + 左右滑切基于当前搜索结果列表；"编辑字段"进浏览编辑区 |
+| 修改标签管理 | `components/browser/浏览侧边栏.ets` + `backend/标签服务.ts` | 标签长按弹 showActionMenu（回调必须 (err, data) 双参数）；4 选项：追加搜索/重命名/删除/补全 |
 
 ## 关键设计决策
 
@@ -91,7 +99,11 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 - **countNew/Learning/Review 固定交通灯色**（保证主题切换下一致）
 - **颜色主题展示名走 i18n**（2026-07-30 修正）：原 `颜色主题展示名()` 函数硬编码中文导致语言切换无效，已删除；改用 `getStringByNameSync('theme_color_' + 主题)` 动态读取 i18n key
 - **"给我好评" DeepLink 降级**（2026-07-30 修正）：commentManager.showCommentDialog 在已评论/未登录/系统错误等场景 Promise 静默挂起，失败统一回退 DeepLink `store://appgallery.huawei.com/app/detail?id=com.jide.kapian`；不再用 promptAction.showDialog（实测 Promise 静默挂起）
-- **Rust 静态库复用**（2026-07-30 修正）：本机未配置 Rust 工具链，复用 `往期淘汰作品/jidecards/target/{aarch64,x86_64}-unknown-linux-ohos/release/libjidecards_core.a`；两项目 Rust 源码（Cargo.lock MD5 + 7 个关键文件）100% 一致
+- **Rust 工具链已就绪**（2026-08-06 修正）：本机已配置 cargo/rustc 1.97.1，jidecards01 自带 `third_party/anki` submodule 与 `target/` 编译产物，可独立构建。2026-07-30 旧记录（"本机未配置 Rust 工具链，复用 `往期淘汰作品/jidecards/target/` 静态库"）已废止
+- **统计页入口用顶部工具栏**（2026-08-04）：无底部 TabBar，统计页入口放主页顶部工具栏（与设置/浏览同款按下态按钮），保持 app 内导航一致
+- **系统栏颜色跟随主题微染**（2026-08-05）：`应用系统栏样式` 优先读 AppStorage `颜色键.页面底色微染`（页面背景同款主题微染色）作为 `statusBarColor`/`navigationBarColor`，让顶部状态栏与界面同色；`应用颜色主题` 写完色键后主动调 `应用系统栏样式` 覆盖所有主题变化路径（启动恢复/主题模式切换/颜色主题切换/系统深浅色变化）。早期初始化 AppStorage 未写入时回退中性 `#F5F7FA`/`#10151D`
+- **统计图表不引第三方库**（2026-08-04）：用 Text+Column+Row+Stack 实现条形图/柱状图/网格指标，不引 Canvas 或第三方图表库；@Builder 传参渲染，不在 @Builder 内写 const
+- **媒体管理面板持有 Service 实例**（2026-08-04）：与设置面板持有 集合服务 调 检查数据库 同款模式，面板直接调 媒体服务 RPC，不上抛数据意图；检查中/处理中防重入用 @State 布尔
 
 ## 扩展点
 
@@ -110,16 +122,24 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 新增 NavDestination 自定义转场 | (1) `pages/<X>页.ets` 的 NavDestination 加 `@State 转场透明度: number = 1` + `.opacity(this.转场透明度)` (2) `aboutToAppear` 调 `CustomTransition.getInstance().注册NavParam('<PageName>', 起点回调, 终点回调)`（起点设 opacity=0 进入/1 退出，终点设目标值）(3) `aboutToDisappear` 调 `注销NavParam('<PageName>')` (4) `pages/首页.ets` 的 `自定义转场回调` 已统一处理，无需改 | `pages/学习页.ets`('StudyPage') / `pages/添加笔记页.ets`('AddNotePage')：参考其 aboutToAppear 注册 + aboutToDisappear 注销模式；**key 必须与 NavPathStack pushPath 时的 name 一致**（首页.ets:1555 用 `from.name ?? ''` 查找） |
 | 新增全屏弹窗/面板 | `components/<X>面板.ets` 内 `Stack` 的遮罩 Column 与主面板 Column 都加 `.transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))`；如需 scale 入场用 `TransitionEffect.asymmetric` + `.combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))` | `components/好评引导对话框.ets`（OPACITY + scale 0.92）/ `components/牌组定制面板.ets`（纯 OPACITY）：禁止左右平移/上下位移/单帧切换 |
 | 新增浏览页侧边栏节点 | `components/browser/浏览侧边栏.ets`（阶段 4 T6）+ `搜索服务.连接搜索节点` / `搜索服务.替换搜索节点` | 树形展示牌组/标签/已保存搜索；点击节点触发 onSearchWithNode；长按切追加 AND/OR 语义 |
+| 新增统计图表 | `components/stats/<X>卡.ets`（新建）+ `pages/统计页.ets` 的 Scroll 内加 `统计图表分区` | @Prop 数据 + @StorageProp 主题色；**build 方法单根 Column** + if/else + @Builder 传参渲染；参考 `今日计数卡.ets`(Grid) / `卡片状态分布.ets`(条形图) / `小时分布卡.ets`(柱状图) |
+| 新增设置面板弹层 | `components/settings/<X>面板.ets`（新建）+ `components/设置面板.ets` 数据分组 加入口 | Stack 遮罩+面板；持有对应 Service 实例直接调后端（与 媒体管理面板 同款）；防重入用 @State 布尔；参考 `媒体管理面板.ets` |
 
 ## 项目特有的坑
 
-- **本机无 Rust 工具链**：cargo / rustup / rustc 均不在 PATH，`CARGO_HOME` / `RUSTUP_HOME` 环境变量未设置。`tools/build-native.ps1` 进入 "external mode" 但 cargo 缺失直接失败。临时方案：从 `往期淘汰作品/jidecards/target/` 复制 release 静态库。长期方案：安装 rustup + 工具链 + protoc + cargo-zigbuild + zig + MSVC sysroot
+- **本机 Rust 工具链已就绪**（2026-08-06 核实）：cargo/rustc 1.97.1 在 PATH。jidecards01 自带 `third_party/anki` submodule 与 `target/` 产物，无需依赖归档项目
 - **`target/` 曾是 dangling junction**：归档 jidecards 项目时未同步更新 jidecards01 的 junction 指向，留下悬空链接。已于 2026-07-30 修复为真实目录，但若再次归档/迁移项目需检查 junction 状态
 - **PowerShell shell wrapper 拦截 Copy-Item / New-Item**：本机 PowerShell profile 注入 `safe_rm_aliases.ps1` wrapper。绕过方法：用 .NET API `[System.IO.File]::Copy(src, dst, $true)` 与 `[System.IO.Directory]::CreateDirectory(path)`；`[System.IO.Directory]::Delete(path, $false)` 删 junction（第二参数 `$false` 关键：不递归删目标）
 - **hvigor 默认同时构建 arm64 + x86_64**：两个 ABI 都需要对应的 `libjidecards_core.a`。只复制 arm64 静态库会在 x86_64 ninja 阶段再次报 missing 错误
 - **debug 与 release 双模式都要静态库**：DevEco IDE 默认 debug 构建需要 `target/.../debug/libjidecards_core.a`（约 740-760MB，含调试符号），命令行 release 构建需要 `target/.../release/libjidecards_core.a`（约 214-218MB，thin LTO + strip）。只复制 release 会导致 IDE debug 构建报 `Missing ... debug/libjidecards_core.a`；两个模式两个 ABI 共需 4 份静态库
 - **commentManager 模拟器不支持**：HarmonyOS 6 `commentManager.showCommentDialog` 必须真机验证（需登录华为账号，一年内已评论过不能再次评论）
 - **ArkTS 限制**：不支持解构声明（`arkts-no-destruct-decls`）；不支持 untyped object literals（`arkts-no-untyped-obj-literals`）
+- **ArkTS build 方法只能有一个根节点**：`if + Text + return + const + Column` 多根节点编译报 "build method can have only one root node, which must be a container component"。修复模式：外层包一个 `Column()` + `if/else` 分支 + `@Builder` 方法渲染实际内容
+- **ArkTS @Builder 内不能写 const/let**：`const 数据 = ...` 在 @Builder 方法内编译报 "Only UI component syntax can be written here"。修复模式：把数据作为参数传给 @Builder（`this.渲染分布(数据, 总数)`），在 build 方法内调用时传 `this.取数据() as Type`
+- **ArkTS 不支持 `!` 非空断言**：`this.数据!.field` 可能编译报错。改用 `as Type` 类型断言传参给 @Builder
+- **promptAction.showActionMenu 回调签名**：必须 `(err: BusinessError, data: ActionMenuSuccessResponse)` 双参数，`err !== null` 时直接 return；不能只写 data 参数
+- **getStringSync 带参数**：必须用展开运算符 `...参数` 传参（`getStringSync(id, ...参数)`），不能直接传数组
+- **import type 改 import**：枚举类型（如 HelpPage）如果用作值（switch case / 比较）必须 `import` 而非 `import type`
 - **model 层不能 import HarmonyOS Kit（@kit.*）**：node test runner 无法解析，导致整个 .test.mjs 文件加载失败（ERR_INVALID_MODULE_SPECIFIER），失败信息只显示 `not ok N - file.test.mjs` 不显示具体 assertion。hilog 应放 utils 层，model 层保持纯函数无副作用
 - **Toggle 双向绑定 vs 乐观更新**：需乐观更新+失败回滚时改用单向绑定 + `onChange` 手动控制（见 `components/settings/调度器分组.ets`）
 - **i18n 契约测试已加强**：`i18n-contract.test.mjs` 用平衡 2 层括号匹配拦截 `Text(... ? '中文' : ...)` 内三元表达式 + `this.xxxMessage = \`...中文...\`` 模板字符串赋值。新增功能务必走 `$r` + `localized` / `localizedFmt`
@@ -133,6 +153,6 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 ## 待办
 
 - [x] 补建 `AGENTS.md` 与 `.agents/rules/{context,naming,comments,workflow,testing}.md` + `.agents/adapters/arkts.md`（2026-08-01 从归档项目 jidecards 复制）
-- [ ] 引入 `third_party/anki` submodule（或显式标注永远复用归档项目）
-- [ ] 安装 Rust 工具链使 `tools/build-native.ps1` 可用，去掉对归档项目的依赖
+- [x] 引入 `third_party/anki` submodule（jidecards01 已自带，2026-08-06 核实）
+- [x] 安装 Rust 工具链使 `tools/build-native.ps1` 可用，去掉对归档项目的依赖（2026-08-06 已就绪，cargo/rustc 1.97.1）
 - [x] 删除 `.ai-index/`（已废弃）（2026-08-01 已删除）

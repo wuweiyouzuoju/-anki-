@@ -32,6 +32,7 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
+import { 颜色键 } from '../model/颜色主题';
 
 const 浅色系统栏色: string = '#F5F7FA';
 const 深色系统栏色: string = '#10151D';
@@ -52,7 +53,12 @@ export async function 应用系统栏样式(
 ): Promise<void> {
   try {
     const 主窗口: window.Window = await window.getLastWindow(上下文);
-    const 栏色: string = 是否深色 ? 深色系统栏色 : 浅色系统栏色;
+    // 优先用 AppStorage 中的页面底色微染（已混入主题主色），让状态栏/导航栏与界面同色；
+    // 早期初始化阶段（AppStorage 尚未写入）回退到中性底色。
+    const 微染: string | undefined = AppStorage.get<string>(颜色键.页面底色微染);
+    const 栏色: string = 微染 !== undefined && 微染.length > 0
+      ? 微染
+      : (是否深色 ? 深色系统栏色 : 浅色系统栏色);
     await 主窗口.setWindowSystemBarProperties({
       statusBarColor: 栏色,
       navigationBarColor: 栏色,

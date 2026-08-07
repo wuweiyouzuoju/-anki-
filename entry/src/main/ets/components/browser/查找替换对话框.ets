@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // ========================================================
 // @名称 查找替换对话框
@@ -35,6 +35,7 @@
 
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 颜色键 } from '../../model/颜色主题';
+import { 取全屏转场时长, 取全屏转场曲线 } from '../../utils/转场时长';
 
 @Component
 export struct 查找替换对话框 {
@@ -59,6 +60,10 @@ export struct 查找替换对话框 {
       _区分大小写: boolean,
       _仅选中: boolean
     ): Promise<boolean> => false;
+  // ⓘ 帮助回调：上抛给父组件（浏览页）统一渲染 字段帮助面板 浮层，与批量操作栏 ⓘ 同模式
+  onHelp: () => void = (): void => {};
+  // 正则表达式 ⓘ 回调：上抛给父组件显示正则语法说明（browser_find_regex_help）
+  onRegexHelp: () => void = (): void => {};
 
   @State private 查找文本: string = '';
   @State private 替换文本: string = '';
@@ -115,6 +120,11 @@ export struct 查找替换对话框 {
     }
   }
 
+  /** 正则帮助回调触发：直接调 onRegexHelp，由父组件统一弹浮层 */
+  private 正则帮助回调(): void {
+    this.onRegexHelp();
+  }
+
   build() {
     Stack() {
       // 遮罩层：点击关闭
@@ -122,20 +132,39 @@ export struct 查找替换对话框 {
         .width('100%')
         .height('100%')
         .backgroundColor(this.isDark ? 'rgba(0,0,0,0.40)' : 'rgba(0,0,0,0.15)')
+        // 磨砂玻璃质感：模糊下层内容避免叠字，材质着色跟随应用内主题
+        .backgroundBlurStyle(BlurStyle.Thin, {
+          colorMode: this.isDark ? ThemeColorMode.DARK : ThemeColorMode.LIGHT,
+          adaptiveColor: AdaptiveColor.DEFAULT
+        })
+        // 遮罩扩展进安全区，否则状态栏/导航条区域露出下层背景
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         .onClick((): void => {
           if (!this.busy) {
             this.onCancel();
           }
         })
+        // 过渡仅动 opacity 合成属性，不触发布局
+        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       // 主面板
       Column({ space: 应用尺寸.间距_14 }) {
-        Text($r('app.string.browser_find_title'))
-          .fontSize(应用尺寸.字号_面板标题)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
+        // 标题行：标题 + Blank + ⓘ 帮助按钮（点击上抛 onHelp，由父组件统一弹 字段帮助面板）
+        Row() {
+          Text($r('app.string.browser_find_title'))
+            .fontSize(应用尺寸.字号_面板标题)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+          Blank()
+          Text($r('app.string.field_help_button'))
+            .fontSize(应用尺寸.字号_面板标题)
+            .fontColor($r('app.color.text_secondary'))
+            .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_4, top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
+            .onClick((): void => {
+              this.onHelp();
+            })
+        }
+        .width('100%')
 
         // 查找内容
         Column({ space: 应用尺寸.间距_5 }) {
@@ -211,6 +240,7 @@ export struct 查找替换对话框 {
           Row({ space: 应用尺寸.间距_5 }) {
             Checkbox()
               .select(this.是否正则)
+              .selectedColor(this.主色按钮背景)
               .enabled(!this.busy)
               .onChange((值: boolean): void => {
                 this.是否正则 = 值;
@@ -218,11 +248,20 @@ export struct 查找替换对话框 {
             Text($r('app.string.browser_find_regex'))
               .fontSize(应用尺寸.字号_正文)
               .fontColor($r('app.color.text_primary'))
+            // 正则表达式 ⓘ：点击上抛 onHelp，由父组件弹 字段帮助面板 显示正则语法说明
+            Text($r('app.string.field_help_button'))
+              .fontSize(应用尺寸.字号_正文)
+              .fontColor($r('app.color.text_secondary'))
+              .padding({ left: 应用尺寸.间距_4, right: 0, top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
+              .onClick((): void => {
+                this.正则帮助回调();
+              })
           }
 
           Row({ space: 应用尺寸.间距_5 }) {
             Checkbox()
               .select(this.是否区分大小写)
+              .selectedColor(this.主色按钮背景)
               .enabled(!this.busy)
               .onChange((值: boolean): void => {
                 this.是否区分大小写 = 值;
@@ -320,10 +359,18 @@ export struct 查找替换对话框 {
         .width('100%')
       }
       .width('88%')
-      .constraintSize({ maxWidth: 520, maxHeight: '88%' })
+      .constraintSize({ maxWidth: 480, maxHeight: '88%' })
       .padding(应用尺寸.卡片内边距)
       .backgroundColor($r('app.color.surface_card'))
       .borderRadius(应用尺寸.圆角_卡片)
+      // 居中浮卡：缩放+淡入过渡（入：opacity(0)+scale(0.96,0.96)，出：opacity(0)）
+      .transition(TransitionEffect.asymmetric(
+        TransitionEffect.opacity(0)
+          .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
+        TransitionEffect.opacity(0)
+          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
+      ))
       .onClick((): void => {})
     }
     .width('100%')

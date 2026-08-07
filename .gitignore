@@ -34,3 +34,6 @@ build_log.txt
 
 # Vendored Anki source (clone from github.com/ankitects/anki)
 /third_party/
+
+# Debug output
+/stats_*.txt

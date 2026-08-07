@@ -148,14 +148,14 @@ export struct AnkiWeb引导对话框 {
         .width('100%')
         .margin({ top: 应用尺寸.间距_8 })
       }
-      .width('85%')
-      .constraintSize({ maxWidth: 480 })
+      .width('88%')
+      .constraintSize({ maxWidth: 480, maxHeight: '88%' })
       .padding(应用尺寸.间距_16)
       .backgroundColor($r('app.color.surface_card'))
       .borderRadius(应用尺寸.圆角_卡片)
       .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
       .transition(TransitionEffect.asymmetric(
-        TransitionEffect.opacity(0).combine(TransitionEffect.scale({ x: 0.92, y: 0.92 }))
+        TransitionEffect.opacity(0).combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
           .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
         TransitionEffect.opacity(0).combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
           .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })

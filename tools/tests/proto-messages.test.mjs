@@ -26,6 +26,16 @@ import {
   decodeImportResponse,
   encodeImportAnkiPackageRequest
 } from '../../entry/src/main/ets/proto/messages/ImportExportMessages.ts';
+import {
+  decodeCompleteTagResponse,
+  decodeTagTreeNode,
+  encodeCompleteTagRequest,
+  encodeEmptyRequest,
+  encodeFindAndReplaceTagRequest,
+  encodeRenameTagsRequest,
+  encodeSetTagCollapsedRequest,
+  encodeStringRequest
+} from '../../entry/src/main/ets/proto/messages/TagsMessages.ts';
 
 function hex(bytes) {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(' ');
@@ -214,6 +224,149 @@ test('ImportResponse tallies log buckets and found_notes', () => {
 
   const summary = decodeImportResponse(resp.转为字节());
   assert.deepEqual(summary, { newNotes: 2, updatedNotes: 1, duplicateNotes: 1, foundNotes: 99 });
+});
+
+// ---- Tags messages (T6 标签管理) ----
+
+test('EmptyRequest encodes zero bytes (ClearUnusedTags / TagTree input)', () => {
+  assert.equal(encodeEmptyRequest().length, 0);
+});
+
+test('StringRequest encodes single string field (RemoveTags input)', () => {
+  const bytes = encodeStringRequest('英语::四级');
+  const w = new 协议写入器();
+  w.写入字符串(1, '英语::四级');
+  assert.equal(hex(bytes), hex(w.转为字节()));
+});
+
+test('StringRequest omits empty string like prost', () => {
+  assert.equal(encodeStringRequest('').length, 0);
+});
+
+test('SetTagCollapsedRequest encodes name + collapsed', () => {
+  const bytes = encodeSetTagCollapsedRequest({ name: 'hard', collapsed: true });
+  const w = new 协议写入器();
+  w.写入字符串(1, 'hard');
+  w.写入布尔(2, true);
+  assert.equal(hex(bytes), hex(w.转为字节()));
+});
+
+test('RenameTagsRequest encodes current_prefix + new_prefix', () => {
+  const bytes = encodeRenameTagsRequest({ currentPrefix: '英语::四级', newPrefix: '英语::六级' });
+  const w = new 协议写入器();
+  w.写入字符串(1, '英语::四级');
+  w.写入字符串(2, '英语::六级');
+  assert.equal(hex(bytes), hex(w.转为字节()));
+});
+
+test('RenameTagsRequest omits default-valued fields', () => {
+  // Both empty → zero bytes
+  assert.equal(encodeRenameTagsRequest({ currentPrefix: '', newPrefix: '' }).length, 0);
+  // Only currentPrefix non-empty → only field 1
+  const bytes = encodeRenameTagsRequest({ currentPrefix: 'old', newPrefix: '' });
+  const w = new 协议写入器();
+  w.写入字符串(1, 'old');
+  assert.equal(hex(bytes), hex(w.转为字节()));
+});
+
+test('FindAndReplaceTagRequest encodes all fields in order', () => {
+  const bytes = encodeFindAndReplaceTagRequest({
+    noteIds: [1, 2, 3],
+    search: 'old',
+    replacement: 'new',
+    regex: true,
+    matchCase: false
+  });
+  const w = new 协议写入器();
+  w.写入打包64位整数(1, [1, 2, 3]);
+  w.写入字符串(2, 'old');
+  w.写入字符串(3, 'new');
+  w.写入布尔(4, true);
+  // matchCase=false omitted (proto3 default)
+  assert.equal(hex(bytes), hex(w.转为字节()));
+});
+
+test('FindAndReplaceTagRequest omits empty noteIds and default bools', () => {
+  const bytes = encodeFindAndReplaceTagRequest({
+    noteIds: [],
+    search: 'x',
+    replacement: '',
+    regex: false,
+    matchCase: false
+  });
+  const w = new 协议写入器();
+  w.写入字符串(2, 'x');
+  assert.equal(hex(bytes), hex(w.转为字节()));
+});
+
+test('CompleteTagRequest encodes input + matchLimit', () => {
+  const bytes = encodeCompleteTagRequest({ input: '英', matchLimit: 20 });
+  const w = new 协议写入器();
+  w.写入字符串(1, '英');
+  w.写入变长整数(2, 20);
+  assert.equal(hex(bytes), hex(w.转为字节()));
+});
+
+test('CompleteTagRequest omits empty input and zero limit', () => {
+  assert.equal(encodeCompleteTagRequest({ input: '', matchLimit: 0 }).length, 0);
+});
+
+test('CompleteTagResponse decodes repeated string tags', () => {
+  const w = new 协议写入器();
+  w.写入字符串(1, '英语');
+  w.写入字符串(1, '英语::四级');
+  w.写入字符串(1, '英语::六级');
+  const resp = decodeCompleteTagResponse(w.转为字节());
+  assert.deepEqual(resp.tags, ['英语', '英语::四级', '英语::六级']);
+});
+
+test('CompleteTagResponse handles empty response', () => {
+  const resp = decodeCompleteTagResponse(new Uint8Array(0));
+  assert.deepEqual(resp.tags, []);
+});
+
+test('TagTreeNode decodes name/children/level/collapsed recursively', () => {
+  const child = new 协议写入器();
+  child.写入字符串(1, '四级');
+  child.写入变长整数(3, 1);
+  child.写入布尔(4, false);
+  const root = new 协议写入器();
+  root.写入字符串(1, '英语');
+  root.写入子消息(2, child);
+  root.写入变长整数(3, 0);
+  root.写入布尔(4, true);
+
+  const node = decodeTagTreeNode(root.转为字节());
+  assert.equal(node.name, '英语');
+  assert.equal(node.level, 0);
+  assert.equal(node.collapsed, true);
+  assert.equal(node.children.length, 1);
+  assert.equal(node.children[0].name, '四级');
+  assert.equal(node.children[0].level, 1);
+  assert.equal(node.children[0].collapsed, false);
+});
+
+// ---- Links messages (T10 帮助页外链) ----
+
+test('HelpPageLinkRequest encodes page enum as varint field 1', async () => {
+  const { HelpPage, encodeHelpPageLinkRequest, decodeStringResponse } =
+    await import('../../entry/src/main/ets/proto/messages/LinksMessages.ts');
+  // INDEX=10：field1 varint 10 → tag 0x08, value 0x0a
+  assert.equal(hex(encodeHelpPageLinkRequest(HelpPage.INDEX)), '08 0a');
+  // NOTE_TYPE=0（proto3 默认值）：省略不写
+  assert.equal(encodeHelpPageLinkRequest(HelpPage.NOTE_TYPE).length, 0);
+  // BROWSING=1
+  assert.equal(hex(encodeHelpPageLinkRequest(HelpPage.BROWSING)), '08 01');
+});
+
+test('HelpPageLink generic.String response decodes URL from field 1', async () => {
+  const { decodeStringResponse } =
+    await import('../../entry/src/main/ets/proto/messages/LinksMessages.ts');
+  const w = new 协议写入器();
+  w.写入字符串(1, 'https://docs.ankiweb.net');
+  assert.equal(decodeStringResponse(w.转为字节()), 'https://docs.ankiweb.net');
+  // 空响应 → 空串
+  assert.equal(decodeStringResponse(new Uint8Array(0)), '');
 });
 
 

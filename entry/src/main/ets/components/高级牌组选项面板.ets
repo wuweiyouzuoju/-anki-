@@ -243,7 +243,7 @@ export struct 高级牌组选项面板 {
   // ========================================================
   @Builder
   private toggleRow(label: Resource, value: boolean, onChange: (value: boolean) => void, help: Resource) {
-    Column({ space: 应用尺寸.间距_5 }) { Row() { Text(label).fontSize(应用尺寸.字号_正文_小).layoutWeight(1); Button($r('app.string.field_help_button')).type(ButtonType.Normal).backgroundColor(Color.Transparent).onClick(() => this.openHelp(label, help)); Toggle({ type: ToggleType.Switch, isOn: value }).enabled(!this.busy).onChange(onChange) }.width('100%'); if (this.是否有字段错误(this.fieldKey(label))) Text(this.resolveText(this.字段错误资源(this.fieldKey(label)))).fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.error_text')).width('100%') }.width('100%')
+    Column({ space: 应用尺寸.间距_5 }) { Row() { Text(label).fontSize(应用尺寸.字号_正文_小).layoutWeight(1); Button($r('app.string.field_help_button')).type(ButtonType.Normal).backgroundColor(Color.Transparent).onClick(() => this.openHelp(label, help)); Toggle({ type: ToggleType.Switch, isOn: value }).selectedColor(this.主色按钮背景).enabled(!this.busy).onChange(onChange) }.width('100%'); if (this.是否有字段错误(this.fieldKey(label))) Text(this.resolveText(this.字段错误资源(this.fieldKey(label)))).fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.error_text')).width('100%') }.width('100%')
   }
 
   build() {

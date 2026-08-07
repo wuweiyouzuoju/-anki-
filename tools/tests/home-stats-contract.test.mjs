@@ -37,6 +37,27 @@ test('stats service wraps the graphs call through the shared session', () => {
   assert.doesNotMatch(service, /new 后端客户端/, 'must go through 后端会话');
 });
 
+test('stats service exposes GetGraphPreferences via method 3 and decodes response', () => {
+  const service = read(STATS_SERVICE);
+  assert.match(service, /async 获取图表偏好\(\): Promise<GraphPreferences>/);
+  assert.match(service, /统计方法\.获取图表偏好/);
+  assert.match(service, /encodeEmpty\(\)/, 'GetGraphPreferences takes generic.Empty');
+  assert.match(service, /decodeGraphPreferences\(响应字节\)/);
+});
+
+test('stats service exposes SetGraphPreferences via method 4 and encodes request', () => {
+  const service = read(STATS_SERVICE);
+  assert.match(service, /async 设置图表偏好\(偏好: GraphPreferences\): Promise<void>/);
+  assert.match(service, /统计方法\.设置图表偏好/);
+  assert.match(service, /encodeGraphPreferences\(偏好\)/);
+});
+
+test('service index pins GetGraphPreferences=3 and SetGraphPreferences=4', () => {
+  const ids = read(SERVICE_IDS);
+  assert.match(ids, /获取图表偏好:\s*3/, 'backend.rs: method 3 => GetGraphPreferences');
+  assert.match(ids, /设置图表偏好:\s*4/, 'backend.rs: method 4 => SetGraphPreferences');
+});
+
 test('home wires graphs into the snapshot and degrades quietly', () => {
   const index = read(INDEX_PAGE);
   assert.match(index, /import \{ 统计服务 \} from '..\/backend\/统计服务'/);

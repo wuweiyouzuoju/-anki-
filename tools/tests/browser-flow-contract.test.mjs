@@ -939,8 +939,8 @@ test('BrowserPage has T9 state + methods', () => {
 
 test('BrowserPage top bar has T9 find&replace entry button', () => {
   const page = read('entry/src/main/ets/pages/浏览页.ets');
-  // 顶部条含 查找替换 按钮（i18n key 复用 browser_action_find_replace）
-  assert.match(page, /Button\s*\(\s*\$r\('app\.string\.browser_action_find_replace'\)\s*\)/);
+  // 顶部条含 查找替换 按钮（i18n key 复用 browser_action_find_replace），与主页同款 按下态按钮
+  assert.match(page, /按下态按钮\s*\(\s*\{[^]*文案:\s*\$r\('app\.string\.browser_action_find_replace'\)/);
   // 点击设 显示查找替换 = true
   assert.match(page, /this\.显示查找替换\s*=\s*true/);
 });
@@ -1013,6 +1013,238 @@ test('T9 i18n keys exist in both base and en_US string.json', () => {
     'browser_find_error',
     'browser_find_no_notes_error',
     'browser_find_success'
+  ];
+  for (const k of keys) {
+    assert.match(zh, new RegExp(`"name":\\s*"${k}"`), `base missing ${k}`);
+    assert.match(en, new RegExp(`"name":\\s*"${k}"`), `en_US missing ${k}`);
+  }
+});
+
+// ---- T6 浏览侧边栏契约测试 ----
+
+test('BrowserPage wires T6 sidebar: imports 浏览侧边栏 + 标签服务 + 配置服务 + TagTreeNode + ConfigKeyBool', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  assert.match(page, /import\s+\{\s*浏览侧边栏[^}]*\}\s*from\s*['"][^'"]*浏览侧边栏['"]/);
+  assert.match(page, /import\s+\{\s*标签服务\s*\}\s*from\s*['"][^'"]*标签服务['"]/);
+  assert.match(page, /import\s+\{\s*配置服务\s*\}\s*from\s*['"][^'"]*配置服务['"]/);
+  assert.match(page, /import\s+type\s+\{\s*TagTreeNode\s*\}\s*from\s*['"][^'"]*TagsMessages['"]/);
+  assert.match(page, /import\s+\{\s*ConfigKeyBool\s*\}\s*from\s*['"][^'"]*ConfigMessages['"]/);
+});
+
+test('BrowserPage has T6 sidebar state + service instances', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  // 服务实例
+  assert.match(page, /private\s+readonly\s+标签服务实例:\s*标签服务/);
+  assert.match(page, /private\s+readonly\s+配置服务实例:\s*配置服务/);
+  // 8 个 @State：显示 / 忙碌 / 错误 / 标签树 / 已保存搜索列表 / 三区折叠
+  assert.match(page, /@State\s+private\s+显示侧边栏:\s*boolean/);
+  assert.match(page, /@State\s+private\s+侧边栏忙碌:\s*boolean/);
+  assert.match(page, /@State\s+private\s+侧边栏错误:\s*string/);
+  assert.match(page, /@State\s+private\s+标签树:\s*TagTreeNode\s*\|\s*null/);
+  assert.match(page, /@State\s+private\s+已保存搜索列表:\s*已保存搜索项\[\]/);
+  assert.match(page, /@State\s+private\s+侧边栏牌组折叠:\s*boolean/);
+  assert.match(page, /@State\s+private\s+侧边栏标签折叠:\s*boolean/);
+  assert.match(page, /@State\s+private\s+侧边栏已保存搜索折叠:\s*boolean/);
+});
+
+test('BrowserPage has T6 sidebar methods', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  // 打开侧边栏（含加载逻辑）
+  assert.match(page, /private\s+async\s+打开侧边栏\s*\(/);
+  // 加载标签树 / 已保存搜索 / 折叠状态
+  assert.match(page, /private\s+async\s+加载标签树\s*\(/);
+  assert.match(page, /private\s+async\s+加载已保存搜索\s*\(/);
+  assert.match(page, /private\s+async\s+加载侧边栏折叠状态\s*\(/);
+  // 切换折叠状态（持久化）
+  assert.match(page, /private\s+async\s+切换侧边栏折叠\s*\(/);
+  // 节点点击/长按回调
+  assert.match(page, /private\s+选牌组节点\s*\(/);
+  assert.match(page, /private\s+选标签节点\s*\(/);
+  assert.match(page, /private\s+选已保存搜索\s*\(/);
+  assert.match(page, /private\s+追加牌组条件\s*\(/);
+  assert.match(page, /private\s+追加标签条件\s*\(/);
+  // 调用 标签服务.标签树 + 配置服务.获取配置JSON/获取配置布尔/设置配置布尔
+  assert.match(page, /this\.标签服务实例\.标签树\s*\(/);
+  assert.match(page, /this\.配置服务实例\.获取配置JSON\s*\(/);
+  assert.match(page, /this\.配置服务实例\.获取配置布尔\s*\(/);
+  assert.match(page, /this\.配置服务实例\.设置配置布尔\s*\(/);
+});
+
+test('BrowserPage top bar has T6 sidebar entry button', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  // 顶部条含 筛选 按钮（i18n key browser_action_sidebar），与主页顶部工具栏同款 按下态按钮
+  assert.match(page, /按下态按钮\s*\(\s*\{[^]*文案:\s*\$r\('app\.string\.browser_action_sidebar'\)/);
+  // 点击调用 打开侧边栏
+  assert.match(page, /this\.打开侧边栏\s*\(/);
+});
+
+test('BrowserPage renders 字段帮助面板 and wires help buttons for new features', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  // import 字段帮助面板
+  assert.match(page, /import\s*\{\s*字段帮助面板\s*\}\s*from\s*'\.\.\/components\/字段帮助面板'/);
+  // 3 个 @State：显示说明浮层 / 说明标题 / 说明正文（批量操作栏 ⓘ 仍用）
+  assert.match(page, /@State\s+private\s+显示说明浮层:\s*boolean/);
+  assert.match(page, /@State\s+private\s+说明标题:\s*Resource/);
+  assert.match(page, /@State\s+private\s+说明正文:\s*Resource/);
+  // 根 Stack 渲染 字段帮助面板
+  assert.match(page, /字段帮助面板\s*\(/);
+  // 顶部条不再挂筛选/查找替换的 ⓘ（说明标题 初始值仍引用 sidebar_title 作为默认占位）
+  assert.match(page, /browser_help_sidebar_title/);
+  // 批量操作栏：onHelp 回调（browser_help_batch_title）
+  assert.match(page, /browser_help_batch_title/);
+  // 查找替换的 ⓘ 由弹窗内 onHelp 上抛，浏览页 onHelp 回调引用 browser_help_find_replace_title
+  // （顶部条 Builder 内不含 field_help_button，ⓘ 仅出现在查找替换对话框和批量操作栏内）
+});
+
+test('查找替换对话框 has ⓘ help button that fires onHelp (统一字段帮助面板)', () => {
+  const dialog = read('entry/src/main/ets/components/browser/查找替换对话框.ets');
+  // 标题旁有 ⓘ 按钮（field_help_button）
+  assert.match(dialog, /field_help_button/);
+  // 点击 ⓘ 上抛 onHelp 回调（由父组件统一渲染 字段帮助面板 浮层，与批量操作栏 ⓘ 同模式）
+  assert.match(dialog, /onHelp:\s*\(\)\s*=>\s*void/);
+  assert.match(dialog, /this\.onHelp\s*\(/);
+  // 不内联折叠帮助文本（无 是否显示说明 状态）
+  assert.doesNotMatch(dialog, /是否显示说明/);
+});
+
+test('BrowserPage wires 查找替换对话框 onHelp to 字段帮助面板', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  // 渲染查找替换对话框时传入 onHelp 回调，设置标题/正文并显示浮层
+  assert.match(page, /onHelp:\s*\([^)]*\)[^]*=>\s*\{/);
+  assert.match(page, /browser_help_find_replace_title/);
+  assert.match(page, /browser_help_find_replace_body/);
+});
+
+test('批量操作栏 has onHelp callback and renders ⓘ button', () => {
+  const bar = read('entry/src/main/ets/components/browser/批量操作栏.ets');
+  assert.match(bar, /onHelp:\s*\(\)\s*=>\s*void/);
+  assert.match(bar, /field_help_button/);
+});
+
+test('BrowserPage build renders 浏览侧边栏 conditionally on 显示侧边栏', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  assert.match(page, /if\s*\(this\.显示侧边栏\)\s*\{/);
+  assert.match(page, /浏览侧边栏\s*\(\s*\{/);
+  assert.match(page, /isDark:\s*this\.是否深色\s*\(\s*\)/);
+  assert.match(page, /busy:\s*this\.侧边栏忙碌/);
+  assert.match(page, /errorMessage:\s*this\.侧边栏错误/);
+  assert.match(page, /牌组树:\s*this\.牌组树/);
+  assert.match(page, /标签树:\s*this\.标签树/);
+  assert.match(page, /已保存搜索列表:\s*this\.已保存搜索列表/);
+  assert.match(page, /牌组折叠:\s*this\.侧边栏牌组折叠/);
+  assert.match(page, /标签折叠:\s*this\.侧边栏标签折叠/);
+  assert.match(page, /已保存搜索折叠:\s*this\.侧边栏已保存搜索折叠/);
+  // 7 个回调
+  assert.match(page, /onClose:/);
+  assert.match(page, /onSelectDeck:/);
+  assert.match(page, /onSelectTag:/);
+  assert.match(page, /onSelectSavedSearch:/);
+  assert.match(page, /onAppendDeck:/);
+  assert.match(page, /onAppendTag:/);
+  assert.match(page, /onToggle折叠:/);
+});
+
+test('浏览侧边栏 component preserves T6 presentation-only invariants', () => {
+  const panel = read('entry/src/main/ets/components/browser/浏览侧边栏.ets');
+  // 纯展示层：不直接调后端
+  assert.doesNotMatch(panel, /后端会话|标签服务|配置服务|\.会话\.调用\s*\(/);
+  // 必备 @Prop
+  assert.match(panel, /@Prop\s+isDark:\s*boolean/);
+  assert.match(panel, /@Prop\s+busy:\s*boolean/);
+  assert.match(panel, /@Prop\s+errorMessage:\s*string/);
+  assert.match(panel, /@Prop\s+牌组树:\s*DeckTreeNode\s*\|\s*null/);
+  assert.match(panel, /@Prop\s+标签树:\s*TagTreeNode\s*\|\s*null/);
+  assert.match(panel, /@Prop\s+已保存搜索列表:\s*已保存搜索项\[\]/);
+  assert.match(panel, /@Prop\s+牌组折叠:\s*boolean/);
+  assert.match(panel, /@Prop\s+标签折叠:\s*boolean/);
+  assert.match(panel, /@Prop\s+已保存搜索折叠:\s*boolean/);
+  // 7 个回调签名
+  assert.match(panel, /onClose:\s*\(\)\s*=>\s*void/);
+  assert.match(panel, /onSelectDeck:\s*\(deckName:\s*string\)\s*=>\s*void/);
+  assert.match(panel, /onSelectTag:\s*\(tagName:\s*string\)\s*=>\s*void/);
+  assert.match(panel, /onSelectSavedSearch:\s*\(search:\s*string\)\s*=>\s*void/);
+  assert.match(panel, /onAppendDeck:\s*\(deckName:\s*string\)\s*=>\s*void/);
+  assert.match(panel, /onAppendTag:\s*\(tagName:\s*string\)\s*=>\s*void/);
+  assert.match(panel, /onToggle折叠:\s*\(section:[^)]+\)\s*=>\s*void/);
+  // 三区标题 + 空提示走 i18n
+  assert.match(panel, /app\.string\.browser_sidebar_title/);
+  assert.match(panel, /app\.string\.browser_sidebar_decks/);
+  assert.match(panel, /app\.string\.browser_sidebar_tags/);
+  assert.match(panel, /app\.string\.browser_sidebar_saved_searches/);
+  assert.match(panel, /app\.string\.browser_sidebar_empty/);
+});
+
+test('标签服务 exposes 标签树 + 设置标签折叠 methods (T6 sidebar tag tree)', () => {
+  const svc = read('entry/src/main/ets/backend/标签服务.ts');
+  assert.match(svc, /async\s+标签树\s*\(\s*\):\s*Promise<TagTreeNode>/);
+  assert.match(svc, /async\s+设置标签折叠\s*\(\s*请求:\s*SetTagCollapsedRequest\s*\):\s*Promise<OpChanges>/);
+  // 服务号与方法号
+  assert.match(svc, /服务号\.后端标签/);
+  assert.match(svc, /标签方法\.标签树/);
+  assert.match(svc, /标签方法\.设置标签折叠/);
+});
+
+test('配置服务 exposes 获取配置JSON + 设置配置JSON + 获取配置布尔 + 设置配置布尔 methods (T6 sidebar config)', () => {
+  const svc = read('entry/src/main/ets/backend/配置服务.ts');
+  assert.match(svc, /async\s+获取配置JSON\s*\(\s*key:\s*string\s*\):\s*Promise<string>/);
+  assert.match(svc, /async\s+设置配置JSON\s*\(\s*请求:\s*SetConfigJsonRequest\s*\):\s*Promise<OpChanges>/);
+  assert.match(svc, /async\s+获取配置布尔\s*\(\s*key:\s*ConfigKeyBool\s*\):\s*Promise<boolean>/);
+  assert.match(svc, /async\s+设置配置布尔\s*\(\s*请求:\s*SetConfigBoolRequest\s*\):\s*Promise<OpChanges>/);
+  // 服务号与方法号
+  assert.match(svc, /服务号\.后端配置/);
+  assert.match(svc, /配置方法\.获取配置JSON/);
+  assert.match(svc, /配置方法\.设置配置JSON/);
+  assert.match(svc, /配置方法\.获取配置布尔/);
+  assert.match(svc, /配置方法\.设置配置布尔/);
+});
+
+test('TagsMessages decodes TagTreeNode recursively + encodes SetTagCollapsedRequest', () => {
+  const msg = read('entry/src/main/ets/proto/messages/TagsMessages.ts');
+  // 解码函数存在
+  assert.match(msg, /export\s+function\s+decodeTagTreeNode\s*\(/);
+  assert.match(msg, /export\s+function\s+encodeSetTagCollapsedRequest\s*\(/);
+  // 接口
+  assert.match(msg, /export\s+interface\s+TagTreeNode\s*\{/);
+  assert.match(msg, /export\s+interface\s+SetTagCollapsedRequest\s*\{/);
+  // 字段：name/children/level/collapsed
+  assert.match(msg, /name:\s*string/);
+  assert.match(msg, /children:\s*TagTreeNode\[\]/);
+  assert.match(msg, /level:\s*number/);
+  assert.match(msg, /collapsed:\s*boolean/);
+});
+
+test('ConfigMessages exposes ConfigKeyBool enum with COLLAPSE_TAGS/DECKS/SAVED_SEARCHES', () => {
+  const msg = read('entry/src/main/ets/proto/messages/ConfigMessages.ts');
+  assert.match(msg, /export\s+enum\s+ConfigKeyBool\s*\{/);
+  assert.match(msg, /COLLAPSE_TAGS\s*=\s*4/);
+  assert.match(msg, /COLLAPSE_DECKS\s*=\s*6/);
+  assert.match(msg, /COLLAPSE_SAVED_SEARCHES\s*=\s*7/);
+  // 编解码函数
+  assert.match(msg, /export\s+function\s+encodeStringRequest\s*\(/);
+  assert.match(msg, /export\s+function\s+decodeJsonResponse\s*\(/);
+  assert.match(msg, /export\s+function\s+decodeBoolResponse\s*\(/);
+  assert.match(msg, /export\s+function\s+encodeGetConfigBoolRequest\s*\(/);
+  assert.match(msg, /export\s+function\s+encodeSetConfigBoolRequest\s*\(/);
+  assert.match(msg, /export\s+function\s+encodeSetConfigJsonRequest\s*\(/);
+});
+
+test('T6 i18n keys exist in both base and en_US string.json', () => {
+  const zh = read('entry/src/main/resources/base/element/string.json');
+  const en = read('entry/src/main/resources/en_US/element/string.json');
+  const keys = [
+    'browser_sidebar_title',
+    'browser_sidebar_decks',
+    'browser_sidebar_tags',
+    'browser_sidebar_saved_searches',
+    'browser_sidebar_empty',
+    'browser_action_sidebar',
+    'browser_sidebar_load_error',
+    'browser_help_sidebar_title',
+    'browser_help_sidebar_body',
+    'browser_help_find_replace_title',
+    'browser_help_find_replace_body',
+    'browser_help_batch_title',
+    'browser_help_batch_body'
   ];
   for (const k of keys) {
     assert.match(zh, new RegExp(`"name":\\s*"${k}"`), `base missing ${k}`);

@@ -8,14 +8,15 @@ import { 颜色键 } from '../../model/颜色主题';
 // @名称 数据管理分组
 //
 // @作用
-// 渲染「导出/导入数据」+「已隐藏牌组」两个入口行；点击上抛回调，由父组件打开对应面板。
+// 渲染「导出/导入数据」+「已隐藏牌组」+「清除未用标签」三个入口行；点击上抛回调，由父组件打开对应面板。
 // 纯回调传递，无内部状态；点「导出/导入数据」由父组件打开 DataTransferPanel，
 // 用户在面板内 Select 下拉切换 exportDeck / exportPersonalData / importDeck / importPersonalData 四种模式。
+// 点「清除未用标签」由父组件弹确认对话框并调后端。
 //
 // @输入
 // 是否深色：当前是否深色模式（影响色板取值）。
 // 是否展开：本分组是否展开。
-// 切换展开回调 / 点击导出导入回调 / 点击已隐藏牌组回调：父组件注入。
+// 切换展开回调 / 点击导出导入回调 / 点击已隐藏牌组回调 / 点击清除未用标签回调：父组件注入。
 //
 // @输出
 // 渲染数据管理分组卡片；用户点击行时触发对应回调。
@@ -30,6 +31,8 @@ export struct 数据分组 {
   切换展开回调: () => void = (): void => {};
   点击导出导入回调: () => void = (): void => {};
   点击已隐藏牌组回调: () => void = (): void => {};
+  点击清除未用标签回调: () => void = (): void => {};
+  点击媒体管理回调: () => void = (): void => {};
 
   // @StorageProp 触发颜色主题切换时重 build，让 设置面板色板_取(是否深色).主色 即时变化
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
@@ -106,6 +109,50 @@ export struct 数据分组 {
           .height(58)
           .onClick(() => {
             this.点击已隐藏牌组回调();
+          })
+
+          // 媒体管理行：检查未使用/缺失媒体 + 回收站操作
+          Row() {
+            Column({ space: 2 }) {
+              Text($r('app.string.settings_media_management'))
+                .fontSize(15)
+                .fontColor(设置面板色板_取(this.是否深色).主文字)
+              Text($r('app.string.settings_media_management_subtitle'))
+                .fontSize(12)
+                .fontColor(设置面板色板_取(this.是否深色).弱化文字)
+            }
+            .alignItems(HorizontalAlign.Start)
+            Blank()
+            Text('›')
+              .fontSize(20)
+              .fontColor(设置面板色板_取(this.是否深色).弱化文字)
+          }
+          .width('100%')
+          .height(58)
+          .onClick(() => {
+            this.点击媒体管理回调();
+          })
+
+          // 清除未用标签行：删除未关联到笔记的标签
+          Row() {
+            Column({ space: 2 }) {
+              Text($r('app.string.settings_clear_unused_tags'))
+                .fontSize(15)
+                .fontColor(设置面板色板_取(this.是否深色).主文字)
+              Text($r('app.string.settings_clear_unused_tags_subtitle'))
+                .fontSize(12)
+                .fontColor(设置面板色板_取(this.是否深色).弱化文字)
+            }
+            .alignItems(HorizontalAlign.Start)
+            Blank()
+            Text('›')
+              .fontSize(20)
+              .fontColor(设置面板色板_取(this.是否深色).弱化文字)
+          }
+          .width('100%')
+          .height(58)
+          .onClick(() => {
+            this.点击清除未用标签回调();
           })
         }
         .width('100%')
