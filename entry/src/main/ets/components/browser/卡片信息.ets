@@ -277,6 +277,7 @@ export struct 卡片信息 {
             })
           }
           .scrollBar(BarState.Auto)
+          .edgeEffect(EdgeEffect.Spring)
           .width('100%')
           .align(Alignment.Top)
           .constraintSize({ maxHeight: '60%' })

@@ -80,7 +80,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 排查 Rust panic | `native/rsharmony/src/lib.rs` | `call_with_registry` 用 catch_unwind 包裹；BackendRegistry 是全局 OnceLock |
 | 修改媒体渲染 | `utils/{声音播放器,TTS播放器,媒体响应助手}.ets` + `model/学习卡片HTML构建器.ets` | 媒体经 `https://jidecards-media.local/` 自建域名 |
 | 修改全屏转场（NavDestination/弹窗） | `utils/转场时长.ets`（分档时长 + 弹簧曲线）+ `utils/自定义转场.ets`（NavDestination opacity 回调注册表）+ `pages/首页.ets` 的 `customNavContentTransition` 回调 | 时长按物理英寸分档（<8.5→200ms / 8.5-12→250ms / >12→300ms）；曲线统一 `curves.springCurve(0, 228, 22, 1)`；首页推栈（from/to index=-1）必须返回 undefined 走系统默认；`proxy.finishTransition()` 必须调，否则 1200ms timeout 后 UI 卡住 |
-| 修改色彩对比度 | `resources/{base,dark}/element/color.json` + `model/颜色主题.ets` + `model/色阶生成.ets`（导出 WCAG 函数） | 文字档 ≥4.5:1，图标/标题档 ≥3:1；改 token 必须同时改 base + dark 避免深色模式反转；`色阶生成.ets` 的 `对比度(a,b)` 可直接调用验算 |
+| 修改色彩对比度 | `resources/{base,dark}/element/color.json` + `model/颜色主题.ets` + `model/色阶生成.ets`（导出 WCAG 函数）+ `tools/verify-hardcoded-colors.mjs`（扫描硬编码颜色并验算对比度） | 文字档 ≥4.5:1，图标/标题档 ≥3:1；改 token 必须同时改 base + dark 避免深色模式反转；`色阶生成.ets` 的 `对比度(a,b)` 可直接调用验算；语义 token：`error_text`(#D92D20/#F97066)、`warning_text`(#B34C00/#FF9929)；**禁止硬编码 `#RRGGBB` 用作文字色**，必须走 `$r('app.color.xxx')` |
 | 新增 Anki backend 方法 | `backend/服务索引.ts` 加 SERVICE/METHOD 常量 | **升级 Anki 版本时必须重新提取本表** |
 | 修改"给我好评"逻辑 | `components/设置面板.ets` 的 `处理好评失败` + `跳转应用市场详情页` | commentManager.showCommentDialog 失败（含 1021500006-9 全部分支）统一回退 DeepLink `store://appgallery.huawei.com/app/detail?id=com.jide.kapian`；不再用 promptAction.showDialog（实测 Promise 静默挂起） |
 | 修改"学习完成好评引导" | `pages/首页.ets` 的 `检查学习完成标记` + `components/好评引导对话框.ets` + `utils/好评引导.ets` + `model/好评引导存储.ets` | 学习页完成学习（展示时刻毫秒 > 0）写 `AppStorage('studyJustFinished', true)`；首页 `开始学习` onPop 调 `检查学习完成标记` 读标记 → preferences 查「只弹一次」→ 标记 → 弹 `好评引导对话框`。`打开应用内好评` 复用设置面板同款 commentManager + DeepLink 降级 |
@@ -88,7 +88,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 修改浏览页 | `pages/浏览页.ets` + `components/browser/{搜索框,卡片表格,浏览编辑区}.ets` + `backend/{搜索服务,笔记服务,笔记类型服务,卡片服务}.ts` | phase 状态机 loading→list→error；搜索串由后端构建搜索串生成（前端不拼字符串）；行数据懒加载（浏览器行按ID）；T7 行点击弹 浏览编辑区 编辑笔记字段/标签，Cards 模式经 卡片服务.获取卡片 拿 noteId 再查笔记；浏览编辑区纯展示层不直接调 Service，onSave 回调上抛由父级落盘 |
 | 新增浏览器列 | `proto/messages/SearchMessages.ts` 的 BrowserColumn 接口 + 后端 全部浏览器列 RPC 返回 | 列 key 来自 Anki 后端预定义；手机端默认显示 Question+Deck+Due 三列（长按表头配置） |
 | 修改统计页 | `pages/统计页.ets` + `components/stats/*.ets` + `backend/统计服务.ts` + `proto/messages/StatsMessages.ts` | 阶段状态机 loading→data/error；图表用 Text+Column+Row+Stack（不引第三方库）；偏好走 GraphPreferences RPC；**统计图表组件 build 方法必须单根 Column** |
-| 修改媒体管理 | `components/settings/媒体管理面板.ets` + `backend/媒体服务.ts` | Stack 遮罩+面板；检查中/处理中防重入；清空回收站需 showAlertDialog 二次确认；getStringSync 带参用展开运算符 |
+| 修改媒体管理 | `components/settings/媒体管理面板.ets` + `backend/媒体服务.ts` | Stack 遮罩+面板；检查中/处理中防重入；清空回收站需 showAlertDialog 二次确认；getStringSync 带参用展开运算符；**未使用列表分页**（`未使用列表` 限前 200 项渲染避免真机 OOM，`未使用全部` 保留完整列表用于批量操作）；"全部放入回收站"按钮迭代 `未使用全部` 完整列表 |
 | 修改卡片预览 | `components/browser/卡片预览页.ets` + `backend/卡片渲染服务.ts` | Web 组件复用 渲染既有卡片；翻面 + 左右滑切基于当前搜索结果列表；"编辑字段"进浏览编辑区 |
 | 修改标签管理 | `components/browser/浏览侧边栏.ets` + `backend/标签服务.ts` | 标签长按弹 showActionMenu（回调必须 (err, data) 双参数）；4 选项：追加搜索/重命名/删除/补全 |
 
@@ -104,6 +104,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 - **系统栏颜色跟随主题微染**（2026-08-05）：`应用系统栏样式` 优先读 AppStorage `颜色键.页面底色微染`（页面背景同款主题微染色）作为 `statusBarColor`/`navigationBarColor`，让顶部状态栏与界面同色；`应用颜色主题` 写完色键后主动调 `应用系统栏样式` 覆盖所有主题变化路径（启动恢复/主题模式切换/颜色主题切换/系统深浅色变化）。早期初始化 AppStorage 未写入时回退中性 `#F5F7FA`/`#10151D`
 - **统计图表不引第三方库**（2026-08-04）：用 Text+Column+Row+Stack 实现条形图/柱状图/网格指标，不引 Canvas 或第三方图表库；@Builder 传参渲染，不在 @Builder 内写 const
 - **媒体管理面板持有 Service 实例**（2026-08-04）：与设置面板持有 集合服务 调 检查数据库 同款模式，面板直接调 媒体服务 RPC，不上抛数据意图；检查中/处理中防重入用 @State 布尔
+- **华为应用市场设计审查合规**（2026-08-07）：4 项审查问题修复——(1) 色彩对比度：新增 `warning_text` 语义 token，禁止硬编码 `#RRGGBB` 用作文字色，`tools/verify-hardcoded-colors.mjs` 扫描验算 WCAG 对比度；(2) 转场动效：全屏转场统一用 `取全屏转场时长()`+`取全屏转场曲线()`（弹簧曲线），禁止左右平移/上下位移/单帧切换；(3) 滑动边界：所有 Scroll/List 加 `.edgeEffect(EdgeEffect.Spring)`；(4) 转场时长：`utils/转场时长.ets` 按设备物理英寸分档（200/250/300ms）。组件级微动效（按钮按下态 80ms / 分组展开 150ms / 卡片刷新 300ms）不属于"全屏页面转场"范畴
 
 ## 扩展点
 

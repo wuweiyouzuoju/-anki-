@@ -319,7 +319,7 @@ export struct 图表偏好面板 {
             if (this.错误信息 !== '') {
               Text(this.错误信息)
                 .fontSize(应用尺寸.字号_正文_小)
-                .fontColor('#D32F2F')
+                .fontColor($r('app.color.error_text'))
                 .width('100%')
             }
           }
@@ -328,6 +328,7 @@ export struct 图表偏好面板 {
         }
         .constraintSize({ maxHeight: '60%' })
         .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
 
         // 底部双按钮 Row（取消 + 保存，与 创建牌组面板 同款）
         Row({ space: 应用尺寸.间距_10 }) {

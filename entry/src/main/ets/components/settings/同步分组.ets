@@ -363,8 +363,6 @@ export struct 同步分组 {
         Text($r('app.string.settings_sync_media_toggle_hint'))
           .fontSize(12)
           .fontColor(色板.三级文字)
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)

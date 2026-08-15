@@ -382,10 +382,10 @@ export struct 数据迁移面板 {
           Row({ space: 应用尺寸.间距_8 }) {
             Text('⚠')
               .fontSize(应用尺寸.字号_标题)
-              .fontColor('#D32F2F')
+              .fontColor($r('app.color.error_text'))
             Text(this.解析文本($r('app.string.transfer_personal_replace_warning')))
               .fontSize(应用尺寸.字号_正文_中)
-              .fontColor('#D32F2F')
+              .fontColor($r('app.color.error_text'))
               .layoutWeight(1)
           }
           .width('100%')
@@ -410,7 +410,7 @@ export struct 数据迁移面板 {
       if (this.errorMessage !== '') {
         Text(this.errorMessage)
           .fontSize(应用尺寸.字号_正文_中)
-          .fontColor('#D32F2F')
+          .fontColor($r('app.color.error_text'))
           .width('100%')
       }
 

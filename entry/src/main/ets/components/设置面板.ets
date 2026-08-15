@@ -25,6 +25,11 @@ import { 数据分组 } from './settings/数据分组';
 import { 同步分组 } from './settings/同步分组';
 import { 术语分组 } from './settings/术语分组';
 import { 媒体管理面板 } from './settings/媒体管理面板';
+import { 空卡列表面板 } from './settings/空卡列表面板';
+import { 查找重复对话框 } from './settings/查找重复对话框';
+import { 笔记类型管理面板 } from './settings/笔记类型管理面板';
+import { 笔记类型编辑器 } from './settings/笔记类型编辑器';
+import { 简洁模式AppStorage键, 加载简洁模式, 保存简洁模式 } from '../model/简洁模式存储';
 import { 字段帮助面板 } from './字段帮助面板';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
@@ -90,6 +95,8 @@ export struct 设置面板 {
   // 用户在数据管理分组点「隐藏牌组管理」：上抛给 Index 弹出隐藏牌组对话框
   点击已隐藏牌组回调: () => void = (): void => {
   };
+  // 用户在查找重复对话框点重复组：上抛搜索串给 Index，由 Index 走 NavPathStack 推栈浏览页
+  跳转浏览页回调: (initialSearch: string) => void = (initialSearch: string): void => {};
   // 用户在 同步分组 点「立即同步」：上抛 凭证 + 账号名 给 Index，Index 挂载 同步面板 弹窗
   打开同步弹窗回调: (凭证: SyncAuth, 账号名: string) => void = (_凭证: SyncAuth, _账号名: string): void => {};
   // 用户在 同步分组 点「先备份后同步」：上抛给 Index.ets 打开 数据迁移面板
@@ -102,7 +109,7 @@ export struct 设置面板 {
 
   // 4 个契约测试要求保留的分组开关变量名；通过 @Prop 传给对应子组件。
   @State private 外观分组展开: boolean = true;
-  @State private 数据分组展开: boolean = true;
+  @State private 数据分组展开: boolean = false;
   @State private 数据库分组展开: boolean = false;
   @State private 关于分组展开: boolean = false;
   // 不在契约要求中但保持父组件统一管理，便于后续按分组排序。
@@ -127,6 +134,18 @@ export struct 设置面板 {
   @State private 说明正文: Resource = $r('app.string.settings_fsrs_help');
   // 媒体管理面板：从数据管理分组入口打开，挂在根 Stack 顶层
   @State private 显示媒体管理: boolean = false;
+  // 空卡列表面板：从数据管理分组入口打开，挂在根 Stack 顶层
+  @State private 显示空卡列表: boolean = false;
+  // 查找重复对话框：从数据管理分组入口打开，挂在根 Stack 顶层
+  @State private 显示查找重复: boolean = false;
+  // 笔记类型管理面板（T3）：从数据管理分组入口打开
+  @State private 显示笔记类型管理: boolean = false;
+  // 笔记类型编辑器（T3）：从管理面板点击编辑后打开
+  @State private 显示笔记类型编辑器: boolean = false;
+  @State private 编辑笔记类型ID: number = 0;
+  @State private 编辑笔记类型名: string = '';
+  // 简洁模式：默认 true，隐藏调度分组/术语分组等高级功能
+  @StorageLink(简洁模式AppStorage键) private 简洁模式: boolean = true;
   // 清除未用标签状态：数据管理分组入口 → 确认对话框 → 调后端
   @State private 清除标签忙碌: boolean = false;
 
@@ -134,8 +153,22 @@ export struct 设置面板 {
   private readonly 标签服务实例: 标签服务 = new 标签服务();
   private readonly 链接服务实例: 链接服务 = new 链接服务();
 
+  async aboutToAppear(): Promise<void> {
+    // 加载持久化的简洁模式值到 AppStorage，让 @StorageLink 跨重启保持一致
+    const 持久化值: boolean = await 加载简洁模式();
+    AppStorage.setOrCreate<boolean>(简洁模式AppStorage键, 持久化值);
+  }
+
   private 取本地化文本(资源: Resource): string {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id);
+  }
+
+  /** 简洁模式 Select 选项：简洁版 / 原版 */
+  private 简洁模式选项(): SelectOption[] {
+    return [
+      { value: this.取本地化文本($r('app.string.settings_simple_mode_simple')) },
+      { value: this.取本地化文本($r('app.string.settings_simple_mode_full')) }
+    ];
   }
 
   // ========================================================
@@ -820,26 +853,33 @@ export struct 设置面板 {
           })
         }
 
-        // 2. FSRS 调度器分组
+        // 2. FSRS 调度器分组（简洁模式下隐藏）
+        if (!this.简洁模式) {
+          ListItem() {
+            调度器分组({
+              是否深色: this.是否深色,
+              是否展开: this.调度器分组展开,
+              切换展开回调: (): void => { this.调度器分组展开 = !this.调度器分组展开; },
+              打开说明回调: (标题: Resource, 正文: Resource): void => {
+                this.说明标题 = 标题;
+                this.说明正文 = 正文;
+                this.显示说明浮层 = true;
+              }
+            })
+          }
+        }
+
+        // 3. 学习布局分组（原「复习页布局」分组更名；展开后含复习页布局 Select + 今日进度卡开关）
         ListItem() {
-          调度器分组({
+          布局分组({
             是否深色: this.是否深色,
-            是否展开: this.调度器分组展开,
-            切换展开回调: (): void => { this.调度器分组展开 = !this.调度器分组展开; },
+            是否展开: this.布局分组展开,
+            切换展开回调: (): void => { this.布局分组展开 = !this.布局分组展开; },
             打开说明回调: (标题: Resource, 正文: Resource): void => {
               this.说明标题 = 标题;
               this.说明正文 = 正文;
               this.显示说明浮层 = true;
             }
-          })
-        }
-
-        // 3. 复习页布局分组
-        ListItem() {
-          布局分组({
-            是否深色: this.是否深色,
-            是否展开: this.布局分组展开,
-            切换展开回调: (): void => { this.布局分组展开 = !this.布局分组展开; }
           })
         }
 
@@ -945,18 +985,20 @@ export struct 设置面板 {
           .borderRadius(12)
         }
 
-        // 7. 术语表分组（复习页常见操作术语说明：埋藏/暂停/删除/撤销/评分按钮）
-        ListItem() {
-          术语分组({
-            是否深色: this.是否深色,
-            是否展开: this.术语分组展开,
-            切换展开回调: (): void => { this.术语分组展开 = !this.术语分组展开; },
-            打开说明回调: (标题: Resource, 正文: Resource): void => {
-              this.说明标题 = 标题;
-              this.说明正文 = 正文;
-              this.显示说明浮层 = true;
-            }
-          })
+        // 7. 术语表分组（简洁模式下隐藏）
+        if (!this.简洁模式) {
+          ListItem() {
+            术语分组({
+              是否深色: this.是否深色,
+              是否展开: this.术语分组展开,
+              切换展开回调: (): void => { this.术语分组展开 = !this.术语分组展开; },
+              打开说明回调: (标题: Resource, 正文: Resource): void => {
+                this.说明标题 = 标题;
+                this.说明正文 = 正文;
+                this.显示说明浮层 = true;
+              }
+            })
+          }
         }
 
         // 8. 数据管理分组（入口字符串 app.string.settings_data_management 由子组件 数据分组 持有；
@@ -965,10 +1007,14 @@ export struct 设置面板 {
           数据分组({
             是否深色: this.是否深色,
             是否展开: this.数据分组展开,
+            简洁模式: this.简洁模式,
             切换展开回调: (): void => { this.数据分组展开 = !this.数据分组展开; },
             点击导出导入回调: (): void => { this.导出数据回调(); },
+            点击笔记类型回调: (): void => { this.显示笔记类型管理 = true; },
             点击已隐藏牌组回调: (): void => { this.点击已隐藏牌组回调(); },
             点击媒体管理回调: (): void => { this.显示媒体管理 = true; },
+            点击空卡回调: (): void => { this.显示空卡列表 = true; },
+            点击查找重复回调: (): void => { this.显示查找重复 = true; },
             点击清除未用标签回调: (): void => { this.请求清除未用标签(); }
           })
         }
@@ -991,12 +1037,52 @@ export struct 设置面板 {
           .backgroundColor(设置面板色板_取(this.是否深色).背景)
           .borderRadius(12)
         }
+
+        // 9. 当前模式（置底；左侧标题+ⓘ 占满左侧，右侧 Select 选择框；宽度与其他分组行对齐）
+        ListItem() {
+          Row() {
+            Row() {
+              Text(this.取本地化文本($r('app.string.settings_simple_mode')))
+                .fontSize(15)
+                .fontColor(设置面板色板_取(this.是否深色).主文字)
+              Button($r('app.string.field_help_button'))
+                .type(ButtonType.Normal)
+                .backgroundColor(Color.Transparent)
+                .fontSize(14)
+                .fontColor(设置面板色板_取(this.是否深色).三级文字)
+                .width(28)
+                .height(28)
+                .padding(0)
+                .margin({ left: 4 })
+                .onClick(() => {
+                  this.说明标题 = $r('app.string.settings_simple_mode');
+                  this.说明正文 = $r('app.string.settings_simple_mode_help');
+                  this.显示说明浮层 = true;
+                })
+            }
+            .layoutWeight(1)
+            Select(this.简洁模式选项())
+              .selected(this.简洁模式 ? 0 : 1)
+              .value(this.简洁模式
+                ? this.取本地化文本($r('app.string.settings_simple_mode_simple'))
+                : this.取本地化文本($r('app.string.settings_simple_mode_full')))
+              .controlSize(ControlSize.SMALL)
+              .onSelect((索引: number): void => {
+                保存简洁模式(索引 === 0);
+              })
+          }
+          .width('100%')
+          .padding(16)
+          .backgroundColor(设置面板色板_取(this.是否深色).背景)
+          .borderRadius(12)
+        }
       }
       .width('88%')
       .constraintSize({ maxWidth: 480 })
       .height('88%')
       .padding(16)
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .alignListItem(ListItemAlign.Center)
       .onClick(() => {
       })
@@ -1023,6 +1109,54 @@ export struct 设置面板 {
         媒体管理面板({
           isDark: this.是否深色,
           onClose: (): void => { this.显示媒体管理 = false; }
+        })
+          .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
+      }
+
+      if (this.显示空卡列表) {
+        空卡列表面板({
+          isDark: this.是否深色,
+          onClose: (): void => { this.显示空卡列表 = false; }
+        })
+          .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
+      }
+
+      // 查找重复对话框：数据管理分组入口打开，挂在根 Stack 顶层
+      if (this.显示查找重复) {
+        查找重复对话框({
+          isDark: this.是否深色,
+          onClose: (): void => { this.显示查找重复 = false; },
+          onJumpToBrowser: (searchText: string): void => {
+            this.显示查找重复 = false;
+            this.跳转浏览页回调(searchText);
+          }
+        })
+          .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
+      }
+
+      // 笔记类型管理面板（T3）：数据管理分组入口打开
+      if (this.显示笔记类型管理) {
+        笔记类型管理面板({
+          isDark: this.是否深色,
+          onClose: (): void => { this.显示笔记类型管理 = false; },
+          onEdit: (id: number, name: string): void => {
+            this.编辑笔记类型ID = id;
+            this.编辑笔记类型名 = name;
+            this.显示笔记类型管理 = false;
+            this.显示笔记类型编辑器 = true;
+          }
+        })
+          .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
+      }
+
+      // 笔记类型编辑器（T3）：从管理面板点击编辑后打开
+      if (this.显示笔记类型编辑器) {
+        笔记类型编辑器({
+          isDark: this.是否深色,
+          notetypeId: this.编辑笔记类型ID,
+          notetypeName: this.编辑笔记类型名,
+          onClose: (): void => { this.显示笔记类型编辑器 = false; },
+          onSaved: (): void => {}
         })
           .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
       }

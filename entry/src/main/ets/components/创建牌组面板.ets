@@ -363,6 +363,7 @@ export struct 创建牌组面板 {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
 
         if (this.errorMessage !== '') {
           Text(this.errorMessage)

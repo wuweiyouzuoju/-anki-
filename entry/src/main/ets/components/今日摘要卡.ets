@@ -222,6 +222,13 @@ export struct 今日摘要卡 {
       }
     }
     .width('100%')
+    // 展开态非空：标题、进度条、指标三部分用 SpaceBetween 均匀分布在整个卡片高度，
+    // 消除原顶部堆叠导致的下半部分空白，也避免内容全沉底导致中间空白。
+    .justifyContent(
+      this.是否空态()
+        ? FlexAlign.Center
+        : (this.已折叠 ? FlexAlign.Start : FlexAlign.SpaceBetween)
+    )
     // B12-Y2 2026-07-21：折叠态高度自适应内容（顶部 Row~35 + 间距_8 + 进度条 7 + 内边距 32 = ~82）
     // 展开态保持 卡片高度=204，与 月历卡 等高对齐
     // B12-Y2 2026-07-22：height 加 animation 与 ▼ rotate 同步过渡，避免 height 瞬变让旋转显得突兀

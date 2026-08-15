@@ -47,10 +47,33 @@ export default class EntryAbility extends UIAbility {
     return systemDark;
   }
 
-  onCreate(_want: Want, _launchParam: AbilityConstant.LaunchParam): void {
+  onCreate(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
     AppStorage.setOrCreate<common.UIAbilityContext>('abilityContext', this.context);
     this.refreshSystemDarkMode();
+    // DeepLink 跳转：桌面卡片点击 → jidecards://stats → 写 AppStorage 信号让首页 aboutToAppear 跳统计页
+    this.处理DeepLink(want);
     hilog.info(DOMAIN, 'jidecards', 'Application created');
+  }
+
+  onNewWant(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
+    // App 已在后台时，桌面卡片点击 → jidecards://stats → 写 AppStorage 信号让首页监听回调跳统计页
+    this.处理DeepLink(want);
+  }
+
+  // ========================================================
+  // @名称 处理DeepLink
+  // @作用 解析 want.uri，若是 jidecards://stats 写 AppStorage 信号 'navigateToStats'
+  //       首页 @StorageLink 监听此键变化触发跳转统计页
+  // ========================================================
+  private 处理DeepLink(want: Want): void {
+    const uri: string | undefined = want.uri;
+    if (uri === undefined || uri === '') {
+      return;
+    }
+    if (uri === 'jidecards://stats') {
+      // 用时间戳作为信号值，确保即使连续两次相同 uri 也能触发 @StorageLink 变化
+      AppStorage.setOrCreate<number>('navigateToStats', Date.now());
+    }
   }
 
   onConfigurationUpdate(configuration: Configuration): void {

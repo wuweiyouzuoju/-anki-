@@ -33,7 +33,8 @@ import type {
   DeckTodayCounts,
   QueuedCardsView,
   SchedTimingToday,
-  SchedulingStatesRaw
+  SchedulingStatesRaw,
+  自定义学习默认值
 } from '../proto/messages/SchedulerMessages';
 import {
   decodeCongratsInfo,
@@ -41,14 +42,19 @@ import {
   decodeQueuedCards,
   decodeSchedTimingToday,
   decodeStringList,
+  decode自定义学习默认值,
   encodeBuryOrSuspendCardsRequest,
   encodeCardAnswer,
   encodeCardIds,
+  encodeCustomStudyDefaultsRequest,
+  encodeCustomStudyRequest,
   encodeGetQueuedCardsRequest,
   encodeSchedulingStates,
-  encodeUnburyDeckRequest
+  encodeUnburyDeckRequest,
+  自定义学习预设
 } from '../proto/messages/SchedulerMessages';
 import { encodeDeckId } from '../proto/messages/DeckMessages';
+import { decodeOpChanges, decodeOpChangesWithCount } from '../proto/messages/CollectionMessages';
 
 export class 调度器服务 {
   private readonly 会话: 后端会话 = 后端会话.获取实例();
@@ -147,6 +153,50 @@ export class 调度器服务 {
     const 响应字节: Uint8Array = await this.会话.调用(
       服务号.后端调度器, 调度器方法.完成页信息, new Uint8Array(0));
     return decodeCongratsInfo(响应字节);
+  }
+
+  /**
+   * 自定义学习（CustomStudy, method 27）。
+   * 5 个预设：
+   * - 新卡上限增量 / 复习上限增量：调整当前牌组上限，不创建过滤牌组
+   * - 复习遗忘天数 / 提前复习天数 / 预览新卡天数：创建名为「Custom Study Session」的过滤牌组
+   * 失败以 BackendError 抛出。
+   */
+  async 自定义学习(牌组ID: number, 预设: number, 值: number): Promise<void> {
+    const 请求字节: Uint8Array = encodeCustomStudyRequest(牌组ID, 预设, 值);
+    await this.会话.调用(
+      服务号.后端调度器, 调度器方法.自定义学习, 请求字节);
+  }
+
+  /**
+   * 获取自定义学习默认值（CustomStudyDefaults, method 28）。
+   * 返回该牌组可用的标签列表、extend_new/extend_review 默认值、可用新卡/复习卡数（含子牌组）。
+   */
+  async 获取自定义学习默认值(牌组ID: number): Promise<自定义学习默认值> {
+    const 请求字节: Uint8Array = encodeCustomStudyDefaultsRequest(牌组ID);
+    const 响应字节: Uint8Array = await this.会话.调用(
+      服务号.后端调度器, 调度器方法.自定义学习默认值, 请求字节);
+    return decode自定义学习默认值(响应字节);
+  }
+
+  /**
+   * 清空过滤牌组（EmptyFilteredDeck, method 15）。
+   * 将过滤牌组中的卡片移回原牌组，但保留过滤牌组本身（可重建）。
+   */
+  async 清空过滤牌组(牌组ID: number): Promise<void> {
+    const 请求字节: Uint8Array = encodeDeckId(牌组ID);
+    await this.会话.调用(
+      服务号.后端调度器, 调度器方法.清空过滤牌组, 请求字节);
+  }
+
+  /**
+   * 重建过滤牌组（RebuildFilteredDeck, method 16）。
+   * 重新执行搜索并填充卡片。
+   */
+  async 重建过滤牌组(牌组ID: number): Promise<void> {
+    const 请求字节: Uint8Array = encodeDeckId(牌组ID);
+    await this.会话.调用(
+      服务号.后端调度器, 调度器方法.重建过滤牌组, 请求字节);
   }
 
   private async 设置当前牌组(牌组ID: number): Promise<void> {

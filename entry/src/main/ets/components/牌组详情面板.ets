@@ -307,6 +307,7 @@ export struct 牌组详情面板 {
       .height('100%')
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .height('100%')

@@ -26,9 +26,20 @@
 
 import { 后端会话 } from './后端会话';
 import { 牌组方法, 服务号 } from './服务索引';
-import type { Deck, DeckTreeNode } from '../proto/messages/DeckMessages';
-import { decodeDeck, decodeDeckTreeNode, encodeDeck, encodeDeckIds, encodeDeckTreeRequest, encodeRenameDeckRequest } from '../proto/messages/DeckMessages';
-import { decodeOpChangesWithCount, decodeOpChangesWithId } from '../proto/messages/CollectionMessages';
+import type { Deck, DeckTreeNode, 过滤牌组更新 } from '../proto/messages/DeckMessages';
+import {
+  decodeDeck,
+  decodeDeckTreeNode,
+  decode过滤牌组更新,
+  encodeDeck,
+  encodeDeckIds,
+  encodeDeckTreeRequest,
+  encodeDeckId,
+  encodeRenameDeckRequest,
+  encode过滤牌组更新
+} from '../proto/messages/DeckMessages';
+import { decodeOpChanges, decodeOpChangesWithCount, decodeOpChangesWithId } from '../proto/messages/CollectionMessages';
+import { decodeStringList } from '../proto/messages/SchedulerMessages';
 
 export class 牌组服务 {
   private readonly 会话: 后端会话 = 后端会话.获取实例();
@@ -87,5 +98,37 @@ export class 牌组服务 {
     const 响应: Uint8Array = await this.会话.调用(
       服务号.后端牌组, 牌组方法.删除牌组, 请求);
     return decodeOpChangesWithCount(响应);
+  }
+
+  /**
+   * 获取或创建过滤牌组（GetOrCreateFilteredDeck, method 19）。
+   * 传入 deckId=0 表示新建；传入已有过滤牌组 ID 表示编辑。
+   * 返回 FilteredDeckForUpdate 供前端编辑后回写。
+   */
+  async 获取或创建过滤牌组(牌组ID: number): Promise<过滤牌组更新> {
+    const 响应: Uint8Array = await this.会话.调用(
+      服务号.后端牌组, 牌组方法.获取或创建过滤牌组, encodeDeckId(牌组ID));
+    return decode过滤牌组更新(响应);
+  }
+
+  /**
+   * 添加或更新过滤牌组（AddOrUpdateFilteredDeck, method 20）。
+   * 传入编辑后的 FilteredDeckForUpdate，后端会执行搜索并填充卡片。
+   * 返回新过滤牌组 ID（新建）或原 ID（更新）。
+   */
+  async 添加或更新过滤牌组(更新: 过滤牌组更新): Promise<number> {
+    const 响应: Uint8Array = await this.会话.调用(
+      服务号.后端牌组, 牌组方法.添加或更新过滤牌组, encode过滤牌组更新(更新));
+    return decodeOpChangesWithId(响应);
+  }
+
+  /**
+   * 获取过滤牌组排序选项的本地化标签（FilteredDeckOrderLabels, method 21）。
+   * 返回的字符串列表顺序与 过滤牌组排序 枚举值一一对应。
+   */
+  async 获取过滤牌组排序标签(): Promise<string[]> {
+    const 响应: Uint8Array = await this.会话.调用(
+      服务号.后端牌组, 牌组方法.过滤牌组排序标签, new Uint8Array(0));
+    return decodeStringList(响应);
   }
 }

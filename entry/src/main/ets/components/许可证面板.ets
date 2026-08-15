@@ -132,6 +132,7 @@ export struct 许可证面板 {
         }
         .layoutWeight(1)
         .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
         .align(Alignment.Top)
       }
       .width('88%')

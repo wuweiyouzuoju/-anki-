@@ -59,6 +59,7 @@ export struct 字段帮助面板 {
         .width('100%')
         .constraintSize({ maxHeight: '55%' })
         .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
         Button($r('app.string.done'))
           .width('100%')
           .height(应用尺寸.按钮高度)

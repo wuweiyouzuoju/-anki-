@@ -26,6 +26,32 @@
           {
             entities: ['entity.system.home'],
             actions: ['action.system.home']
+          },
+          {
+            // DeepLink：桌面卡片点击后通过 jidecards://stats 拉起 App 并跳统计页
+            actions: ['ohos.want.action.viewData'],
+            uris: [
+              {
+                scheme: 'jidecards',
+                host: 'stats'
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    extensionAbilities: [
+      {
+        // 桌面服务卡片：2×4 统计卡片（月历/记忆率/今日计数/未来到期）
+        name: 'StatsFormAbility',
+        srcEntry: './ets/formability/统计卡片Ability.ets',
+        description: '$string:stats_form_ability_desc',
+        type: 'form',
+        exported: true,
+        metadata: [
+          {
+            name: 'ohos.extension.form',
+            resource: '$profile:form_config'
           }
         ]
       }

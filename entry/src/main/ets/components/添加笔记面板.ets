@@ -448,6 +448,7 @@ export struct 添加笔记面板 {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
         .align(Alignment.TopStart)
 
         // B12-Y2 2026-07-24：错误信息移出 Scroll 固定显示，避免软键盘弹出或字段较多时

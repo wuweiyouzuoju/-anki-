@@ -474,3 +474,201 @@ function decodeDeckNameId(bytes: Uint8Array): DeckNameId {
   }
   return entry;
 }
+
+// ========================================================
+// Filtered Deck（过滤牌组）相关编解码
+// 来源：proto/anki/decks.proto
+// ========================================================
+
+/** FilteredDeck.SearchTerm.Order 枚举值 */
+export const 过滤牌组排序 = {
+  最旧复习优先: 0,
+  随机: 1,
+  间隔升序: 2,
+  间隔降序: 3,
+  遗忘次数: 4,
+  添加顺序: 5,
+  到期日: 6,
+  逆添加顺序: 7,
+  可回忆率升序: 8,
+  可回忆率降序: 9,
+  相对逾期程度: 10
+} as const;
+
+export interface 搜索条件 {
+  search: string;
+  limit: number;
+  order: number;
+}
+
+export interface 过滤牌组配置 {
+  reschedule: boolean;
+  searchTerms: 搜索条件[];
+  previewDelay: number;
+  previewAgainSecs: number;
+  previewHardSecs: number;
+  previewGoodSecs: number;
+}
+
+export interface 过滤牌组更新 {
+  id: number;
+  name: string;
+  config: 过滤牌组配置;
+  allowEmpty: boolean;
+}
+
+function encode搜索条件(term: 搜索条件): 协议写入器 {
+  const w = new 协议写入器();
+  if (term.search !== '') {
+    w.写入字符串(1, term.search);
+  }
+  if (term.limit !== 0) {
+    w.写入变长整数(2, term.limit);
+  }
+  if (term.order !== 0) {
+    w.写入变长整数(3, term.order);
+  }
+  return w;
+}
+
+function decode搜索条件(bytes: Uint8Array): 搜索条件 {
+  const r = new 协议读取器(bytes);
+  const out: 搜索条件 = { search: '', limit: 0, order: 0 };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.search = r.读取字符串();
+        break;
+      case 2:
+        out.limit = r.读取变长整数();
+        break;
+      case 3:
+        out.order = r.读取变长整数();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+function encode过滤牌组配置(config: 过滤牌组配置): 协议写入器 {
+  const w = new 协议写入器();
+  if (config.reschedule) {
+    w.写入布尔(1, true);
+  }
+  for (let i = 0; i < config.searchTerms.length; i++) {
+    w.写入子消息(2, encode搜索条件(config.searchTerms[i]));
+  }
+  // field 3 delays 是 v1 scheduler 专用，v3 不编码
+  if (config.previewDelay !== 0) {
+    w.写入变长整数(4, config.previewDelay);
+  }
+  if (config.previewHardSecs !== 0) {
+    w.写入变长整数(5, config.previewHardSecs);
+  }
+  if (config.previewGoodSecs !== 0) {
+    w.写入变长整数(6, config.previewGoodSecs);
+  }
+  if (config.previewAgainSecs !== 0) {
+    w.写入变长整数(7, config.previewAgainSecs);
+  }
+  return w;
+}
+
+function decode过滤牌组配置(bytes: Uint8Array): 过滤牌组配置 {
+  const r = new 协议读取器(bytes);
+  const out: 过滤牌组配置 = {
+    reschedule: false,
+    searchTerms: [],
+    previewDelay: 0,
+    previewAgainSecs: 0,
+    previewHardSecs: 0,
+    previewGoodSecs: 0
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.reschedule = r.读取布尔();
+        break;
+      case 2:
+        out.searchTerms.push(decode搜索条件(r.读取字节()));
+        break;
+      case 3:
+        // delays (v1 only) - 跳过
+        r.跳过字段(tag.线类型);
+        break;
+      case 4:
+        out.previewDelay = r.读取变长整数();
+        break;
+      case 5:
+        out.previewHardSecs = r.读取变长整数();
+        break;
+      case 6:
+        out.previewGoodSecs = r.读取变长整数();
+        break;
+      case 7:
+        out.previewAgainSecs = r.读取变长整数();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 编码 FilteredDeckForUpdate（AddOrUpdateFilteredDeck 入参） */
+export function encode过滤牌组更新(deck: 过滤牌组更新): Uint8Array {
+  const w = new 协议写入器();
+  if (deck.id !== 0) {
+    w.写入64位整数(1, deck.id);
+  }
+  if (deck.name !== '') {
+    w.写入字符串(2, deck.name);
+  }
+  w.写入子消息(3, encode过滤牌组配置(deck.config));
+  if (deck.allowEmpty) {
+    w.写入布尔(4, true);
+  }
+  return w.转为字节();
+}
+
+/** 解码 FilteredDeckForUpdate（GetOrCreateFilteredDeck 出参） */
+export function decode过滤牌组更新(bytes: Uint8Array): 过滤牌组更新 {
+  const r = new 协议读取器(bytes);
+  const out: 过滤牌组更新 = {
+    id: 0,
+    name: '',
+    config: {
+      reschedule: false,
+      searchTerms: [],
+      previewDelay: 0,
+      previewAgainSecs: 0,
+      previewHardSecs: 0,
+      previewGoodSecs: 0
+    },
+    allowEmpty: false
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.id = r.读取64位整数();
+        break;
+      case 2:
+        out.name = r.读取字符串();
+        break;
+      case 3:
+        out.config = decode过滤牌组配置(r.读取字节());
+        break;
+      case 4:
+        out.allowEmpty = r.读取布尔();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}

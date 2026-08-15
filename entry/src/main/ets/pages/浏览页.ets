@@ -92,6 +92,8 @@ type 浏览模式 = 'cards' | 'notes';
 export interface 浏览页参数 {
   /** 可选：限定牌组 ID（空=全库浏览） */
   deckId?: string;
+  /** 可选：初始搜索串（如查找重复对话框跳转时传入 `note:"Basic" "字段值"`） */
+  initialSearch?: string;
 }
 
 /** T8 改牌组选择器列表项（扁平化后的牌组树节点）。 */
@@ -104,6 +106,8 @@ interface 牌组项 {
 export struct 浏览页 {
   /** Navigation 入栈参数：牌组 ID（空=全库） */
   pageDeckId: string = '';
+  /** Navigation 入栈参数：初始搜索串（空=默认搜索；查找重复对话框跳转时传入） */
+  pageInitialSearch: string = '';
   /** 页面栈：返回主页时 pop */
   pathStack: NavPathStack = new NavPathStack();
   private readonly 搜索服务实例: 搜索服务 = new 搜索服务();
@@ -214,6 +218,10 @@ export struct 浏览页 {
       this.主题模式值 = await 加载主题模式();
     } catch (_错误) {
       this.主题模式值 = 'system';
+    }
+    // 应用入栈传入的初始搜索串（如查找重复对话框跳转时），再触发搜索
+    if (this.pageInitialSearch !== '') {
+      this.搜索文本 = this.pageInitialSearch;
     }
     await this.执行搜索();
     // 顶部牌组选择器：加载牌组树（失败不阻塞搜索，Select 仅显示"全部"）
@@ -1606,6 +1614,7 @@ export struct 浏览页 {
               .width('100%')
               .layoutWeight(1)
               .scrollBar(BarState.Auto)
+              .edgeEffect(EdgeEffect.Spring)
 
               Button($r('app.string.browser_detail_cancel'))
                 .width('100%')

@@ -76,6 +76,9 @@ export const 牌组方法 = {
   获取牌组名: 13,
   删除牌组: 16,
   重命名牌组: 18,
+  获取或创建过滤牌组: 19,
+  添加或更新过滤牌组: 20,
+  过滤牌组排序标签: 21,
   设置当前牌组: 22,
   获取当前牌组: 23
 } as const;
@@ -97,19 +100,29 @@ export const 调度器方法 = {
   恢复埋藏与暂停: 12,
   按牌组恢复埋藏: 13,
   埋藏或暂停: 14,
-  描述下一档状态: 24
+  清空过滤牌组: 15,
+  重建过滤牌组: 16,
+  描述下一档状态: 24,
+  自定义学习: 27,
+  自定义学习默认值: 28
 } as const;
 
 /** 后端卡片渲染服务方法索引（backend.rs run_backend_card_rendering_service_method 分支） */
 export const 卡片渲染方法 = {
   提取音视频标签: 3,
+  获取空卡: 5,
   渲染既有卡片: 6
 } as const;
 
 /** 后端笔记类型服务方法索引（backend.rs run_backend_notetypes_service_method 分支） */
 export const 笔记类型方法 = {
+  添加笔记类型旧版: 2,
+  更新笔记类型旧版: 3,
+  获取标准笔记类型JSON: 5,
   获取笔记类型: 6,
-  获取笔记类型名列表: 8
+  获取笔记类型旧版: 7,
+  获取笔记类型名列表: 8,
+  移除笔记类型: 11
 } as const;
 
 /** 后端笔记服务方法索引（backend.rs run_backend_notes_service_method 分支） */

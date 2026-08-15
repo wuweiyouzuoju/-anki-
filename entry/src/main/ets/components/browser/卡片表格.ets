@@ -271,6 +271,7 @@ export struct 卡片表格 {
         }
         .width('100%')
         .layoutWeight(1)
+        .edgeEffect(EdgeEffect.Spring)
         .divider({
           strokeWidth: 0.5,
           color: $r('app.color.divider'),

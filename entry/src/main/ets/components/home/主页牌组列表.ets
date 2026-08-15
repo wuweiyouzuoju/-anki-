@@ -27,6 +27,8 @@
 // onItemDelete: (deckId: string) => void  删除牌组回调
 // onItemHide: (deckId: string) => void  隐藏牌组回调
 // onItemDoubleTap: (deckId: string) => void  递归展开回调
+// onItemCustomStudy: (deckId: string) => void  打开自定义学习对话框回调
+// onItemCreateFilteredDeck: () => void  打开创建过滤牌组面板回调
 // onExitReorder: () => void  退出排序模式回调（"完成"按钮）
 // onRefresh: () => void  下拉刷新回调
 // onRetry: () => void  错误态重试回调
@@ -82,6 +84,8 @@ export struct 主页牌组列表 {
   onItemDelete: (deckId: string) => void = (deckId: string): void => {};
   onItemHide: (deckId: string) => void = (deckId: string): void => {};
   onItemDoubleTap: (deckId: string) => void = (deckId: string): void => {};
+  onItemCustomStudy: (deckId: string) => void = (deckId: string): void => {};
+  onItemCreateFilteredDeck: () => void = (): void => {};
   onExitReorder: () => void = (): void => {};
   onRefresh: () => void = (): void => {};
   onRetry: () => void = (): void => {};
@@ -98,15 +102,10 @@ export struct 主页牌组列表 {
 
   build() {
     Column({ space: 应用尺寸.间距_10 }) {
-      // 标题行：左侧"卡组"分区标题，排序模式时右侧显示"完成"按钮退出排序。
-      Row({ space: 应用尺寸.间距_8 }) {
-        Text($r('app.string.deck_section_title'))
-          .fontSize(应用尺寸.字号_分区标题)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-        // 排序模式期间顶部显示"完成"按钮退出排序；非排序模式时由 牌组列表项 长按菜单进入。
-        if (this.排序模式中) {
+      // 标题行隐藏（用户决策 2026-08-12）：仅在排序模式时显示"完成"按钮
+      if (this.排序模式中) {
+        Row({ space: 应用尺寸.间距_8 }) {
+          Blank().layoutWeight(1)
           Button($r('app.string.deck_reorder_done'))
             .height(应用尺寸.按钮高度)
             .fontSize(应用尺寸.字号_按钮)
@@ -117,11 +116,9 @@ export struct 主页牌组列表 {
               this.onExitReorder();
             })
         }
-      }
-      .width('100%')
+        .width('100%')
 
-      // 排序模式提示条：告知"长按卡片拖动，仅同级可拖"。
-      if (this.排序模式中) {
+        // 排序模式提示条：告知"长按卡片拖动，仅同级可拖"。
         Text($r('app.string.deck_reorder_hint'))
           .fontSize(应用尺寸.字号_正文_小)
           .fontColor($r('app.color.text_secondary'))
@@ -163,6 +160,12 @@ export struct 主页牌组列表 {
                 },
                 onDoubleTap: (deckId: string): void => {
                   this.onItemDoubleTap(deckId);
+                },
+                onCustomStudy: (deckId: string): void => {
+                  this.onItemCustomStudy(deckId);
+                },
+                onCreateFilteredDeck: (): void => {
+                  this.onItemCreateFilteredDeck();
                 }
               })
             }

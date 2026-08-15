@@ -27,6 +27,7 @@ import { 颜色键 } from '../model/颜色主题';
 import { CustomTransition } from '../utils/自定义转场';
 import type { EditableNote } from '../proto/messages/NoteMessages';
 import type { NotetypeNameId, NotetypeView } from '../proto/messages/NotetypeMessages';
+import { 标准笔记类型种类 } from '../proto/messages/NotetypeMessages';
 
 /** 建卡目标牌组候选（通过 Navigation param 传入） */
 export interface 添加笔记牌组选项 {
@@ -232,19 +233,47 @@ export struct 添加笔记页 {
       await 后端会话.获取实例().确保已打开(上下文.filesDir);
       const 默认值 = await this.笔记服务实例.获取添加默认值();
       let 名称列表: NotetypeNameId[] = await this.笔记类型服务实例.获取笔记类型名列表();
-      // T3.2：Anki 26.05 默认 collection 不预置 ImageOcclusion，需主动调一次 add。
-      // 调用失败不阻断主流程（用户仍能选其他类型）；只在 错误信息 留一条提示。
+      // 兜底恢复缺失的标准笔记类型：Basic / Cloze / ImageOcclusion。
+      // Anki 26.05 默认 collection 预置 Basic + 3 变种 + Cloze，不预置 ImageOcclusion；
+      // 但云同步替换 collection 后，云端可能缺这些标准类型（如账号曾被清理）。
+      // 走 Anki 桌面版「管理笔记类型 → 添加 → 选择基础类型」同款流程：
+      //   1. GetStockNotetypeLegacy(kind) 拿到 JSON
+      //   2. AddNotetypeLegacy(json) 落库
+      // 调用失败不阻断主流程（用户仍能选其他已有类型）；只在 错误信息 追加提示。
+      let 类型缺失: boolean = false;
+      if (!名称列表.some((项: NotetypeNameId): boolean => 添加笔记页.Basic笔记类型名集合.indexOf(项.name) >= 0)) {
+        try {
+          const json = await this.笔记类型服务实例.获取标准笔记类型JSON(标准笔记类型种类.BASIC);
+          await this.笔记类型服务实例.添加笔记类型旧版(json);
+          类型缺失 = true;
+        } catch (e) {
+          this.错误信息 = e instanceof Error ? e.message : `${e}`;
+        }
+      }
+      if (!名称列表.some((项: NotetypeNameId): boolean => 添加笔记页.填空笔记类型名集合.indexOf(项.name) >= 0)) {
+        try {
+          const json = await this.笔记类型服务实例.获取标准笔记类型JSON(标准笔记类型种类.CLOZE);
+          await this.笔记类型服务实例.添加笔记类型旧版(json);
+          类型缺失 = true;
+        } catch (e) {
+          this.错误信息 = e instanceof Error ? e.message : `${e}`;
+        }
+      }
+      // Anki 26.05 默认 collection 不预置 ImageOcclusion，单独兜底（用专用 RPC）。
       // 注意：后端返回的笔记类型名是本地化的（中文环境下为「图片遮盖」），用 是图片遮盖笔记类型名 识别。
       if (!名称列表.some((项: NotetypeNameId): boolean => this.是图片遮盖笔记类型名(项.name))) {
         try {
           await this.图片遮罩服务实例.添加图片遮罩笔记类型();
-          名称列表 = await this.笔记类型服务实例.获取笔记类型名列表();
+          类型缺失 = true;
         } catch (图片遮罩添加错误) {
           // 不抛出，主流程继续用现有 名称列表（无 Image Occlusion 选项）。
           // 仅在 错误信息 中追加提示，方便用户感知后端问题。
           this.错误信息 = 图片遮罩添加错误 instanceof Error
             ? 图片遮罩添加错误.message : `${图片遮罩添加错误}`;
         }
+      }
+      if (类型缺失) {
+        名称列表 = await this.笔记类型服务实例.获取笔记类型名列表();
       }
       // 用户决策 2026-07-28：3 个 Basic 变种（附翻转卡片 / 可选附翻转卡片 / 输入答案）
       // 暂不做 UI 适配，从下拉列表隐藏，后续考虑。相关帮助文案/名集合保留不删，便于后续启用。
@@ -1141,6 +1170,7 @@ export struct 添加笔记页 {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
         .align(Alignment.TopStart)
         .padding({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距, top: 应用尺寸.间距_8 })
 

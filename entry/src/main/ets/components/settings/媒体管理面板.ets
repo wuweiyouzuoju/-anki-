@@ -44,6 +44,7 @@ export struct 媒体管理面板 {
   @State private 处理中: boolean = false;
   @State private 已检查: boolean = false;
   @State private 未使用列表: string[] = [];
+  @State private 未使用总数: number = 0;
   @State private 缺失列表: string[] = [];
   @State private 选中状态: boolean[] = [];
   @State private 回收站有内容: boolean = false;
@@ -52,6 +53,7 @@ export struct 媒体管理面板 {
 
   private readonly 媒体服务实例: 媒体服务 = new 媒体服务();
   private readonly 同步服务实例: 同步服务 = new 同步服务();
+  private 未使用全部: string[] = [];
 
   aboutToAppear(): void {
     this.检查媒体同步状态();
@@ -90,16 +92,16 @@ export struct 媒体管理面板 {
   }
 
   private 全选状态(): boolean {
-    if (this.未使用列表.length === 0) {
+    if (this.未使用全部.length === 0) {
       return false;
     }
-    return this.选中数量() === this.未使用列表.length;
+    return this.选中数量() === this.未使用全部.length;
   }
 
   private 切换全选(): void {
     const 全选 = !this.全选状态();
     const 新状态: boolean[] = [];
-    for (let i = 0; i < this.未使用列表.length; i++) {
+    for (let i = 0; i < this.未使用全部.length; i++) {
       新状态.push(全选);
     }
     this.选中状态 = 新状态;
@@ -123,11 +125,17 @@ export struct 媒体管理面板 {
     this.错误信息 = '';
     try {
       const 响应: CheckMediaResponse = await this.媒体服务实例.检查媒体();
-      this.未使用列表 = 响应.unused;
+      this.未使用总数 = 响应.unused.length;
+      this.未使用全部 = 响应.unused;
+      // 限制 ForEach 渲染项数，避免 1000+ 项导致真机 OOM 闪退
+      const 最大显示: number = 200;
+      this.未使用列表 = 响应.unused.length > 最大显示
+        ? 响应.unused.slice(0, 最大显示)
+        : 响应.unused;
       this.缺失列表 = 响应.missing;
       this.回收站有内容 = 响应.haveTrash;
       const 初始选中: boolean[] = [];
-      for (let i = 0; i < 响应.unused.length; i++) {
+      for (let i = 0; i < this.未使用列表.length; i++) {
         初始选中.push(false);
       }
       this.选中状态 = 初始选中;
@@ -153,9 +161,9 @@ export struct 媒体管理面板 {
 
   private async 执行进回收站(): Promise<void> {
     const 选中文件: string[] = [];
-    for (let i = 0; i < this.未使用列表.length; i++) {
+    for (let i = 0; i < this.未使用全部.length; i++) {
       if (this.选中状态[i]) {
-        选中文件.push(this.未使用列表[i]);
+        选中文件.push(this.未使用全部[i]);
       }
     }
     if (选中文件.length === 0 || this.处理中) {
@@ -188,7 +196,7 @@ export struct 媒体管理面板 {
       },
       secondaryButton: {
         value: this.取本地化文本($r('app.string.media_empty_trash')),
-        fontColor: '#D32F2F',
+        fontColor: $r('app.color.error_text'),
         action: (): void => { this.执行清空回收站(); }
       }
     });
@@ -249,7 +257,7 @@ export struct 媒体管理面板 {
     Row({ space: 应用尺寸.间距_8 }) {
       Text('⚠')
         .fontSize(应用尺寸.字号_正文)
-        .fontColor('#D32F2F')
+        .fontColor($r('app.color.error_text'))
       Text(文件名)
         .fontSize(应用尺寸.字号_正文_小)
         .fontColor(设置面板色板_取(this.isDark).主文字)
@@ -306,10 +314,10 @@ export struct 媒体管理面板 {
             LoadingProgress()
               .width(16)
               .height(16)
-              .color('#E65100')
+              .color($r('app.color.warning_text'))
             Text($r('app.string.media_sync_in_progress'))
               .fontSize(应用尺寸.字号_正文_小)
-              .fontColor('#E65100')
+              .fontColor($r('app.color.warning_text'))
               .layoutWeight(1)
           }
           .width('100%')
@@ -354,7 +362,7 @@ export struct 媒体管理面板 {
         if (this.错误信息 !== '') {
           Text(this.错误信息)
             .fontSize(应用尺寸.字号_正文_中)
-            .fontColor('#D32F2F')
+            .fontColor($r('app.color.error_text'))
             .width('100%')
         }
 
@@ -365,7 +373,7 @@ export struct 媒体管理面板 {
               // 未使用媒体区
               Column({ space: 应用尺寸.间距_4 }) {
                 Row() {
-                  Text(this.取本地化带参文本($r('app.string.media_unused_count'), [this.未使用列表.length]))
+                  Text(this.取本地化带参文本($r('app.string.media_unused_count'), [this.未使用总数]))
                     .fontSize(应用尺寸.字号_正文)
                     .fontColor($r('app.color.text_primary'))
                     .fontWeight(FontWeight.Medium)
@@ -380,6 +388,12 @@ export struct 媒体管理面板 {
                   }
                 }
                 .width('100%')
+                if (this.未使用总数 > this.未使用列表.length) {
+                  Text(this.取本地化带参文本($r('app.string.media_unused_truncated'), [this.未使用列表.length, this.未使用总数]))
+                    .fontSize(应用尺寸.字号_正文_小)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                }
                 if (this.未使用列表.length === 0) {
                   Text($r('app.string.media_no_unused'))
                     .fontSize(应用尺寸.字号_正文_小)
@@ -422,7 +436,7 @@ export struct 媒体管理面板 {
                   .layoutWeight(1)
                 Text(this.回收站有内容 ? $r('app.string.media_trash_has_items') : $r('app.string.media_trash_empty'))
                   .fontSize(应用尺寸.字号_正文_小)
-                  .fontColor(this.回收站有内容 ? '#D32F2F' : $r('app.color.text_secondary'))
+                  .fontColor(this.回收站有内容 ? $r('app.color.error_text') : $r('app.color.text_secondary'))
               }
               .width('100%')
             }
@@ -431,22 +445,20 @@ export struct 媒体管理面板 {
           .width('100%')
           .constraintSize({ maxHeight: 280 })
           .scrollBar(BarState.Auto)
+          .edgeEffect(EdgeEffect.Spring)
 
-          // 操作按钮区
-          Row({ space: 应用尺寸.间距_8 }) {
-            Button($r('app.string.media_trash_selected'))
-              .type(ButtonType.Normal)
-              .layoutWeight(1)
-              .height(应用尺寸.按钮高度)
-              .fontSize(应用尺寸.字号_正文_小)
-              .fontColor($r('app.color.action_on_primary'))
-              .backgroundColor(this.主色按钮背景)
-              .borderRadius(应用尺寸.圆角_胶囊)
-              .enabled(this.选中数量() > 0 && !this.处理中)
-              .opacity(this.选中数量() > 0 && !this.处理中 ? 1 : 0.4)
-              .onClick(() => { this.执行进回收站(); })
-          }
-          .width('100%')
+          // 操作按钮区：全选后「放入回收站」即可处理全部选中文件，不再单列「全部放入回收站」
+          Button($r('app.string.media_trash_selected'))
+            .type(ButtonType.Normal)
+            .width('100%')
+            .height(应用尺寸.按钮高度)
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor($r('app.color.action_on_primary'))
+            .backgroundColor(this.主色按钮背景)
+            .borderRadius(应用尺寸.圆角_胶囊)
+            .enabled(this.选中数量() > 0 && !this.处理中)
+            .opacity(this.选中数量() > 0 && !this.处理中 ? 1 : 0.4)
+            .onClick(() => { this.执行进回收站(); })
 
           Row({ space: 应用尺寸.间距_8 }) {
             Button($r('app.string.media_restore_trash'))
@@ -467,9 +479,9 @@ export struct 媒体管理面板 {
               .layoutWeight(1)
               .height(应用尺寸.按钮高度)
               .fontSize(应用尺寸.字号_正文_小)
-              .fontColor('#D32F2F')
+              .fontColor($r('app.color.error_text'))
               .backgroundColor($r('app.color.surface_card'))
-              .border({ width: 应用尺寸.卡片边框, color: '#D32F2F' })
+              .border({ width: 应用尺寸.卡片边框, color: $r('app.color.error_text') })
               .borderRadius(应用尺寸.圆角_胶囊)
               .enabled(this.回收站有内容 && !this.处理中)
               .opacity(this.回收站有内容 && !this.处理中 ? 1 : 0.4)

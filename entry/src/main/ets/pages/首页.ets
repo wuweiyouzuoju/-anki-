@@ -22,6 +22,8 @@ import { 主页牌组列表 } from '../components/home/主页牌组列表';
 import { 牌组选项协调器 } from '../components/home/牌组选项协调器';
 import { 数据迁移协调器 } from '../components/home/数据迁移协调器';
 import { 创建牌组协调器 } from '../components/home/创建牌组协调器';
+import { 自定义学习对话框 } from '../components/home/自定义学习对话框';
+import { 创建过滤牌组面板 } from '../components/home/创建过滤牌组面板';
 import type { SyncAuth } from '../proto/messages/SyncMessages';
 import { 牌组配置服务 } from '../backend/牌组配置服务';
 import type {
@@ -61,6 +63,7 @@ import { 加载上次牌组ID, 保存上次牌组ID, 清除上次牌组ID } from
 import { 确保FSRS已开启一次, 加载FSRS开启状态, 设置FSRS开启状态 } from '../model/FSRS控制器';
 import { 是否已展示好评引导, 标记已展示好评引导 } from '../model/好评引导存储';
 import { 加载显示今日进度卡, 保存摘要展开状态, 加载摘要展开状态, 主页今日进度卡AppStorage键 } from '../model/主页偏好';
+import { 提取卡片数据, 保存卡片数据 } from '../model/桌面卡片数据存储';
 import { 好评引导对话框 } from '../components/好评引导对话框';
 import { 应用主题 } from '../utils/主题控制器';
 import { 应用尺寸 } from '../utils/应用尺寸';
@@ -92,6 +95,9 @@ struct 首页 {
   // 让 牌组详情面板 的统计计数（总卡数/新卡/学习中/待复习）立即刷新。
   // 与 打开添加笔记 的 onPop 回调并存：两者都触发时 加载主页数据 多跑一次（幂等，无副作用）。
   @StorageLink('noteAddedTick') @Watch('笔记添加广播_回调') private 笔记添加标记: number = 0;
+  // 桌面卡片 DeepLink 信号：EntryAbility 处理DeepLink 收到 jidecards://stats 时写时间戳，
+  // @Watch 监听变化触发 桌面卡片跳转_回调 调 打开统计页。0 = 无跳转请求。
+  @StorageLink('navigateToStats') @Watch('桌面卡片跳转_回调') private 桌面卡片跳转信号: number = 0;
   // 主页今日进度卡开关：用户在设置页「复习页布局」分组末尾切换，
   // 写 AppStorage 触发本 @StorageLink 自动重渲染，包裹 主页摘要分页 的 if 直接控制显示。
   // 默认 true 保持新用户开箱即见；aboutToAppear 时调 加载显示今日进度卡 同步 preferences 持久化值。
@@ -147,6 +153,12 @@ struct 首页 {
   @State private 定制牌组ID: string = '';
   @State private 定制牌组中: boolean = false;
   @State private 定制牌组错误: string = '';
+  // 自定义学习对话框（T2）：牌组长按菜单「自定义学习…」触发，对该牌组临时调增新卡/复习上限或抽取卡片
+  @State private 显示自定义学习: boolean = false;
+  @State private 自定义学习牌组ID: string = '';
+  @State private 自定义学习牌组名: string = '';
+  // 创建过滤牌组面板（T2）：牌组长按菜单「创建过滤牌组」触发，按搜索条件抽取卡片到临时牌组
+  @State private 显示过滤牌组面板: boolean = false;
   // 牌组选项：在根 Stack 中挂载以实现平板下的全局磨砂覆盖（与 创建牌组面板 同款）
   @State private 显示牌组选项: boolean = false;
   @State private 牌组选项加载中: boolean = false;
@@ -235,6 +247,8 @@ struct 首页 {
     if (this.显示设置) { this.显示设置 = false; return true; }
     if (this.显示许可证) { this.显示许可证 = false; return true; }
     if (this.显示牌组定制) { this.显示牌组定制 = false; return true; }
+    if (this.显示自定义学习) { this.显示自定义学习 = false; return true; }
+    if (this.显示过滤牌组面板) { this.显示过滤牌组面板 = false; return true; }
     if (this.显示牌组选项) { this.显示牌组选项 = false; return true; }
     if (this.显示创建牌组) { this.显示创建牌组 = false; return true; }
     if (this.显示主页操作) { this.显示主页操作 = false; return true; }
@@ -267,6 +281,17 @@ struct 首页 {
   // ========================================================
   private 笔记添加广播_回调(): void {
     this.加载主页数据();
+  }
+
+  // ========================================================
+  // @名称 桌面卡片跳转回调
+  // @作用 桌面卡片点击 → EntryAbility 解析 jidecards://stats → 写 AppStorage 'navigateToStats'
+  //       @Watch 监听变化 → 调 打开统计页 跳转统计页
+  // ========================================================
+  private 桌面卡片跳转_回调(): void {
+    if (this.桌面卡片跳转信号 > 0) {
+      this.打开统计页();
+    }
   }
 
   // ========================================================
@@ -307,6 +332,13 @@ struct 首页 {
       await 确保FSRS已开启一次();
       const tree = await this.牌组服务实例.获取牌组树();
       const graphs: GraphsView | null = await this.静默加载图表();
+      hilog.info(0x4342, 'jidecards', `首页: 静默加载图表结果 graphs=${graphs === null ? 'null' : '非null'}`);
+      // 桌面卡片数据桥接：graphs 非空时提取 8 页数据存 filesDir，供 FormExtensionAbility 读取
+      if (graphs !== null) {
+        保存卡片数据(提取卡片数据(graphs)).catch((e: Object): void => {
+          hilog.error(0x4342, 'jidecards', `首页: 保存卡片数据失败 ${e}`);
+        });
+      }
       const allDecks: 牌组汇总[] = 平铺牌组树(tree);
       const deckIds: string[] = allDecks.map((deck: 牌组汇总): string => deck.id);
       const toneOverrides: Map<string, 牌组色调> = await 加载牌组色调映射(deckIds);
@@ -730,6 +762,15 @@ struct 首页 {
     });
   }
 
+  /** 打开浏览页并预填搜索串（查找重复对话框跳转用）。 */
+  private 打开带搜索浏览页(搜索串: string): void {
+    const params: 浏览页参数 = { initialSearch: 搜索串 };
+    this.页面栈.pushPath({
+      name: 'BrowserPage',
+      param: params
+    });
+  }
+
   /** 打开统计页（全库统计图表）。'StatsPage' 是 NavPathStack 跨页面寻址协议，保留英文。 */
   private 打开统计页(): void {
     const params: 统计页参数 = {};
@@ -888,6 +929,22 @@ struct 首页 {
     this.定制牌组ID = deckId;
     this.定制牌组错误 = '';
     this.显示牌组定制 = true;
+  }
+
+  /** 长按牌组 → 自定义学习：对该牌组临时调增新卡/复习上限或按条件抽取卡片。 */
+  private 打开自定义学习(deckId: string): void {
+    const deck: 牌组汇总 = this.按ID查牌组(deckId);
+    if (deck.id === '') {
+      return;
+    }
+    this.自定义学习牌组ID = deckId;
+    this.自定义学习牌组名 = deck.displayName;
+    this.显示自定义学习 = true;
+  }
+
+  /** 长按牌组 → 创建过滤牌组：按搜索条件抽取卡片到临时牌组。 */
+  private 打开创建过滤牌组(): void {
+    this.显示过滤牌组面板 = true;
   }
 
   // ========================================================
@@ -1616,6 +1673,7 @@ struct 首页 {
     } else if (name === 'BrowserPage') {
       浏览页({
         pageDeckId: (param as 浏览页参数).deckId ?? '',
+        pageInitialSearch: (param as 浏览页参数).initialSearch ?? '',
         pathStack: this.页面栈
       })
     } else if (name === 'StatsPage') {
@@ -1711,6 +1769,12 @@ struct 首页 {
                   onItemDoubleTap: (deckId: string): void => {
                     this.递归切换牌组(deckId);
                   },
+                  onItemCustomStudy: (deckId: string): void => {
+                    this.打开自定义学习(deckId);
+                  },
+                  onItemCreateFilteredDeck: (): void => {
+                    this.打开创建过滤牌组();
+                  },
                   onExitReorder: (): void => {
                     this.退出排序模式();
                   },
@@ -1798,6 +1862,11 @@ struct 首页 {
             },
             点击已隐藏牌组回调: (): void => {
               this.显示隐藏牌组对话框();
+            },
+            // 查找重复对话框点重复组：关闭设置面板并推栈浏览页（带初始搜索串）
+            跳转浏览页回调: (initialSearch: string): void => {
+              this.显示设置 = false;
+              this.打开带搜索浏览页(initialSearch);
             },
             // 用户在 同步分组 点「先备份后同步」：导出整个 collection 为 .colpkg
             // 用户备份完手动回设置页点「立即同步」—— 备份与同步两步分离
@@ -2010,6 +2079,34 @@ struct 首页 {
             },
             onSave: (result: 牌组定制结果): void => {
               this.应用牌组定制(result);
+            }
+          })
+        }
+
+        // 自定义学习对话框（T2）：长按牌组 → 自定义学习…，成功后刷新主页
+        if (this.显示自定义学习) {
+          自定义学习对话框({
+            isDark: this.是否深色(),
+            deckId: this.自定义学习牌组ID,
+            deckName: this.自定义学习牌组名,
+            onClose: (): void => {
+              this.显示自定义学习 = false;
+            },
+            onSuccess: (): void => {
+              this.加载主页数据();
+            }
+          })
+        }
+
+        // 创建过滤牌组面板（T2）：长按牌组 → 创建过滤牌组，成功后刷新主页
+        if (this.显示过滤牌组面板) {
+          创建过滤牌组面板({
+            isDark: this.是否深色(),
+            onClose: (): void => {
+              this.显示过滤牌组面板 = false;
+            },
+            onSuccess: (): void => {
+              this.加载主页数据();
             }
           })
         }

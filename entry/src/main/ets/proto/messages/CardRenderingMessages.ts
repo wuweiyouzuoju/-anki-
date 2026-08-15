@@ -216,3 +216,68 @@ export function decodeRenderCardResponse(bytes: Uint8Array): RenderedCard {
   }
   return out;
 }
+
+// ========================================================
+// EmptyCardsReport（card_rendering.proto 第 84-92 行）
+// GetEmptyCards(generic.Empty) -> EmptyCardsReport
+// 字段：report=string(1), notes=repeated NoteWithEmptyCards(2)
+// NoteWithEmptyCards：note_id=int64(1), card_ids=repeated int64(2), will_delete_note=bool(3)
+// ========================================================
+
+export interface 笔记空卡 {
+  笔记ID: number;
+  卡片IDs: number[];
+  删除后无卡: boolean;
+}
+
+export interface 空卡报告 {
+  /** 后端生成的 HTML 报告（本端不直接展示，UI 自绘列表） */
+  报告HTML: string;
+  笔记列表: 笔记空卡[];
+}
+
+function decode笔记空卡(bytes: Uint8Array): 笔记空卡 {
+  const r = new 协议读取器(bytes);
+  const out: 笔记空卡 = { 笔记ID: 0, 卡片IDs: [], 删除后无卡: false };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.笔记ID = r.读取64位整数();
+        break;
+      case 2:
+        out.卡片IDs.push(r.读取64位整数());
+        break;
+      case 3:
+        out.删除后无卡 = r.读取布尔();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+export function decode空卡报告(bytes: Uint8Array): 空卡报告 {
+  const r = new 协议读取器(bytes);
+  const out: 空卡报告 = { 报告HTML: '', 笔记列表: [] };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.报告HTML = r.读取字符串();
+        break;
+      case 2:
+        out.笔记列表.push(decode笔记空卡(r.读取字节()));
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** GetEmptyCards 请求为 generic.Empty，无字段，编码为空字节 */
+export function encode空请求(): Uint8Array {
+  return new 协议写入器().转为字节();
+}

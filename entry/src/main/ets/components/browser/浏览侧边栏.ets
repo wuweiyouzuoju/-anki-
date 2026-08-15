@@ -247,6 +247,7 @@ export struct 浏览侧边栏 {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
         .align(Alignment.TopStart)
       }
       .width('80%')

@@ -34,6 +34,7 @@
 
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
+import { 简洁模式AppStorage键 } from '../model/简洁模式存储';
 import { 牌组配置表单 } from '../model/牌组配置表单';
 import { 牌组选项编辑 } from '../model/牌组选项编辑';
 import { 字段帮助面板 } from './字段帮助面板';
@@ -59,6 +60,8 @@ export struct 牌组选项面板 {
   @State private helpTitle: Resource = $r('app.string.deck_learn_steps');
   @State private helpBody: Resource = $r('app.string.deck_learn_steps_help');
   @State private submitError: string = '';
+  // 简洁模式：true 时不显示「高级设置」入口，仅保留常用 4 项
+  @StorageLink(简洁模式AppStorage键) private 简洁模式: boolean = true;
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.动作主色按下) private 动作主色按下: string = '#1E4FB8';
   // 2.1.4.1 对比度：按钮背景专用档（配 #FFFFFF 文字 ≥ 4.5:1）
@@ -406,9 +409,12 @@ export struct 牌组选项面板 {
               this.labeledInput($r('app.string.deck_learnSteps_label'), this.form.学习步骤文本, (value: string) => { if (this.form !== null) this.form.学习步骤文本 = value; }, $r('app.string.deck_learnSteps_help'))
               this.reviewOrderSelector($r('app.string.deck_reviewOrder_label'), this.selectedReviewOrder, $r('app.string.deck_reviewOrder_help'))
             }
-            this.advancedHubEntry()
+            // 简洁模式下隐藏「高级设置」入口
+            if (!this.简洁模式) {
+              this.advancedHubEntry()
+            }
           }.width('100%')
-        }.constraintSize({ maxHeight: '60%' }).width('100%').scrollBar(BarState.Auto)
+        }.constraintSize({ maxHeight: '60%' }).width('100%').scrollBar(BarState.Auto).edgeEffect(EdgeEffect.Spring)
 
         if (this.errorMessage !== '' || this.submitError !== '') Text(this.errorMessage !== '' ? this.errorMessage : this.submitError).fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.error_text')).width('100%')
 

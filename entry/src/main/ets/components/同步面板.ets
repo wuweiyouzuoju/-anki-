@@ -273,6 +273,12 @@ export struct 同步面板 {
     this.当前阶段 = 'syncing';
     try {
       let 鉴权: SyncAuth = 当前鉴权;
+      // 媒体同步开关关闭时，中止上次同步可能仍在运行的后台媒体同步线程
+      // （rslib 后台线程不会因关闭弹窗而停止，需显式中止）。
+      if (!加载媒体同步开关()) {
+        hilog.info(同步日志域, 同步日志标签, 'sync: media sync disabled, aborting any running background media sync');
+        await this.同步服务实例.中止媒体同步();
+      }
       hilog.info(同步日志域, 同步日志标签, 'sync: calling syncStatus');
       const 状态响应: SyncStatusResponse = await this.同步服务实例.同步状态检查(鉴权);
       if (this.是否请求中止) {
@@ -289,17 +295,18 @@ export struct 同步面板 {
       hilog.info(同步日志域, 同步日志标签, 'sync: syncStatus done required=%{public}d action=%{public}s newEndpoint=%{public}s',
         状态响应.required, 动作, 状态端点);
       if (动作 === 'none') {
-        // 集合层面无变化。但若上次媒体同步被中断（删后台/进程被杀），
-        // media_sync_pending 仍为 true——此时需继续媒体阶段，否则媒体永远无法同步。
-        // 但若用户已关闭媒体同步开关，不再继续媒体阶段，并清除残留标志。
-        if (加载媒体同步开关() && 加载媒体待同步()) {
+        // 集合层面无变化。对齐 Anki 桌面端：只要媒体同步开关开启就调 syncMedia，
+        // rslib 的 sync_inner 会先 register_changes 扫描本地媒体变更（删除/新增），
+        // 再比对 client_usn 与 server_usn——用户删了媒体文件时 changes_pending=true，
+        // 会真正执行 send_changes 上传删除；无变化时 actions_performed=false 快速完成。
+        if (加载媒体同步开关()) {
           hilog.info(同步日志域, 同步日志标签,
-            'sync: syncStatus=NO_CHANGES but media_sync_pending=true, resuming media phase');
+            'sync: syncStatus=NO_CHANGES, media enabled, starting media phase');
           this.集合已同步 = true;
           this.启动媒体阶段(鉴权);
           return;
         }
-        if (!加载媒体同步开关() && 加载媒体待同步()) {
+        if (加载媒体待同步()) {
           // 媒体同步已禁用，清除残留的待完成标志。
           设置媒体待同步(false);
         }
@@ -391,15 +398,19 @@ export struct 同步面板 {
     this.错误文案 = '';
     this.状态文案 = '';
     this.当前阶段 = 'syncing';
+    // 媒体同步开关关闭时不传 serverUSN——rslib full_sync_inner 仅在 server_usn.is_some()
+    // 时启动后台媒体同步（不检查 sync_media 字段），传 null 使 rslib 跳过媒体同步。
+    const 媒体同步开启: boolean = 加载媒体同步开关();
+    const 服务器USN: number | null = 媒体同步开启 ? this.待定服务器USN : null;
     hilog.info(同步日志域, 同步日志标签,
-      'sync: calling fullUploadOrDownload upload=%{public}s serverUsn=%{public}s',
-      是否上传 ? 'true' : 'false', this.待定服务器USN === null ? 'null' : `${this.待定服务器USN}`);
-    this.同步服务实例.全量上传或下载(鉴权, 是否上传, this.待定服务器USN)
+      'sync: calling fullUploadOrDownload upload=%{public}s serverUsn=%{public}s mediaEnabled=%{public}s',
+      是否上传 ? 'true' : 'false', 服务器USN === null ? 'null' : `${服务器USN}`, 媒体同步开启 ? 'true' : 'false');
+    this.同步服务实例.全量上传或下载(鉴权, 是否上传, 服务器USN)
       .then((): void => {
         // 全量上传/下载完成 = 集合已写入本地 DB；标记以便后续中止时刷新牌组列表。
         this.集合已同步 = true;
         // 媒体同步开关关闭：不进媒体阶段，直接完成。
-        if (!加载媒体同步开关()) {
+        if (!媒体同步开启) {
           hilog.info(同步日志域, 同步日志标签, 'sync: fullUploadOrDownload done, media sync disabled, skipping media phase');
           设置媒体待同步(false);
           this.状态文案 = this.取本地化文案($r('app.string.sync_success'));
@@ -454,10 +465,7 @@ export struct 同步面板 {
   // @名称 媒体轮询与完成判定
   //
   // @作用
-  // 每 1s 调 媒体同步状态 轮询进度，按 active / 媒体曾进入活跃 / 媒体检查次数 判定完成：
-  // - 媒体曾进入活跃=true 后 active=false → 正常成功；
-  // - 媒体曾进入活跃=false 且 30 秒内从未 active → 报错"媒体同步未启动"；
-  // - 其他情况继续轮询。
+  // 每 1s 调 媒体同步状态 轮询进度，active=false 即判定完成。
   //
   // @输入
   // 无（读 this.是否请求中止 / this.轮询定时器 等内部状态）。
@@ -466,8 +474,10 @@ export struct 同步面板 {
   // 更新 this.媒体进度文案 / this.状态文案 / this.当前阶段；完成时调 同步完成回调。
   //
   // @业务规则
-  // 旧逻辑 `!active && (everActive || checkCount>=10)` 的 checkCount>=10 兜底会让
-  // sync_media_blocking 秒退返回 Ok 的场景被误报为成功（实际 0 字节传输）——已修复。
+  // get_media_sync_status 在 task finished 时会 join 拿结果：正常完成返回 Ok
+  // （active=false，走 then 分支），出错抛 Err（走 catch 分支）。因此进入轮询后
+  // 只要 active=false 即算成功——涵盖有传输（everActive=true）与无变化快速完成
+  // （everActive=false，rslib sync_inner actions_performed=false）两种场景。
   // 后端 rslib 已通过 i18n 模板格式化进度文本，原样展示不再替换符号。
   //
   // @副作用
@@ -475,12 +485,11 @@ export struct 同步面板 {
   // ========================================================
 
   /**
-   * 1s 轮询媒体进度。完成判定（修复 2026-07-22 假成功 bug）：
-   * - mediaEverActive=true 后 active=false → 正常成功
-   * - mediaEverActive=false 且 30 秒内从未 active → 报错"媒体同步未启动"
-   * - 其他情况继续轮询
-   * 旧逻辑 `!active && (everActive || checkCount>=10)` 的 checkCount>=10 兜底会让
-   * sync_media_blocking 秒退返回 Ok 的场景被误报为成功（实际 0 字节传输）。
+   * 1s 轮询媒体进度。完成判定：
+   * - active=false → 正常成功（get_media_sync_status 在 task 结束时 join，
+   *   正常完成返回 Ok 走本分支，出错抛 Err 走 catch）
+   * - active=true → 继续轮询，更新进度文案
+   * syncMedia RPC 失败会走 catch 不会进轮询，故进轮询即说明任务已派发。
    */
   private 开始媒体轮询(): void {
     this.清理轮询定时器();
@@ -508,30 +517,25 @@ export struct 同步面板 {
             this.媒体检查次数, Date.now() - 轮询开始时间, 状态.active ? 'true' : 'false',
             this.媒体曾进入活跃 ? 'true' : 'false',
             状态.progress.checked, 状态.progress.added, 状态.progress.removed);
-          // 完成判定：必须 mediaEverActive=true 后再 active=false 才算成功；
-          // 30 秒内从未 active 视为未启动/秒退，报错让用户重试，不再兜底假成功。
+          // 完成判定：active=false 即算成功。
+          // get_media_sync_status 在 task finished 时会 join 拿结果——正常完成返回 Ok
+          // （走到本 then 分支），出错抛 Err（走 catch）。所以 active=false 且无异常 = 正常结束：
+          // - everActive=true：有传输的正常完成
+          // - everActive=false：rslib sync_inner 中 actions_performed=false（本地与远端一致，
+          //   register_changes 后 client_usn==server_usn 且无 pending）的无变化快速完成。
+          // syncMedia RPC 失败会走 catch 不会进轮询，故进轮询即说明任务已派发。
           if (!状态.active) {
-            if (this.媒体曾进入活跃) {
-              hilog.info(同步日志域, 同步日志标签,
-                'sync: mediaPoll DONE (everActive=true, checkCount=%{public}d, elapsed=%{public}dms)',
-                this.媒体检查次数, Date.now() - 轮询开始时间);
-              this.是否在媒体阶段 = false;
-              this.清理轮询定时器();
-              this.媒体进度文案 = '';
-              this.状态文案 = this.取本地化文案($r('app.string.sync_success'));
-              this.当前阶段 = 'done';
-              // 媒体同步成功，清除待完成标志。
-              设置媒体待同步(false);
-              this.同步完成回调();
-            } else if (this.媒体检查次数 >= 30) {
-              // 30 秒内媒体同步从未进入 active 状态：sync_media_blocking 可能秒退返回 Ok
-              // 或 sync_media_in_background 因已有任务直接 return Ok 未启动新任务。
-              hilog.error(同步日志域, 同步日志标签,
-                'sync: mediaPoll FAILED_TO_START (30s elapsed, everActive=false, checkCount=%{public}d)',
-                this.媒体检查次数);
-              this.处理同步错误(new Error('media sync failed to start within 30s'));
-            }
-            // else: mediaEverActive=false && checkCount<30，继续等
+            hilog.info(同步日志域, 同步日志标签,
+              'sync: mediaPoll DONE (everActive=%{public}s, checkCount=%{public}d, elapsed=%{public}dms)',
+              this.媒体曾进入活跃 ? 'true' : 'false', this.媒体检查次数, Date.now() - 轮询开始时间);
+            this.是否在媒体阶段 = false;
+            this.清理轮询定时器();
+            this.媒体进度文案 = '';
+            this.状态文案 = this.取本地化文案($r('app.string.sync_success'));
+            this.当前阶段 = 'done';
+            // 媒体同步成功，清除待完成标志。
+            设置媒体待同步(false);
+            this.同步完成回调();
           }
         })
         .catch((error: Error): void => {

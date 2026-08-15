@@ -3,6 +3,7 @@
 import { 牌组汇总, 牌组色调, 牌组显示名 } from '../model/主页模型';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
+import { 简洁模式AppStorage键 } from '../model/简洁模式存储';
 import { image } from '@kit.ImageKit';
 import { fileIo as fs } from '@kit.CoreFileKit';
 
@@ -97,11 +98,19 @@ export struct 牌组列表项 {
   // 双击牌组行：递归展开/折叠所有子牌组。仅 hasChildren=true 时触发。
   onDoubleTap: (deckId: string) => void = (deckId: string): void => {
   };
+  // 用户在长按菜单选「自定义学习」时触发；Index.ets 弹自定义学习对话框。
+  onCustomStudy: (deckId: string) => void = (deckId: string): void => {
+  };
+  // 用户在长按菜单选「创建过滤牌组」时触发；Index.ets 弹创建过滤牌组面板。
+  onCreateFilteredDeck: () => void = (): void => {
+  };
 
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.选中背景) private 选中背景色: string = '#E8EEFC';
   @StorageProp(颜色键.主色边框) private 主色边框色: string = '#B8CEFA';
   @StorageProp(颜色键.新卡计数色) private 新卡计数色: string = '#3974D9';
+  // 简洁模式：true 时长按菜单不显示「自定义学习」「创建过滤牌组」两项高级入口
+  @StorageLink(简洁模式AppStorage键) private 简洁模式: boolean = true;
   @StorageProp(颜色键.学习中计数色) private 学习中计数色: string = '#B56A22';
   @StorageProp(颜色键.复习中计数色) private 复习中计数色: string = '#7056C8';
 
@@ -273,6 +282,33 @@ export struct 牌组列表项 {
         this.显示牌组菜单 = false;
         this.onCustomizeDeck(this.deck.id);
       })
+      // 简洁模式下隐藏「自定义学习」「创建过滤牌组」两项高级入口
+      if (!this.简洁模式) {
+        Row() {
+          Text($r('app.string.custom_study_menu'))
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+        .onClick(() => {
+          this.显示牌组菜单 = false;
+          this.onCustomStudy(this.deck.id);
+        })
+        Row() {
+          Text($r('app.string.filtered_deck_title'))
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+        .onClick(() => {
+          this.显示牌组菜单 = false;
+          this.onCreateFilteredDeck();
+        })
+      }
       Row() {
         Text($r('app.string.deck_menu_hide'))
           .fontSize(应用尺寸.字号_正文)

@@ -61,6 +61,10 @@
       "value": "#F97066"
     },
     {
+      "name": "warning_text",
+      "value": "#FF9929"
+    },
+    {
       "name": "count_new",
       "value": "#7CA7F2"
     },

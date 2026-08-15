@@ -2,7 +2,7 @@
 
 import { 加载学习布局模式, 保存学习布局模式, 学习布局模式 } from '../../model/学习布局存储';
 import { 保存显示今日进度卡, 主页今日进度卡AppStorage键 } from '../../model/主页偏好';
-import { 设置面板色板, 设置面板色板_取, 标签文字色 } from '../../utils/设置面板配色';
+import { 设置面板色板, 设置面板色板_取 } from '../../utils/设置面板配色';
 import { 颜色键 } from '../../model/颜色主题';
 
 // ========================================================
@@ -34,6 +34,8 @@ export struct 布局分组 {
   @Prop 是否深色: boolean = false;
   @Prop 是否展开: boolean = false;
   切换展开回调: () => void = (): void => {};
+  // ⓘ 上抛：点击今日进度卡片行的 ⓘ 时，由父级（设置面板）弹出 字段帮助面板
+  打开说明回调: (标题: Resource, 正文: Resource) => void = (标题: Resource, 正文: Resource): void => {};
 
   // @StorageLink 让本组件在 主色按钮背景 变化时立即重渲染；解析主色按钮背景() 直接引用此字段，
   // 让布局选中态主色在颜色主题切换瞬间同步更新（与 外观分组 同款机制）。
@@ -71,6 +73,19 @@ export struct 布局分组 {
       return this.取本地化文本($r('app.string.settings_study_layout_float'));
     }
     return this.取本地化文本($r('app.string.settings_study_layout_bottom'));
+  }
+
+  /** Select 选项：底部固定 / 浮动可拖 */
+  private 布局模式选项(): SelectOption[] {
+    return [
+      { value: this.取本地化文本($r('app.string.settings_study_layout_bottom')) },
+      { value: this.取本地化文本($r('app.string.settings_study_layout_float')) }
+    ];
+  }
+
+  /** Select 当前选中索引：float=1；bottom=0；null 加载中按 0 */
+  private 布局模式索引(): number {
+    return this.当前布局模式 === 'float' ? 1 : 0;
   }
 
   /** 切换布局模式：乐观更新 UI + 异步持久化；持久化失败仅丢失下次启动后的值，不回滚 UI。 */
@@ -114,38 +129,14 @@ export struct 布局分组 {
 
   // ========================================================
   // @块ID UI-LAYOUT-002
-  // @名称 布局模式按钮
+  // @名称 分组头部
   //
   // @作用
-  // 渲染单个布局模式 chip 按钮（bottom / float）；选中态用主色背景。
-  // 加载中（当前布局模式 === null）时按钮可见但禁用点击。
-  //
-  // @输入
-  // 色板：当前色板。
-  // 模式：学习布局模式枚举值。
-  //
-  // @输出
-  // 渲染单个布局模式按钮；点击时调用 切换布局。
+  // 渲染分组标题行：「学习布局」+ ▼ 展开箭头。
   //
   // @副作用
-  // 调用 切换布局 间接持久化（见 切换布局 副作用）。
+  // 点击触发 切换展开回调（父级注入）。
   // ========================================================
-  @Builder
-  private 布局模式按钮(色板: 设置面板色板, 模式: 学习布局模式) {
-    Button(this.布局模式标签(模式))
-      .height(36)
-      .fontSize(13)
-      .fontColor(标签文字色(色板, this.当前布局模式 === 模式))
-      .backgroundColor(this.当前布局模式 === 模式 ? this.解析主色按钮背景() : 色板.标签背景)
-      .borderRadius(18)
-      .margin({ right: 8, bottom: 6 })
-      .onClick((): void => {
-        if (this.当前布局模式 !== null) {
-          this.切换布局(模式);
-        }
-      })
-  }
-
   @Builder
   private 分组头部() {
     Row() {
@@ -172,43 +163,71 @@ export struct 布局分组 {
 
       if (this.是否展开) {
         Column({ space: 8 }) {
-          // 模式 chip：加载中（null）时也渲染但不可点；切换后立即生效（下次进入复习页）。
-          Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
-            this.布局模式按钮(设置面板色板_取(this.是否深色), 'bottom');
-            this.布局模式按钮(设置面板色板_取(this.是否深色), 'float');
+          // 第 1 行：复习页布局（左侧标题+ⓘ，右侧 Select 选择框——与「当前模式」行同款对齐）
+          Row() {
+            Row() {
+              Text(this.取本地化文本($r('app.string.settings_study_layout_row')))
+                .fontSize(15)
+                .fontColor(设置面板色板_取(this.是否深色).主文字)
+              Button($r('app.string.field_help_button'))
+                .type(ButtonType.Normal)
+                .backgroundColor(Color.Transparent)
+                .fontSize(14)
+                .fontColor(设置面板色板_取(this.是否深色).三级文字)
+                .width(28)
+                .height(28)
+                .padding(0)
+                .margin({ left: 4 })
+                .onClick(() => {
+                  this.打开说明回调(
+                    $r('app.string.settings_study_layout_row'),
+                    $r('app.string.settings_study_layout_help')
+                  );
+                })
+            }
+            .layoutWeight(1)
+            Select(this.布局模式选项())
+              .selected(this.布局模式索引())
+              .value(this.当前布局模式 !== null
+                ? this.布局模式标签(this.当前布局模式)
+                : this.取本地化文本($r('app.string.settings_study_layout_bottom')))
+              .controlSize(ControlSize.SMALL)
+              .onSelect((索引: number): void => {
+                const 模式列表: 学习布局模式[] = ['bottom', 'float'];
+                this.切换布局(模式列表[索引]);
+              })
           }
           .width('100%')
-          .padding({ top: 4, bottom: 4 })
+          .height(48)
 
-          // 拖动提示：仅 float 模式下显示，告诉用户工具栏可以拖到侧边。
-          if (this.当前布局模式 === 'float') {
-            Text($r('app.string.study_toolbar_drag_hint'))
-              .fontSize(12)
-              .fontColor(设置面板色板_取(this.是否深色).三级文字)
-              .width('100%')
-              .maxLines(3)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-
-          // 主页今日进度卡开关（B12-Y3 2026-07-25）：Divider 分隔 + 标题 + Toggle。
-          // 与复习页布局模式并列在「布局」分组下，因两者都属于「页面布局」范畴。
+          // 主页今日进度卡开关：Divider 分隔 + 标题+ⓘ + Toggle。
+          // 原小字说明（settings_home_today_summary_hint）从下方移入 ⓘ 浮层。
           Divider()
             .color(设置面板色板_取(this.是否深色).分隔线)
             .strokeWidth(1)
             .margin({ top: 4, bottom: 4 })
 
           Row() {
-            Column({ space: 2 }) {
+            Row() {
               Text($r('app.string.settings_home_today_summary'))
                 .fontSize(15)
                 .fontColor(设置面板色板_取(this.是否深色).主文字)
-              Text($r('app.string.settings_home_today_summary_hint'))
-                .fontSize(12)
+              Button($r('app.string.field_help_button'))
+                .type(ButtonType.Normal)
+                .backgroundColor(Color.Transparent)
+                .fontSize(14)
                 .fontColor(设置面板色板_取(this.是否深色).三级文字)
-                .maxLines(2)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width(28)
+                .height(28)
+                .padding(0)
+                .margin({ left: 4 })
+                .onClick(() => {
+                  this.打开说明回调(
+                    $r('app.string.settings_home_today_summary'),
+                    $r('app.string.settings_home_today_summary_hint')
+                  );
+                })
             }
-            .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
             Toggle({ type: ToggleType.Switch, isOn: this.显示今日进度卡 })
@@ -218,7 +237,7 @@ export struct 布局分组 {
               })
           }
           .width('100%')
-          .padding({ top: 4, bottom: 4 })
+          .height(48)
         }
         .width('100%')
       }

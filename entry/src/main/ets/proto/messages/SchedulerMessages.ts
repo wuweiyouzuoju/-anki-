@@ -440,3 +440,147 @@ export function encodeSchedulingStates(states: SchedulingStatesRaw): Uint8Array 
   }
   return w.转为字节();
 }
+
+// ========================================================
+// Custom Study（自定义学习）相关编解码
+// 来源：proto/anki/scheduler.proto
+// ========================================================
+
+/** CustomStudyRequest 的预设类型（oneof value 的 5 个分支） */
+export const 自定义学习预设 = {
+  /** 增加新卡上限（int32，可负）—— 不创建过滤牌组 */
+  新卡上限增量: 2,
+  /** 增加复习上限（int32，可负）—— 不创建过滤牌组 */
+  复习上限增量: 3,
+  /** 复习遗忘（uint32 天数）—— 创建过滤牌组 */
+  复习遗忘天数: 4,
+  /** 提前复习（uint32 天数）—— 创建过滤牌组 */
+  提前复习天数: 5,
+  /** 预览新卡（uint32 天数）—— 创建过滤牌组 */
+  预览新卡天数: 6
+} as const;
+
+/**
+ * 编码 CustomStudyRequest（oneof value 只编码指定字段，其余跳过）。
+ * deckId：目标牌组 ID
+ * 预设字段号：见 自定义学习预设
+ * 值：增量或天数
+ */
+export function encodeCustomStudyRequest(deckId: number, 预设字段号: number, 值: number): Uint8Array {
+  const w = new 协议写入器();
+  if (deckId !== 0) {
+    w.写入64位整数(1, deckId);
+  }
+  // oneof value：字段号 2-6，int32 负数需用 64 位补码编码（与 prost 一致），uint32 用变长
+  if (预设字段号 === 自定义学习预设.新卡上限增量) {
+    // int32 可负，用 64 位补码编码
+    w.写入64位整数(2, 值);
+  } else if (预设字段号 === 自定义学习预设.复习上限增量) {
+    w.写入64位整数(3, 值);
+  } else if (预设字段号 === 自定义学习预设.复习遗忘天数) {
+    if (值 !== 0) {
+      w.写入变长整数(4, 值);
+    }
+  } else if (预设字段号 === 自定义学习预设.提前复习天数) {
+    if (值 !== 0) {
+      w.写入变长整数(5, 值);
+    }
+  } else if (预设字段号 === 自定义学习预设.预览新卡天数) {
+    if (值 !== 0) {
+      w.写入变长整数(6, 值);
+    }
+  }
+  return w.转为字节();
+}
+
+/**
+ * 编码 CustomStudyDefaultsRequest（仅 deck_id）。
+ * 与 decks.DeckId 同结构，但类型独立。
+ */
+export function encodeCustomStudyDefaultsRequest(deckId: number): Uint8Array {
+  const w = new 协议写入器();
+  if (deckId !== 0) {
+    w.写入64位整数(1, deckId);
+  }
+  return w.转为字节();
+}
+
+export interface 自定义学习标签 {
+  name: string;
+  include: boolean;
+  exclude: boolean;
+}
+
+export interface 自定义学习默认值 {
+  tags: 自定义学习标签[];
+  extendNew: number;
+  extendReview: number;
+  availableNew: number;
+  availableReview: number;
+  availableNewInChildren: number;
+  availableReviewInChildren: number;
+}
+
+function decode自定义学习标签(bytes: Uint8Array): 自定义学习标签 {
+  const r = new 协议读取器(bytes);
+  const out: 自定义学习标签 = { name: '', include: false, exclude: false };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.name = r.读取字符串();
+        break;
+      case 2:
+        out.include = r.读取布尔();
+        break;
+      case 3:
+        out.exclude = r.读取布尔();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+export function decode自定义学习默认值(bytes: Uint8Array): 自定义学习默认值 {
+  const r = new 协议读取器(bytes);
+  const out: 自定义学习默认值 = {
+    tags: [],
+    extendNew: 0,
+    extendReview: 0,
+    availableNew: 0,
+    availableReview: 0,
+    availableNewInChildren: 0,
+    availableReviewInChildren: 0
+  };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.tags.push(decode自定义学习标签(r.读取字节()));
+        break;
+      case 2:
+        out.extendNew = r.读取变长整数();
+        break;
+      case 3:
+        out.extendReview = r.读取变长整数();
+        break;
+      case 4:
+        out.availableNew = r.读取变长整数();
+        break;
+      case 5:
+        out.availableReview = r.读取变长整数();
+        break;
+      case 6:
+        out.availableNewInChildren = r.读取变长整数();
+        break;
+      case 7:
+        out.availableReviewInChildren = r.读取变长整数();
+        break;
+      default:
+        r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}

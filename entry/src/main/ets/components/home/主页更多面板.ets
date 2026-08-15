@@ -77,7 +77,7 @@ export struct 主页更多面板 {
           .textAlign(TextAlign.Center)
           .onClick((): void => this.统计回调())
       }
-      .width(200)
+      .width(160)
       .backgroundColor($r('app.color.surface_card'))
       .borderRadius(应用尺寸.圆角_卡片)
       .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })

@@ -175,6 +175,7 @@ export struct 浏览编辑区 {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
         .align(Alignment.TopStart)
 
         // 错误信息固定底部

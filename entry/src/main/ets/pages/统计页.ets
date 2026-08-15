@@ -370,6 +370,7 @@ export struct 统计页 {
     .width('100%')
     .layoutWeight(1)
     .scrollBar(BarState.Auto)
+    .edgeEffect(EdgeEffect.Spring)
   }
 
   build() {

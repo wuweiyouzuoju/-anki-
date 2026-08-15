@@ -1313,7 +1313,7 @@ export struct 学习页 {
       top: 应用尺寸.间距_8,
       bottom: 应用尺寸.页面内边距_水平
     })
-    .backgroundColor(this.页面底色微染值)
+    .backgroundColor($r('app.color.surface_card'))
   }
 
   build() {
