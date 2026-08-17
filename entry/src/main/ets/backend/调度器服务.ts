@@ -34,6 +34,7 @@ import type {
   QueuedCardsView,
   SchedTimingToday,
   SchedulingStatesRaw,
+  重新定位默认值,
   自定义学习默认值
 } from '../proto/messages/SchedulerMessages';
 import {
@@ -42,6 +43,7 @@ import {
   decodeQueuedCards,
   decodeSchedTimingToday,
   decodeStringList,
+  decode重新定位默认值,
   decode自定义学习默认值,
   encodeBuryOrSuspendCardsRequest,
   encodeCardAnswer,
@@ -50,6 +52,8 @@ import {
   encodeCustomStudyRequest,
   encodeGetQueuedCardsRequest,
   encodeSchedulingStates,
+  encodeSetDueDateRequest,
+  encodeSortCardsRequest,
   encodeUnburyDeckRequest,
   自定义学习预设
 } from '../proto/messages/SchedulerMessages';
@@ -197,6 +201,54 @@ export class 调度器服务 {
     const 请求字节: Uint8Array = encodeDeckId(牌组ID);
     await this.会话.调用(
       服务号.后端调度器, 调度器方法.重建过滤牌组, 请求字节);
+  }
+
+  /**
+   * 批量设置到期日（SetDueDate, method 19）。浏览页 T8 批量操作栏「重调度」用。
+   * days 字符串格式与 Anki 桌面端「Set Due Date」对话框一致：
+   *   "0"=今天 / "1"=明天 / "5"=5 天后 / "1-3"=1~3 天随机 / "!1"=1 天后（FSRS 重排）
+   * 成功无返回值（后端返回 OpChanges，前端只需知道不报错即成功）。
+   *
+   * Invariants: 卡片 ID 列表来自浏览页选中行（cards 模式直接用，notes 模式需先查 noteId→cardIds）。
+   * Extension Points: 浏览页 T8 批量操作栏「重调度」调用此方法。
+   */
+  async 设置到期日(卡片ID列表: number[], days: string): Promise<void> {
+    const 请求字节: Uint8Array = encodeSetDueDateRequest(卡片ID列表, days);
+    await this.会话.调用(
+      服务号.后端调度器, 调度器方法.设置到期日, 请求字节);
+  }
+
+  /**
+   * 批量重新定位（SortCards, method 21）。浏览页 T8 批量操作栏「重新定位」用。
+   * 调整新卡的 due 值（位置），不影响 review/learning 卡片。
+   * startingFrom=起始位置（默认 1）/ stepSize=步长（默认 1）/ randomize=随机 / shiftExisting=顺移已有新卡。
+   * 成功无返回值（后端返回 OpChanges）。
+   *
+   * Invariants: 仅对 new 队列卡片生效；startingFrom 与 stepSize 都为 0 时后端用默认值（1/1）。
+   * Extension Points: 浏览页 T8 批量操作栏「重新定位」调用此方法。
+   */
+  async 排序卡片(
+    卡片ID列表: number[],
+    起始位置: number,
+    步长: number,
+    随机: boolean,
+    顺移已有: boolean
+  ): Promise<void> {
+    const 请求字节: Uint8Array = encodeSortCardsRequest(
+      卡片ID列表, 起始位置, 步长, 随机, 顺移已有);
+    await this.会话.调用(
+      服务号.后端调度器, 调度器方法.排序卡片, 请求字节);
+  }
+
+  /**
+   * 获取重新定位对话框默认值（RepositionDefaults, method 29）。
+   * 返回 Anki collection 配置中保存的 random/shift 两个开关默认值。
+   * 浏览页 T8「重新定位」弹层初始化用。
+   */
+  async 获取重新定位默认值(): Promise<重新定位默认值> {
+    const 响应字节: Uint8Array = await this.会话.调用(
+      服务号.后端调度器, 调度器方法.重新定位默认值, new Uint8Array(0));
+    return decode重新定位默认值(响应字节);
   }
 
   private async 设置当前牌组(牌组ID: number): Promise<void> {

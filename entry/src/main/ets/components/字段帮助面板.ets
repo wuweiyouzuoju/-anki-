@@ -31,8 +31,8 @@ import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时
 
 @Component
 export struct 字段帮助面板 {
-  @Prop 标题: Resource = $r('app.string.deck_options_title');
-  @Prop 正文: Resource = $r('app.string.deck_learn_steps_help');
+  @Prop 标题: ResourceStr = $r('app.string.deck_options_title');
+  @Prop 正文: ResourceStr = $r('app.string.deck_learn_steps_help');
   @Prop 是否深色: boolean = false;
   // 主题色按钮背景（与创建牌组面板等主色按钮同款 @StorageProp 机制，跟随 ColorTheme 切换）
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景: string = '#2F5FD0';

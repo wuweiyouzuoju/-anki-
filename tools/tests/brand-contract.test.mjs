@@ -44,5 +44,5 @@ test('Harmony and native identifiers agree on jidecards', () => {
   assert.match(read('native/napi_bridge/oh-package.json5'), /"name":\s*"libjidecards\.so"/);
   assert.match(read('native/napi_bridge/src/native_module.cpp'), /\.nm_modname\s*=\s*"jidecards"/);
   assert.match(read('entry/src/main/ets/backend/后端客户端.ts'), /from 'libjidecards\.so'/);
-  assert.match(read('AppScope/resources/base/element/string.json'), /"value":\s*"记得卡片"/);
+  assert.match(read('AppScope/resources/base/element/string.json'), /"value":\s*"记得闪卡"/);
 });

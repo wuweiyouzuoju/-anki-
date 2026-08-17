@@ -66,7 +66,7 @@ test('string fields use length-delimited encoding', () => {
 });
 
 test('utf8 roundtrips CJK and emoji', () => {
-  for (const text of ['记得卡片', '英语四级核心', '日本語テスト', 'emoji 🃏✨']) {
+  for (const text of ['记得闪卡', '英语四级核心', '日本語テスト', 'emoji 🃏✨']) {
     assert.equal(UTF8解码(UTF8编码(text)), text);
   }
 });

@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { 应用尺寸 } from '../../utils/应用尺寸';
+
 // ========================================================
 // @块ID UI-WIDGET-STATS-001
 // @名称 统计桌面卡片（2×4）
 //
 // @作用
 // 桌面服务卡片 UI：Swiper 8 页
-//   1. 月历热力图 / 2. 记忆率 / 3. 今日计数 / 4. 卡片状态
+//   1. 今日进度 / 2. 记忆率 / 3. 今日计数 / 4. 卡片状态
 //   5. 小时分布 / 6. 难度分布 / 7. 间隔分布 / 8. 未来到期预测
+// 月历页已移除（用户决策 2026-08-15）；今日进度页新增（用户决策 2026-08-15）。
 // 点击卡片通过 postCardAction router 拉起 App 并跳转统计页（jidecards://stats）。
 //
 // @约束
@@ -20,7 +23,7 @@
 // @数据流
 // FormExtensionAbility.onUpdateForm → formProvider.updateForm({ statsCardData: JSON字符串 })
 // → 卡片 @LocalStorageProp('statsCardData') 接字符串 → aboutToAppear/@Watch 解析到 @State 数据
-// → 渲染 8 页 Swiper
+// → 渲染 7 页 Swiper
 //
 // @根因修复
 // 1. 数据传递：HarmonyOS 卡片 LocalStorage 注入按字段平铺，不支持嵌套对象。
@@ -64,9 +67,15 @@ interface 主题色 {
 
 interface 卡片数据 {
   hasData: boolean;
-  月历数据: [string, number][];
+  // 页1：今日进度
+  今日完成数: number;
+  待学数: number;
+  牌组数: number;
+  今日答对率: number; // 0-1，-1 表示今日无答题
+  // 页2：记忆率
   记忆率: number;
   fsrs已启用: boolean;
+  // 页3：今日计数
   今日答题数: number;
   今日正确数: number;
   今日新学数: number;
@@ -79,13 +88,6 @@ interface 卡片数据 {
   未来到期: [number, number][];
   更新时间: number;
   主题色: 主题色;
-}
-
-interface 日历单日 {
-  日号: number;
-  是否当月: boolean;
-  是否今天: boolean;
-  热力强度: number;  // 0-4
 }
 
 function 空卡片状态(): 卡片状态数据 {
@@ -116,7 +118,10 @@ function 默认主题色(): 主题色 {
 function 空卡片数据(): 卡片数据 {
   return {
     hasData: false,
-    月历数据: [],
+    今日完成数: 0,
+    待学数: 0,
+    牌组数: 0,
+    今日答对率: -1,
     记忆率: 0,
     fsrs已启用: false,
     今日答题数: 0,
@@ -142,7 +147,6 @@ struct 统计卡片 {
   @LocalStorageProp(存储键) @Watch('数据更新') 数据JSON: string = '';
   @State 数据: 卡片数据 = 空卡片数据();
   @State 当前页索引: number = 0;
-  private 页面总数: number = 8;
 
   // aboutToAppear：@Watch 初始挂载不触发，需手动解析一次初始数据
   aboutToAppear(): void {
@@ -163,7 +167,7 @@ struct 统计卡片 {
       const obj = 解析 as Record<string, Object>;
       // 区分两种载荷：
       // 1. FormAbility 空态：{ hasData: false }（仅含 hasData 字段）
-      // 2. 主进程完整数据：桌面卡片数据接口（含 月历数据/记忆率/... 等字段，无 hasData 字段）
+      // 2. 主进程完整数据：桌面卡片数据接口（含 记忆率/... 等字段，无 hasData 字段）
       const 含hasData字段: boolean = obj.hasData !== undefined;
       if (含hasData字段) {
         const 标志: boolean = obj.hasData as boolean;
@@ -173,10 +177,9 @@ struct 统计卡片 {
           return;
         }
       }
-      // 完整数据：按字段逐个提取（避免 object literal 类型推断失败）
-      // 用 月历数据 字段是否存在判断是主进程完整数据（而非空态 hasData:true 误传）
-      const 月历: Object = obj.月历数据;
-      if (月历 === undefined || 月历 === null) {
+      // 完整数据：用 更新时间 字段判断是否主进程完整数据（时间戳 > 0）
+      const 更新时间值: Object = obj.更新时间;
+      if (更新时间值 === undefined || 更新时间值 === null) {
         this.数据 = 空卡片数据();
         return;
       }
@@ -185,7 +188,10 @@ struct 统计卡片 {
       const 主题: 主题色 = (obj.主题色 as 主题色) ?? 默认主题色();
       this.数据 = {
         hasData: true,
-        月历数据: obj.月历数据 as [string, number][] ?? [],
+        今日完成数: obj.今日完成数 as number ?? 0,
+        待学数: obj.待学数 as number ?? 0,
+        牌组数: obj.牌组数 as number ?? 0,
+        今日答对率: obj.今日答对率 as number ?? -1,
         记忆率: obj.记忆率 as number ?? 0,
         fsrs已启用: obj.fsrs已启用 as boolean ?? false,
         今日答题数: obj.今日答题数 as number ?? 0,
@@ -206,24 +212,9 @@ struct 统计卡片 {
     }
   }
 
-  // 热力色：从主题色载体取 4 档热力色，强度 0 透明
-  private 取热力色(强度: number): string {
-    const 主题: 主题色 = this.数据.主题色;
-    if (强度 === 0) return 'rgba(0,0,0,0)';
-    if (强度 === 1) return 主题.热力1;
-    if (强度 === 2) return 主题.热力2;
-    if (强度 === 3) return 主题.热力3;
-    return 主题.热力4;
-  }
-
   // 卡片背景色：跟随主题页面底色（与 App 首页背景一致）
   private 卡片背景色(): string {
     return this.数据.主题色.页面底色;
-  }
-
-  // 分区背景色：卡片底色（比页面底色略亮/略暗，形成层次）
-  private 分区背景色(): string {
-    return this.数据.主题色.卡片底色;
   }
 
   // 分割线颜色（浅色 #E4E8EF / 深色 #2C3038）
@@ -236,68 +227,6 @@ struct 统计卡片 {
     return this.数据.主题色.是否深色 ? '#2C3038' : '#F0F1F4';
   }
 
-  // 解析月历数据并构建当月日历（扁平列表）
-  private 构建当月日历(): 日历单日[] {
-    const 当前: Date = new Date();
-    const 年: number = 当前.getFullYear();
-    const 月: number = 当前.getMonth();
-    const 当月天数: number = new Date(年, 月 + 1, 0).getDate();
-    const 首日周几: number = new Date(年, 月, 1).getDay();
-    const 复习计数: Map<string, number> = new Map<string, number>();
-    const 月历数组: [string, number][] = this.数据.月历数据;
-    for (const 项 of 月历数组) {
-      复习计数.set(项[0], 项[1]);
-    }
-    let 最大值: number = 0;
-    复习计数.forEach((值: number) => {
-      if (值 > 最大值) 最大值 = 值;
-    });
-    const 今日键: string = this.日期键(年, 月, 当前.getDate());
-    const 单日列表: 日历单日[] = [];
-    for (let i: number = 0; i < 首日周几; i++) {
-      const 日: number = new Date(年, 月, 0 - (首日周几 - 1 - i)).getDate();
-      单日列表.push({ 日号: 日, 是否当月: false, 是否今天: false, 热力强度: 0 });
-    }
-    for (let 日: number = 1; 日 <= 当月天数; 日++) {
-      const 键: string = this.日期键(年, 月, 日);
-      const 次数: number = 复习计数.get(键) ?? 0;
-      单日列表.push({
-        日号: 日,
-        是否当月: true,
-        是否今天: 键 === 今日键,
-        热力强度: this.热力分档(次数, 最大值)
-      });
-    }
-    while (单日列表.length < 35) {
-      const 序号: number = 单日列表.length - 首日周几 - 当月天数 + 1;
-      单日列表.push({ 日号: 序号, 是否当月: false, 是否今天: false, 热力强度: 0 });
-    }
-    return 单日列表;
-  }
-
-  private 构建当月日历分行(): 日历单日[][] {
-    const 扁平: 日历单日[] = this.构建当月日历();
-    const 分行: 日历单日[][] = [];
-    for (let i: number = 0; i < 扁平.length; i += 7) {
-      分行.push(扁平.slice(i, i + 7));
-    }
-    return 分行;
-  }
-
-  private 日期键(年: number, 月: number, 日: number): string {
-    const 补零: (n: number) => string = (n: number): string => n < 10 ? `0${n}` : `${n}`;
-    return `${年}-${补零(月 + 1)}-${补零(日)}`;
-  }
-
-  private 热力分档(次数: number, 最大值: number): number {
-    if (次数 <= 0 || 最大值 <= 0) return 0;
-    const 比例: number = 次数 / 最大值;
-    if (比例 <= 0.25) return 1;
-    if (比例 <= 0.5) return 2;
-    if (比例 <= 0.75) return 3;
-    return 4;
-  }
-
   private 格式化时间(毫秒: number): string {
     if (毫秒 <= 0) return '';
     const 日期: Date = new Date(毫秒);
@@ -308,75 +237,73 @@ struct 统计卡片 {
   }
 
   // ========================================================
-  // 页1：月历热力图
+  // 页1：今日进度（与主页今日摘要卡样式一致：标题+小字+牌组数+进度条+三列指标）
   // ========================================================
   @Builder
-  月历页() {
-    Column({ space: 4 }) {
+  今日进度页() {
+    Column({ space: 5 }) {
+      // 标题行：左 Column(标题 + "X 已完成 · Y 待学") + 右 Text("Z 牌组")
       Row() {
-        Text('本月复习热力')
-          .fontSize(11)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.数据.主题色.文字主)
-          .layoutWeight(1)
-        Text(this.格式化时间(this.数据.更新时间))
-          .fontSize(9)
-          .fontColor(this.数据.主题色.文字次)
+        Column({ space: 2 }) {
+          Text('今日进度')
+            .fontSize(应用尺寸.字号_摘要标题)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.数据.主题色.文字主)
+          Text(`${this.数据.今日完成数} 已完成 · ${this.数据.待学数} 待学`)
+            .fontSize(应用尺寸.字号_正文_中)
+            .fontColor(this.数据.主题色.文字次)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        if (this.数据.牌组数 > 0) {
+          Text(`${this.数据.牌组数} 牌组`)
+            .fontSize(应用尺寸.字号_正文_中)
+            .fontColor(this.数据.主题色.文字次)
+        }
       }
       .width('100%')
 
       if (this.数据.hasData) {
-        Column({ space: 2 }) {
-          Row() {
-            ForEach(['日', '一', '二', '三', '四', '五', '六'], (日: string) => {
-              Text(日)
-                .fontSize(8)
-                .fontColor(this.数据.主题色.文字次)
-                .layoutWeight(1)
-                .textAlign(TextAlign.Center)
-            })
-          }
-          .width('100%')
+        // 内容区撑满剩余空间，垂直居中紧凑排列（与主页今日摘要卡一致）
+        Column({ space: 5 }) {
+          // 进度条：完成 / (完成 + 待学)
+          Progress({
+            value: this.进度百分比(),
+            total: 100,
+            type: ProgressType.Linear
+          })
+            .height(4)
+            .color(this.数据.主题色.主色按钮背景)
+            .backgroundColor(this.数据.主题色.主色容器)
+            .borderRadius(2)
 
-          Column({ space: 1 }) {
-            ForEach(this.构建当月日历分行(), (行: 日历单日[], 行号: number) => {
-              Row({ space: 1 }) {
-                ForEach(行, (日: 日历单日, 列号: number) => {
-                  Stack() {
-                    Text(`${日.日号}`)
-                      .fontSize(8)
-                      .fontColor(日.是否当月 ? (日.热力强度 >= 4 ? '#FFFFFF' : this.数据.主题色.文字主) : this.数据.主题色.文字次)
-                      .fontWeight(日.是否今天 ? FontWeight.Bold : FontWeight.Normal)
-                  }
-                  .layoutWeight(1)
-                  .height(15)
-                  .backgroundColor(this.取热力色(日.热力强度))
-                  .border({
-                    width: 日.是否今天 ? 1 : 0,
-                    color: 日.是否今天 ? this.数据.主题色.主色按钮背景 : Color.Transparent
-                  })
-                  .borderRadius(2)
-                }, (日: 日历单日, 列号: number) => `${行号}-${列号}`)
-              }
-              .width('100%')
-            }, (行: 日历单日[], 行号: number) => `${行号}`)
+          Row({ space: 6 }) {
+            this.计数格('已完成', this.数据.今日完成数, this.数据.主题色.主色按钮背景, 应用尺寸.字号_指标, 应用尺寸.字号_正文_小)
+            this.计数格('待学', this.数据.待学数, '#B56A22', 应用尺寸.字号_指标, 应用尺寸.字号_正文_小)
+            Column({ space: 1 }) {
+              Text(this.答对率显示())
+                .fontSize(应用尺寸.字号_指标)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.数据.主题色.主色文字)
+              Text('今日答对率')
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor(this.数据.主题色.文字次)
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Center)
           }
           .width('100%')
         }
         .width('100%')
         .layoutWeight(1)
-        .justifyContent(FlexAlign.End)
+        .justifyContent(FlexAlign.Center)
       } else {
         Column() {
           Text('暂无数据')
             .fontSize(11)
             .fontColor(this.数据.主题色.文字次)
-          Text('打开 App 后将显示统计')
-            .fontSize(9)
-            .fontColor(this.数据.主题色.文字次)
-            .margin({ top: 3 })
         }
-        .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
       }
@@ -384,6 +311,23 @@ struct 统计卡片 {
     .width('100%')
     .height('100%')
     .padding({ top: 8, left: 10, right: 10, bottom: 8 })
+  }
+
+  // 进度百分比：完成 / (完成 + 待学) * 100
+  private 进度百分比(): number {
+    const 总数: number = this.数据.今日完成数 + this.数据.待学数;
+    if (总数 <= 0) {
+      return 0;
+    }
+    return this.数据.今日完成数 / 总数 * 100;
+  }
+
+  // 答对率显示：-1 显示"-"，否则显示百分比
+  private 答对率显示(): string {
+    if (this.数据.今日答对率 < 0) {
+      return '-';
+    }
+    return `${Math.round(this.数据.今日答对率 * 100)}%`;
   }
 
   // ========================================================
@@ -394,12 +338,12 @@ struct 统计卡片 {
     Column({ space: 4 }) {
       Row() {
         Text('记忆率')
-          .fontSize(11)
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.数据.主题色.文字主)
           .layoutWeight(1)
         Text(this.格式化时间(this.数据.更新时间))
-          .fontSize(9)
+          .fontSize(11)
           .fontColor(this.数据.主题色.文字次)
       }
       .width('100%')
@@ -413,11 +357,11 @@ struct 统计卡片 {
               .color(this.数据.主题色.主色按钮背景)
             Column() {
               Text(`${this.数据.记忆率.toFixed(0)}%`)
-                .fontSize(20)
+                .fontSize(22)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.数据.主题色.文字主)
               Text('平均可提取率')
-                .fontSize(8)
+                .fontSize(10)
                 .fontColor(this.数据.主题色.文字次)
             }
           }
@@ -431,10 +375,10 @@ struct 统计卡片 {
       } else if (this.数据.hasData && !this.数据.fsrs已启用) {
         Column() {
           Text('未启用 FSRS')
-            .fontSize(13)
+            .fontSize(15)
             .fontColor(this.数据.主题色.文字主)
           Text('在设置→调度器中开启 FSRS')
-            .fontSize(9)
+            .fontSize(11)
             .fontColor(this.数据.主题色.文字次)
             .margin({ top: 3 })
             .textAlign(TextAlign.Center)
@@ -444,7 +388,7 @@ struct 统计卡片 {
       } else {
         Column() {
           Text('暂无数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -457,19 +401,19 @@ struct 统计卡片 {
   }
 
   // ========================================================
-  // 页3：今日计数
+  // 页2：今日计数
   // ========================================================
   @Builder
   今日计数页() {
     Column({ space: 4 }) {
       Row() {
         Text('今日学习')
-          .fontSize(11)
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.数据.主题色.文字主)
           .layoutWeight(1)
         Text(this.格式化时间(this.数据.更新时间))
-          .fontSize(9)
+          .fontSize(11)
           .fontColor(this.数据.主题色.文字次)
       }
       .width('100%')
@@ -491,7 +435,7 @@ struct 统计卡片 {
 
           if (this.数据.今日答题数 > 0) {
             Text(`正确率 ${Math.round(this.数据.今日正确数 / this.数据.今日答题数 * 100)}%`)
-              .fontSize(9)
+              .fontSize(11)
               .fontColor(this.数据.主题色.文字主)
               .width('100%')
               .textAlign(TextAlign.Center)
@@ -503,7 +447,7 @@ struct 统计卡片 {
       } else {
         Column() {
           Text('暂无数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -516,14 +460,14 @@ struct 统计卡片 {
   }
 
   @Builder
-  计数格(标签: string, 数值: number, 颜色: string) {
+  计数格(标签: string, 数值: number, 颜色: string, 数值字号: number = 17, 标签字号: number = 10) {
     Column({ space: 1 }) {
       Text(`${数值}`)
-        .fontSize(15)
+        .fontSize(数值字号)
         .fontWeight(FontWeight.Bold)
         .fontColor(颜色)
       Text(标签)
-        .fontSize(8)
+        .fontSize(标签字号)
         .fontColor(this.数据.主题色.文字次)
     }
     .layoutWeight(1)
@@ -531,19 +475,19 @@ struct 统计卡片 {
   }
 
   // ========================================================
-  // 页4：卡片状态（按状态分桶）
+  // 页3：卡片状态（按状态分桶）
   // ========================================================
   @Builder
   卡片状态页() {
     Column({ space: 4 }) {
       Row() {
         Text('卡片状态')
-          .fontSize(11)
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.数据.主题色.文字主)
           .layoutWeight(1)
         Text(this.格式化时间(this.数据.更新时间))
-          .fontSize(9)
+          .fontSize(11)
           .fontColor(this.数据.主题色.文字次)
       }
       .width('100%')
@@ -567,7 +511,7 @@ struct 统计卡片 {
 
           // 总计
           Text(`总计 ${this.卡片总数()} 张`)
-            .fontSize(9)
+            .fontSize(11)
             .fontColor(this.数据.主题色.文字主)
             .width('100%')
             .textAlign(TextAlign.Center)
@@ -578,7 +522,7 @@ struct 统计卡片 {
       } else {
         Column() {
           Text('暂无数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -599,11 +543,11 @@ struct 统计卡片 {
   状态格(标签: string, 数值: number, 颜色: string) {
     Column({ space: 1 }) {
       Text(`${数值}`)
-        .fontSize(13)
+        .fontSize(15)
         .fontWeight(FontWeight.Bold)
         .fontColor(颜色)
       Text(标签)
-        .fontSize(8)
+        .fontSize(10)
         .fontColor(this.数据.主题色.文字次)
     }
     .layoutWeight(1)
@@ -611,19 +555,19 @@ struct 统计卡片 {
   }
 
   // ========================================================
-  // 页5：小时分布（24 时柱状图）
+  // 页4：小时分布（24 时柱状图）
   // ========================================================
   @Builder
   小时分布页() {
     Column({ space: 4 }) {
       Row() {
         Text('小时分布（全部）')
-          .fontSize(11)
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.数据.主题色.文字主)
           .layoutWeight(1)
         Text(this.格式化时间(this.数据.更新时间))
-          .fontSize(9)
+          .fontSize(11)
           .fontColor(this.数据.主题色.文字次)
       }
       .width('100%')
@@ -638,7 +582,7 @@ struct 统计卡片 {
       } else {
         Column() {
           Text('暂无数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -677,11 +621,11 @@ struct 统计卡片 {
 
           if (索引 % 3 === 0) {
             Text(`${索引}`)
-              .fontSize(7)
+              .fontSize(9)
               .fontColor(this.数据.主题色.文字次)
           } else {
             Text('')
-              .fontSize(7)
+              .fontSize(9)
           }
         }
         .layoutWeight(1)
@@ -694,19 +638,19 @@ struct 统计卡片 {
   }
 
   // ========================================================
-  // 页6：难度分布（SM-2 难度直方图）
+  // 页5：难度分布（SM-2 / FSRS 难度直方图）
   // ========================================================
   @Builder
   难度分布页() {
     Column({ space: 4 }) {
       Row() {
         Text('难度分布')
-          .fontSize(11)
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.数据.主题色.文字主)
           .layoutWeight(1)
         Text(this.格式化时间(this.数据.更新时间))
-          .fontSize(9)
+          .fontSize(11)
           .fontColor(this.数据.主题色.文字次)
       }
       .width('100%')
@@ -714,7 +658,7 @@ struct 统计卡片 {
       if (this.数据.hasData && this.数据.难度分布.桶.length > 0) {
         Column({ space: 2 }) {
           Text(`平均难度 ${(this.数据.难度分布.平均 / 10).toFixed(1)}%`)
-            .fontSize(9)
+            .fontSize(11)
             .fontColor(this.数据.主题色.文字主)
             .width('100%')
             .textAlign(TextAlign.Center)
@@ -727,7 +671,7 @@ struct 统计卡片 {
       } else if (this.数据.hasData) {
         Column() {
           Text('暂无难度数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -735,7 +679,7 @@ struct 统计卡片 {
       } else {
         Column() {
           Text('暂无数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -781,19 +725,19 @@ struct 统计卡片 {
   }
 
   // ========================================================
-  // 页7：间隔分布（卡片间隔天数的直方图）
+  // 页6：间隔分布（卡片间隔天数的直方图）
   // ========================================================
   @Builder
   间隔分布页() {
     Column({ space: 4 }) {
       Row() {
         Text('间隔分布')
-          .fontSize(11)
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.数据.主题色.文字主)
           .layoutWeight(1)
         Text(this.格式化时间(this.数据.更新时间))
-          .fontSize(9)
+          .fontSize(11)
           .fontColor(this.数据.主题色.文字次)
       }
       .width('100%')
@@ -802,7 +746,7 @@ struct 统计卡片 {
         Column({ space: 2 }) {
           this.间隔柱状图()
           Text(`共 ${this.数据.间隔分布.length} 个间隔桶`)
-            .fontSize(9)
+            .fontSize(11)
             .fontColor(this.数据.主题色.文字次)
             .width('100%')
             .textAlign(TextAlign.Center)
@@ -813,7 +757,7 @@ struct 统计卡片 {
       } else if (this.数据.hasData) {
         Column() {
           Text('暂无间隔数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -821,7 +765,7 @@ struct 统计卡片 {
       } else {
         Column() {
           Text('暂无数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -867,19 +811,19 @@ struct 统计卡片 {
   }
 
   // ========================================================
-  // 页8：未来到期预测
+  // 页7：未来到期预测
   // ========================================================
   @Builder
   预测页() {
     Column({ space: 4 }) {
       Row() {
         Text('未来 7 天到期')
-          .fontSize(11)
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.数据.主题色.文字主)
           .layoutWeight(1)
         Text(this.格式化时间(this.数据.更新时间))
-          .fontSize(9)
+          .fontSize(11)
           .fontColor(this.数据.主题色.文字次)
       }
       .width('100%')
@@ -894,7 +838,7 @@ struct 统计卡片 {
       } else {
         Column() {
           Text('暂无数据')
-            .fontSize(11)
+            .fontSize(13)
             .fontColor(this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -921,7 +865,7 @@ struct 统计卡片 {
       ForEach(this.数据.未来到期, (项: [number, number], 索引: number) => {
         Column({ space: 2 }) {
           Text(`${项[1]}`)
-            .fontSize(8)
+            .fontSize(10)
             .fontColor(this.数据.主题色.文字主)
           Stack({ alignContent: Alignment.Bottom }) {
             Column()
@@ -934,7 +878,7 @@ struct 统计卡片 {
           .height(45)
 
           Text(项[0] === 0 ? '今' : `+${项[0]}`)
-            .fontSize(8)
+            .fontSize(10)
             .fontColor(项[0] === 0 ? this.数据.主题色.主色按钮背景 : this.数据.主题色.文字次)
         }
         .layoutWeight(1)
@@ -964,7 +908,7 @@ struct 统计卡片 {
         .justifyContent(FlexAlign.Center)
 
         Swiper() {
-          this.月历页()
+          this.今日进度页()
           this.记忆率页()
           this.今日计数页()
           this.卡片状态页()
@@ -976,6 +920,9 @@ struct 统计卡片 {
         .indicator(false)
         .loop(true)
         .autoPlay(false)
+        .onAnimationStart((_index: number, targetIndex: number) => {
+          this.当前页索引 = targetIndex;
+        })
         .onChange((index: number) => {
           this.当前页索引 = index;
         })

@@ -108,11 +108,12 @@ export struct 欢迎弹窗 {
           // 方式 1：ankiweb.net 链接可点击跳转浏览器
           Text() {
             Span($r('app.string.welcome_section2_way1_label'))
+            Span($r('app.string.welcome_section2_body'))
             Span('ankiweb.net/shared/decks')
               .fontColor($r('app.color.action_primary'))
               .fontWeight(FontWeight.Medium)
               .onClick(() => this.跳转网页(欢迎弹窗.网址_获取牌组))
-            Span($r('app.string.welcome_section2_body'))
+            Span($r('app.string.welcome_section2_way1_tail'))
           }
           .fontSize(应用尺寸.字号_正文_中)
           .fontColor($r('app.color.text_secondary'))
@@ -150,21 +151,12 @@ export struct 欢迎弹窗 {
             .fontColor($r('app.color.text_primary'))
             .width('100%')
           Text() {
-            Span('本应用后端复用开源项目Anki，因此具备极其成熟的闪卡算法。作为新晋软件，有任何建议可以在应用市场直接')
+            Span('本应用后端复用开源项目Anki，因此具备极其成熟的闪卡算法。有任何建议可以在应用市场直接')
             Span('评论')
               .fontColor($r('app.color.action_primary'))
               .fontWeight(FontWeight.Medium)
               .onClick(() => this.跳转应用(欢迎弹窗.包名_记得卡片))
-            Span('。同系列的')
-            Span('【记得魔方】')
-              .fontColor($r('app.color.action_primary'))
-              .fontWeight(FontWeight.Medium)
-              .onClick(() => this.跳转应用(欢迎弹窗.包名_记得魔方))
-            Span('、【记得舒尔特】')
-              .fontColor($r('app.color.action_primary'))
-              .fontWeight(FontWeight.Medium)
-              .onClick(() => this.跳转应用(欢迎弹窗.包名_记得舒尔特))
-            Span('，同样是无广无会员的纯净软件，欢迎大家下载体验')
+            Span('或在QQ群反馈')
           }
           .fontSize(应用尺寸.字号_正文_中)
           .fontColor($r('app.color.text_secondary'))

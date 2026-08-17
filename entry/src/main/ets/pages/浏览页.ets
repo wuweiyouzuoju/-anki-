@@ -62,6 +62,7 @@ import type { Card } from '../proto/messages/CardsMessages';
 import type { CardStatsView } from '../proto/messages/StatsMessages';
 import type { DeckTreeNode } from '../proto/messages/DeckMessages';
 import type { TagTreeNode } from '../proto/messages/TagsMessages';
+import type { NotetypeNameId, 变更笔记类型信息 } from '../proto/messages/NotetypeMessages';
 import { ConfigKeyBool } from '../proto/messages/ConfigMessages';
 import { BURY_SUSPEND_MODE_SUSPEND } from '../proto/messages/SchedulerMessages';
 import { 应用尺寸 } from '../utils/应用尺寸';
@@ -164,6 +165,27 @@ export struct 浏览页 {
   @State private 显示删除确认: boolean = false;
   @State private 牌组树: DeckTreeNode | null = null;
 
+  // T8 设置到期日弹层状态：TextInput 输入 days 字符串（"0"/"5"/"1-3" 等）
+  @State private 显示到期日弹层: boolean = false;
+  @State private 到期日输入: string = '';
+
+  // T8 重新定位弹层状态：起始位置/步长/随机/顺移已有
+  @State private 显示重新定位弹层: boolean = false;
+  @State private 重新定位起始: number = 1;
+  @State private 重新定位步长: number = 1;
+  @State private 重新定位随机: boolean = false;
+  @State private 重新定位顺移: boolean = false;
+
+  // T8 更改笔记类型弹层状态：旧/新笔记类型 + 字段/模板映射
+  @State private 显示笔记类型弹层: boolean = false;
+  @State private 笔记类型列表: NotetypeNameId[] = [];
+  @State private 选中新笔记类型ID: number = 0;
+  @State private 变更笔记类型信息数据: 变更笔记类型信息 | null = null;
+  @State private 字段映射: number[] = [];
+  @State private 模板映射: number[] = [];
+  @State private 笔记类型弹层忙碌: boolean = false;
+  @State private 旧笔记类型ID缓存: number = 0;
+
   // T9 查找替换状态：顶部条按钮触发弹层，支持仅选中笔记或全部笔记两种范围
   @State private 显示查找替换: boolean = false;
   @State private 查找替换忙碌: boolean = false;
@@ -200,6 +222,7 @@ export struct 浏览页 {
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景色: string = '#2F5FD0';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
 
   async aboutToAppear(): Promise<void> {
     // 注册自定义转场回调：首页 Navigation.customNavContentTransition 通过此 name 查找回调，
@@ -258,6 +281,23 @@ export struct 浏览页 {
     }
   }
 
+  /**
+   * 构建更改笔记类型弹层里「字段/模板映射」下拉的选项列表。
+   * 第 0 项固定为「不映射」，其余为旧字段/模板名。
+   * 抽成方法是为了避免在 build() 里写字面量数组 + concat，
+   * 触发 ArkTS 严格模式的 arkts-no-noninferrable-arr-literals / arkts-no-untyped-obj-literals。
+   */
+  private 构建映射选项列表(旧名列表: string[]): SelectOption[] {
+    const 选项: SelectOption[] = [];
+    选项.push({
+      value: this.取本地化文案($r('app.string.browser_action_change_notetype_no_map'))
+    });
+    for (let i = 0; i < 旧名列表.length; i++) {
+      选项.push({ value: 旧名列表[i] });
+    }
+    return 选项;
+  }
+
   aboutToDisappear(): void {
     CustomTransition.getInstance().注销NavParam('BrowserPage');
   }
@@ -271,6 +311,9 @@ export struct 浏览页 {
   onBackPress(): boolean {
     if (this.显示删除确认) { this.显示删除确认 = false; return true; }
     if (this.显示挂起确认) { this.显示挂起确认 = false; return true; }
+    if (this.显示笔记类型弹层) { this.显示笔记类型弹层 = false; return true; }
+    if (this.显示重新定位弹层) { this.显示重新定位弹层 = false; return true; }
+    if (this.显示到期日弹层) { this.显示到期日弹层 = false; return true; }
     if (this.显示标签重命名) { this.显示标签重命名 = false; return true; }
     if (this.显示查找替换) { this.显示查找替换 = false; return true; }
     if (this.显示侧边栏) { this.显示侧边栏 = false; return true; }
@@ -768,6 +811,203 @@ export struct 浏览页 {
     } catch (错误) {
       this.批量错误 = this.取本地化文案($r('app.string.browser_action_restore_error'));
       console.info(`BrowserPage: 批量恢复失败 错误=${错误}`);
+    } finally {
+      this.批量忙碌 = false;
+    }
+  }
+
+  /**
+   * 打开设置到期日弹层：清空输入并显示。仅 cards 模式可用（notes 模式无 cardId）。
+   * 校验在 执行批量设置到期日 里完成（空输入 → 错误提示）。
+   */
+  private 打开设置到期日弹层(): void {
+    if (this.浏览模式值 !== 'cards') {
+      this.批量错误 = this.取本地化文案($r('app.string.browser_action_notes_mode_hint'));
+      return;
+    }
+    this.批量错误 = '';
+    this.到期日输入 = '';
+    this.显示到期日弹层 = true;
+  }
+
+  /** 执行批量设置到期日：days 字符串格式与 Anki 桌面端一致（"0"/"5"/"1-3"）。 */
+  private async 执行批量设置到期日(): Promise<void> {
+    const 输入: string = this.到期日输入.trim();
+    if (输入 === '') {
+      return;
+    }
+    this.显示到期日弹层 = false;
+    this.批量忙碌 = true;
+    this.批量错误 = '';
+    try {
+      const 卡片IDs: number[] = await this.解析选中为卡片ID();
+      if (卡片IDs.length === 0) {
+        return;
+      }
+      await this.调度器服务实例.设置到期日(卡片IDs, 输入);
+      this.退出多选();
+      await this.执行搜索();
+    } catch (错误) {
+      this.批量错误 = this.取本地化文案($r('app.string.browser_action_set_due_error'));
+      console.info(`BrowserPage: 批量设置到期日失败 错误=${错误}`);
+    } finally {
+      this.批量忙碌 = false;
+    }
+  }
+
+  /**
+   * 打开重新定位弹层：从后端获取 random/shift 默认值后显示。仅 cards 模式可用。
+   * Anki collection 配置中保存了用户上次使用的 random/shift 状态，用作弹层初始值。
+   */
+  private async 打开重新定位弹层(): Promise<void> {
+    if (this.浏览模式值 !== 'cards') {
+      this.批量错误 = this.取本地化文案($r('app.string.browser_action_notes_mode_hint'));
+      return;
+    }
+    this.批量错误 = '';
+    this.重新定位起始 = 1;
+    this.重新定位步长 = 1;
+    this.显示重新定位弹层 = true;
+    this.批量忙碌 = true;
+    try {
+      const 默认值 = await this.调度器服务实例.获取重新定位默认值();
+      this.重新定位随机 = 默认值.random;
+      this.重新定位顺移 = 默认值.shift;
+    } catch (错误) {
+      // 取默认值失败时用 false 兜底，不阻塞弹层
+      this.重新定位随机 = false;
+      this.重新定位顺移 = false;
+      console.info(`BrowserPage: 获取重新定位默认值失败 错误=${错误}`);
+    } finally {
+      this.批量忙碌 = false;
+    }
+  }
+
+  /** 执行批量重新定位：调 排序卡片(选中ID, 起始, 步长, 随机, 顺移)。 */
+  private async 执行批量重新定位(): Promise<void> {
+    this.显示重新定位弹层 = false;
+    this.批量忙碌 = true;
+    this.批量错误 = '';
+    try {
+      const 卡片IDs: number[] = await this.解析选中为卡片ID();
+      if (卡片IDs.length === 0) {
+        return;
+      }
+      await this.调度器服务实例.排序卡片(
+        卡片IDs, this.重新定位起始, this.重新定位步长,
+        this.重新定位随机, this.重新定位顺移);
+      this.退出多选();
+      await this.执行搜索();
+    } catch (错误) {
+      this.批量错误 = this.取本地化文案($r('app.string.browser_action_reposition_error'));
+      console.info(`BrowserPage: 批量重新定位失败 错误=${错误}`);
+    } finally {
+      this.批量忙碌 = false;
+    }
+  }
+
+  /**
+   * 打开更改笔记类型弹层：先取第一条选中笔记/卡片的旧笔记类型 ID + 加载笔记类型名列表，再显示。
+   * cards 模式：先取第一张卡片的 noteId → 取该笔记的 notetypeId
+   * notes 模式：直接取第一条选中笔记的 notetypeId
+   * Invariants: 同一批选中必须同属一个笔记类型（Anki 后端 GetChangeNotetypeInfo 入参只接受单个 old_notetype_id）。
+   */
+  private async 打开更改笔记类型弹层(): Promise<void> {
+    if (this.选中ID列表.length === 0) {
+      return;
+    }
+    this.批量错误 = '';
+    this.笔记类型弹层忙碌 = true;
+    this.显示笔记类型弹层 = true;
+    this.笔记类型列表 = [];
+    this.选中新笔记类型ID = 0;
+    this.变更笔记类型信息数据 = null;
+    this.字段映射 = [];
+    this.模板映射 = [];
+    try {
+      // 取第一条选中对应的 noteId
+      let 首个笔记ID: number;
+      if (this.浏览模式值 === 'notes') {
+        首个笔记ID = this.选中ID列表[0];
+      } else {
+        const 首张卡片: Card = await this.卡片服务实例.获取卡片(this.选中ID列表[0]);
+        首个笔记ID = 首张卡片.noteId;
+      }
+      const 首条笔记: EditableNote = await this.笔记服务实例.获取笔记(首个笔记ID);
+      this.旧笔记类型ID缓存 = 首条笔记.notetypeId;
+      this.笔记类型列表 = await this.笔记类型服务实例.获取笔记类型名列表();
+    } catch (错误) {
+      this.批量错误 = this.取本地化文案($r('app.string.browser_action_change_notetype_error'));
+      console.info(`BrowserPage: 加载笔记类型列表失败 错误=${错误}`);
+      this.显示笔记类型弹层 = false;
+    } finally {
+      this.笔记类型弹层忙碌 = false;
+    }
+  }
+
+  /**
+   * 选中新笔记类型后加载字段/模板映射信息。
+   * 调 获取变更笔记类型信息(旧ID, 新ID)，把后端给的 input.newFields / newTemplates 复制到可编辑的 字段映射 / 模板映射。
+   */
+  private async 加载变更笔记类型信息(新笔记类型ID: number): Promise<void> {
+    if (新笔记类型ID === 0 || this.旧笔记类型ID缓存 === 0) {
+      this.变更笔记类型信息数据 = null;
+      this.字段映射 = [];
+      this.模板映射 = [];
+      return;
+    }
+    this.笔记类型弹层忙碌 = true;
+    try {
+      const 信息 = await this.笔记类型服务实例.获取变更笔记类型信息(
+        this.旧笔记类型ID缓存, 新笔记类型ID);
+      this.变更笔记类型信息数据 = 信息;
+      this.字段映射 = 信息.input.newFields.slice();
+      this.模板映射 = 信息.input.newTemplates.slice();
+    } catch (错误) {
+      this.批量错误 = this.取本地化文案($r('app.string.browser_action_change_notetype_error'));
+      console.info(`BrowserPage: 加载变更笔记类型信息失败 错误=${错误}`);
+      this.变更笔记类型信息数据 = null;
+      this.字段映射 = [];
+      this.模板映射 = [];
+    } finally {
+      this.笔记类型弹层忙碌 = false;
+    }
+  }
+
+  /**
+   * 执行批量更改笔记类型：把 字段映射 / 模板映射 回写到 input，再调 变更笔记类型。
+   * noteIds 在 cards 模式需把 cardId→noteId 转换（每张卡都查 noteId），notes 模式直接用选中ID。
+   */
+  private async 执行批量更改笔记类型(): Promise<void> {
+    const 信息 = this.变更笔记类型信息数据;
+    if (信息 === null || this.选中新笔记类型ID === 0) {
+      return;
+    }
+    this.显示笔记类型弹层 = false;
+    this.批量忙碌 = true;
+    this.批量错误 = '';
+    try {
+      // 取 noteIds：cards 模式逐卡查 noteId，notes 模式直接用选中ID
+      let 笔记IDs: number[];
+      if (this.浏览模式值 === 'notes') {
+        笔记IDs = this.选中ID列表.slice();
+      } else {
+        笔记IDs = [];
+        for (const 卡片ID of this.选中ID列表) {
+          const 卡: Card = await this.卡片服务实例.获取卡片(卡片ID);
+          笔记IDs.push(卡.noteId);
+        }
+      }
+      // 回写可编辑字段到 input，其余字段（oldNotetypeId/newNotetypeId/currentSchema/oldNotetypeName/isCloze）原样保留
+      信息.input.noteIds = 笔记IDs;
+      信息.input.newFields = this.字段映射.slice();
+      信息.input.newTemplates = this.模板映射.slice();
+      await this.笔记类型服务实例.变更笔记类型(信息.input);
+      this.退出多选();
+      await this.执行搜索();
+    } catch (错误) {
+      this.批量错误 = this.取本地化文案($r('app.string.browser_action_change_notetype_error'));
+      console.info(`BrowserPage: 批量更改笔记类型失败 错误=${错误}`);
     } finally {
       this.批量忙碌 = false;
     }
@@ -1271,11 +1511,11 @@ export struct 浏览页 {
       })
     }
     .width('100%')
-    .height(应用尺寸.工具栏高度)
+    .height(应用尺寸.工具栏高度 + this.状态栏高度)
     .padding({
       left: 应用尺寸.页面内边距_水平,
       right: 应用尺寸.页面内边距_水平,
-      top: 应用尺寸.间距_8,
+      top: this.状态栏高度 + 应用尺寸.间距_8,
       bottom: 应用尺寸.间距_8
     })
     .backgroundColor(this.页面底色微染值)
@@ -1349,6 +1589,9 @@ export struct 浏览页 {
                 this.批量错误 = '';
                 this.显示删除确认 = true;
               },
+              on设置到期日: (): void => { this.打开设置到期日弹层(); },
+              on重新定位: (): void => { this.打开重新定位弹层(); },
+              on更改笔记类型: (): void => { this.打开更改笔记类型弹层(); },
               onHelp: (): void => {
                 this.说明标题 = $r('app.string.browser_help_batch_title');
                 this.说明正文 = $r('app.string.browser_help_batch_body');
@@ -1781,6 +2024,324 @@ export struct 浏览页 {
             }
             .width('78%')
             .constraintSize({ maxWidth: 420 })
+            .padding(应用尺寸.卡片内边距)
+            .backgroundColor($r('app.color.surface_card'))
+            .borderRadius(应用尺寸.圆角_卡片)
+          }
+        }
+
+        // T8 设置到期日弹层：TextInput 输入 days 字符串
+        if (this.显示到期日弹层) {
+          Stack() {
+            Column()
+              .width('100%')
+              .height('100%')
+              .backgroundColor(this.是否深色() ? 'rgba(0,0,0,0.40)' : 'rgba(0,0,0,0.15)')
+              .onClick((): void => {
+                if (!this.批量忙碌) { this.显示到期日弹层 = false; }
+              })
+
+            Column({ space: 应用尺寸.间距_14 }) {
+              Text($r('app.string.browser_action_set_due'))
+                .fontSize(应用尺寸.字号_面板标题)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+                .width('100%')
+
+              Text($r('app.string.browser_action_set_due_hint'))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+
+              TextInput({ text: this.到期日输入, placeholder: $r('app.string.browser_action_set_due_placeholder') })
+                .width('100%')
+                .height(应用尺寸.按钮高度)
+                .fontSize(应用尺寸.字号_正文)
+                .fontColor($r('app.color.text_primary'))
+                .backgroundColor($r('app.color.surface_page'))
+                .borderRadius(应用尺寸.圆角_面板)
+                .enabled(!this.批量忙碌)
+                .onChange((值: string): void => { this.到期日输入 = 值; })
+
+              Row({ space: 应用尺寸.间距_10 }) {
+                Button($r('app.string.browser_detail_cancel'))
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.surface_page'))
+                  .borderRadius(应用尺寸.圆角_胶囊)
+                  .enabled(!this.批量忙碌)
+                  .onClick((): void => { this.显示到期日弹层 = false; })
+                Button($r('app.string.browser_detail_confirm'))
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.action_on_primary'))
+                  .backgroundColor(this.主色按钮背景色)
+                  .borderRadius(应用尺寸.圆角_胶囊)
+                  .enabled(!this.批量忙碌 && this.到期日输入.trim() !== '')
+                  .onClick((): void => { this.执行批量设置到期日(); })
+              }
+              .width('100%')
+            }
+            .width('78%')
+            .constraintSize({ maxWidth: 420 })
+            .padding(应用尺寸.卡片内边距)
+            .backgroundColor($r('app.color.surface_card'))
+            .borderRadius(应用尺寸.圆角_卡片)
+          }
+        }
+
+        // T8 重新定位弹层：起始位置/步长/随机/顺移已有
+        if (this.显示重新定位弹层) {
+          Stack() {
+            Column()
+              .width('100%')
+              .height('100%')
+              .backgroundColor(this.是否深色() ? 'rgba(0,0,0,0.40)' : 'rgba(0,0,0,0.15)')
+              .onClick((): void => {
+                if (!this.批量忙碌) { this.显示重新定位弹层 = false; }
+              })
+
+            Column({ space: 应用尺寸.间距_14 }) {
+              Text($r('app.string.browser_action_reposition'))
+                .fontSize(应用尺寸.字号_面板标题)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+                .width('100%')
+
+              Row({ space: 应用尺寸.间距_12 }) {
+                Text($r('app.string.browser_action_reposition_start'))
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                TextInput({ text: this.重新定位起始.toString() })
+                  .width(80)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.surface_page'))
+                  .borderRadius(应用尺寸.圆角_面板)
+                  .enabled(!this.批量忙碌)
+                  .type(InputType.Number)
+                  .onChange((值: string): void => {
+                    const n: number = Number.parseInt(值, 10);
+                    if (Number.isFinite(n) && n >= 0) { this.重新定位起始 = n; }
+                  })
+              }
+              .width('100%')
+
+              Row({ space: 应用尺寸.间距_12 }) {
+                Text($r('app.string.browser_action_reposition_step'))
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                TextInput({ text: this.重新定位步长.toString() })
+                  .width(80)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.surface_page'))
+                  .borderRadius(应用尺寸.圆角_面板)
+                  .enabled(!this.批量忙碌)
+                  .type(InputType.Number)
+                  .onChange((值: string): void => {
+                    const n: number = Number.parseInt(值, 10);
+                    if (Number.isFinite(n) && n >= 0) { this.重新定位步长 = n; }
+                  })
+              }
+              .width('100%')
+
+              Row({ space: 应用尺寸.间距_12 }) {
+                Text($r('app.string.browser_action_reposition_random'))
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.重新定位随机 })
+                  .enabled(!this.批量忙碌)
+                  .onChange((开: boolean): void => { this.重新定位随机 = 开; })
+              }
+              .width('100%')
+
+              Row({ space: 应用尺寸.间距_12 }) {
+                Text($r('app.string.browser_action_reposition_shift'))
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+                Toggle({ type: ToggleType.Switch, isOn: this.重新定位顺移 })
+                  .enabled(!this.批量忙碌)
+                  .onChange((开: boolean): void => { this.重新定位顺移 = 开; })
+              }
+              .width('100%')
+
+              Row({ space: 应用尺寸.间距_10 }) {
+                Button($r('app.string.browser_detail_cancel'))
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.surface_page'))
+                  .borderRadius(应用尺寸.圆角_胶囊)
+                  .enabled(!this.批量忙碌)
+                  .onClick((): void => { this.显示重新定位弹层 = false; })
+                Button($r('app.string.browser_detail_confirm'))
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.action_on_primary'))
+                  .backgroundColor(this.主色按钮背景色)
+                  .borderRadius(应用尺寸.圆角_胶囊)
+                  .enabled(!this.批量忙碌)
+                  .onClick((): void => { this.执行批量重新定位(); })
+              }
+              .width('100%')
+            }
+            .width('78%')
+            .constraintSize({ maxWidth: 420 })
+            .padding(应用尺寸.卡片内边距)
+            .backgroundColor($r('app.color.surface_card'))
+            .borderRadius(应用尺寸.圆角_卡片)
+          }
+        }
+
+        // T8 更改笔记类型弹层：选新类型 + 字段/模板映射
+        if (this.显示笔记类型弹层) {
+          Stack() {
+            Column()
+              .width('100%')
+              .height('100%')
+              .backgroundColor(this.是否深色() ? 'rgba(0,0,0,0.40)' : 'rgba(0,0,0,0.15)')
+              .onClick((): void => {
+                if (!this.笔记类型弹层忙碌 && !this.批量忙碌) { this.显示笔记类型弹层 = false; }
+              })
+
+            Column({ space: 应用尺寸.间距_14 }) {
+              Text($r('app.string.browser_action_change_notetype'))
+                .fontSize(应用尺寸.字号_面板标题)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+                .width('100%')
+
+              if (this.笔记类型弹层忙碌) {
+                Text($r('app.string.browser_action_change_notetype_loading'))
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+              } else {
+                // 选择新笔记类型
+                Text($r('app.string.browser_action_change_notetype_new'))
+                  .fontSize(应用尺寸.字号_正文)
+                  .fontColor($r('app.color.text_primary'))
+                  .width('100%')
+                Select(this.笔记类型列表.map((项: NotetypeNameId): SelectOption => {
+                  return { value: 项.name };
+                }))
+                  .selected(this.选中新笔记类型ID === 0 ? -1 : this.笔记类型列表.findIndex(
+                    (项: NotetypeNameId): boolean => 项.id === this.选中新笔记类型ID))
+                  .value(this.选中新笔记类型ID === 0 ? '' :
+                    this.笔记类型列表.find((项: NotetypeNameId): boolean => 项.id === this.选中新笔记类型ID)?.name ?? '')
+                  .width('100%')
+                  .height(应用尺寸.按钮高度)
+                  .fontColor($r('app.color.text_primary'))
+                  .selectedOptionFontColor($r('app.color.action_on_primary'))
+                  .selectedOptionBgColor(this.主色容器色)
+                  .onSelect((索引: number): void => {
+                    const 项: NotetypeNameId = this.笔记类型列表[索引];
+                    this.选中新笔记类型ID = 项.id;
+                    this.加载变更笔记类型信息(项.id);
+                  })
+
+                // 字段/模板映射表（仅在加载完变更信息后显示）
+                if (this.变更笔记类型信息数据 !== null) {
+                  Text($r('app.string.browser_action_change_notetype_field_map'))
+                    .fontSize(应用尺寸.字号_正文)
+                    .fontColor($r('app.color.text_primary'))
+                    .fontWeight(FontWeight.Medium)
+                    .width('100%')
+                  ForEach(this.变更笔记类型信息数据.newFieldNames, (字段名: string, 索引: number) => {
+                    Row({ space: 应用尺寸.间距_8 }) {
+                      Text(字段名)
+                        .fontSize(应用尺寸.字号_正文_小)
+                        .fontColor($r('app.color.text_primary'))
+                        .layoutWeight(1)
+                      Select(this.构建映射选项列表(this.变更笔记类型信息数据!.oldFieldNames))
+                        .selected(this.字段映射[索引] === -1 ? 0 : this.字段映射[索引] + 1)
+                        .value(this.字段映射[索引] === -1 ?
+                          this.取本地化文案($r('app.string.browser_action_change_notetype_no_map')) :
+                          this.变更笔记类型信息数据!.oldFieldNames[this.字段映射[索引]])
+                        .width('50%')
+                        .height(应用尺寸.按钮高度)
+                        .fontColor($r('app.color.text_primary'))
+                        .onSelect((选索引: number): void => {
+                          // 选索引 0=不映射(-1)，1..N=旧字段 ord
+                          const 新值: number = 选索引 === 0 ? -1 : 选索引 - 1;
+                          const 新映射: number[] = this.字段映射.slice();
+                          新映射[索引] = 新值;
+                          this.字段映射 = 新映射;
+                        })
+                    }
+                    .width('100%')
+                  }, (字段名: string, 索引: number): string => `${字段名}-${索引}`)
+
+                  // 模板映射（仅当新笔记类型有模板时显示）
+                  if (this.变更笔记类型信息数据!.newTemplateNames.length > 0) {
+                    Text($r('app.string.browser_action_change_notetype_template_map'))
+                      .fontSize(应用尺寸.字号_正文)
+                      .fontColor($r('app.color.text_primary'))
+                      .fontWeight(FontWeight.Medium)
+                      .width('100%')
+                    ForEach(this.变更笔记类型信息数据!.newTemplateNames, (模板名: string, 索引: number) => {
+                      Row({ space: 应用尺寸.间距_8 }) {
+                        Text(模板名)
+                          .fontSize(应用尺寸.字号_正文_小)
+                          .fontColor($r('app.color.text_primary'))
+                          .layoutWeight(1)
+                        Select(this.构建映射选项列表(this.变更笔记类型信息数据!.oldTemplateNames))
+                          .selected(this.模板映射[索引] === -1 ? 0 : this.模板映射[索引] + 1)
+                          .value(this.模板映射[索引] === -1 ?
+                            this.取本地化文案($r('app.string.browser_action_change_notetype_no_map')) :
+                            this.变更笔记类型信息数据!.oldTemplateNames[this.模板映射[索引]])
+                          .width('50%')
+                          .height(应用尺寸.按钮高度)
+                          .fontColor($r('app.color.text_primary'))
+                          .onSelect((选索引: number): void => {
+                            const 新值: number = 选索引 === 0 ? -1 : 选索引 - 1;
+                            const 新映射: number[] = this.模板映射.slice();
+                            新映射[索引] = 新值;
+                            this.模板映射 = 新映射;
+                          })
+                      }
+                      .width('100%')
+                    }, (模板名: string, 索引: number): string => `${模板名}-${索引}`)
+                  }
+                }
+              }
+
+              Row({ space: 应用尺寸.间距_10 }) {
+                Button($r('app.string.browser_detail_cancel'))
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.surface_page'))
+                  .borderRadius(应用尺寸.圆角_胶囊)
+                  .enabled(!this.批量忙碌 && !this.笔记类型弹层忙碌)
+                  .onClick((): void => { this.显示笔记类型弹层 = false; })
+                Button($r('app.string.browser_detail_confirm'))
+                  .layoutWeight(1)
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.action_on_primary'))
+                  .backgroundColor(this.主色按钮背景色)
+                  .borderRadius(应用尺寸.圆角_胶囊)
+                  .enabled(!this.批量忙碌 && !this.笔记类型弹层忙碌 && this.变更笔记类型信息数据 !== null)
+                  .onClick((): void => { this.执行批量更改笔记类型(); })
+              }
+              .width('100%')
+            }
+            .width('88%')
+            .constraintSize({ maxWidth: 520, maxHeight: '80%' })
             .padding(应用尺寸.卡片内边距)
             .backgroundColor($r('app.color.surface_card'))
             .borderRadius(应用尺寸.圆角_卡片)

@@ -26,15 +26,18 @@
 
 import { 后端会话 } from './后端会话';
 import { 笔记类型方法, 服务号 } from './服务索引';
-import type { NotetypeNameId, NotetypeView } from '../proto/messages/NotetypeMessages';
+import type { NotetypeNameId, NotetypeView, 变更笔记类型信息, 变更笔记类型请求 } from '../proto/messages/NotetypeMessages';
 import {
   decodeNotetype,
   decodeNotetypeNames,
   decodeJsonString,
+  decodeChangeNotetypeInfo,
   encodeNotetypeId,
   encodeJsonString,
   encodeStockNotetype,
-  encodeUpdateNotetypeLegacyRequest
+  encodeUpdateNotetypeLegacyRequest,
+  encodeGetChangeNotetypeInfoRequest,
+  encodeChangeNotetypeRequest
 } from '../proto/messages/NotetypeMessages';
 
 /** AddNotePanel 所属页面使用的 Anki 笔记类型边界。 */
@@ -105,5 +108,35 @@ export class 笔记类型服务 {
   async 移除笔记类型(ID: number): Promise<void> {
     await this.会话.调用(
       服务号.后端笔记类型, 笔记类型方法.移除笔记类型, encodeNotetypeId(ID));
+  }
+
+  /**
+   * 获取变更笔记类型信息（GetChangeNotetypeInfo, method 14）。浏览页 T8 批量操作「更改笔记类型」用。
+   * 返回新旧笔记类型的字段名/模板名列表 + 后端给出的默认映射 input（含 current_schema 等）。
+   * UI 拿到 input 后让用户调整 newFields / newTemplates 映射，再回传给 变更笔记类型。
+   *
+   * Invariants: 同一批选中卡片必须同属一个旧笔记类型；不同旧类型需分批调用。
+   * Extension Points: 浏览页 T8 批量操作栏「更改笔记类型」第一步调用此方法。
+   */
+  async 获取变更笔记类型信息(旧笔记类型ID: number, 新笔记类型ID: number): Promise<变更笔记类型信息> {
+    const 响应字节 = await this.会话.调用(
+      服务号.后端笔记类型, 笔记类型方法.获取变更笔记类型信息,
+      encodeGetChangeNotetypeInfoRequest(旧笔记类型ID, 新笔记类型ID));
+    return decodeChangeNotetypeInfo(响应字节);
+  }
+
+  /**
+   * 变更笔记类型（ChangeNotetype, method 15）。浏览页 T8 批量操作「更改笔记类型」第二步调用。
+   * 把 请求.noteIds 对应的笔记批量改成 请求.newNotetypeId，并按 请求.newFields / newTemplates 映射字段/模板。
+   * 成功无返回值（后端返回 OpChanges，前端只需知道不报错即成功）。
+   *
+   * Invariants: 请求必须由 获取变更笔记类型信息 返回的 input 改造而来，
+   *   只动 noteIds / newFields / newTemplates，其余字段（oldNotetypeId / newNotetypeId /
+   *   currentSchema / oldNotetypeName / isCloze）原样回传，否则后端 schema 校验会失败。
+   * Extension Points: 浏览页 T8 批量操作栏「更改笔记类型」第二步调用此方法。
+   */
+  async 变更笔记类型(请求: 变更笔记类型请求): Promise<void> {
+    await this.会话.调用(
+      服务号.后端笔记类型, 笔记类型方法.变更笔记类型, encodeChangeNotetypeRequest(请求));
   }
 }

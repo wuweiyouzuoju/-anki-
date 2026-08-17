@@ -4,7 +4,8 @@
       "name": "module_desc",
       "value": "Local-first card learning for HarmonyOS"
     },
-    { "name": "app_name", "value": "记得卡片" },
+    { "name": "app_name", "value": "记得闪卡" },
+    { "name": "permission_reminder_reason", "value": "用于在指定时间发送学习提醒通知，提醒你完成今日的待学习和待复习卡片" },
     { "name": "deck_newPerDay_label", "value": "每日新卡上限" }, { "name": "deck_newPerDay_help", "value": "每天最多引入的新卡数量；当天没学满不会累积到明天，第二天仍按原上限计算。\n官方建议：新卡会在短期内显著增加复习负担，该值通常至少比「每日复习上限」小 10 倍。官方经验值——每天持续学 20 张新卡，日复习量会稳定在约 200 张。\n例：设为 20 时，今天最多学 20 张新卡，其余顺延到明天。\n注意：复习上限会连带限制新卡——复习上限 200 且已有 190 张复习在等待时，今天最多再引入 10 张新卡；复习额度用满后新卡默认不再出现（可在高级设置开启「新卡忽略复习上限」）。" },
     { "name": "deck_reviewsPerDay_label", "value": "每日复习上限" }, { "name": "deck_reviewsPerDay_help", "value": "每天最多展示的到期复习卡数量。达到上限后即使还有更多卡等待也不再展示；跨日学习卡会优先于复习卡计入该上限。\n例：设为 200 时，即使 300 张卡到期，今天也只展示 200 张，其余顺延到明天。\n该上限同时约束新卡：复习额度用满后，默认新卡也不再出现。\n官方提示：上限适合用来削平偶尔的到期高峰（比如休息一周后回来）；当有卡因上限被隐藏时，完成页会提示你时间充裕的话可以考虑提高上限。" },
     { "name": "deck_learnSteps_label", "value": "学习步幅（分钟）" }, { "name": "deck_learnSteps_help", "value": "新卡在「学习中」阶段要依次通过的延迟列表，数字之间用空格隔开。默认单位分钟，也支持 30s（秒）、2h（小时）、2d（天）。\n按「重来」回到第一步，按「良好」进入下一步，全部通过后卡片毕业为复习卡。\n「困难」按官方规则分三种情况：在第一步时取前两步的平均延迟（如 1 10 → 6 分钟）；只有一步时取该步的 1.5 倍（最多比该步多 1 天）；在其余步时重复当前步。\n例：填 1 10 表示——答错后 1 分钟重现；答对后 10 分钟重现；再次答对即毕业，之后按「毕业间隔」跨天出现。" },
@@ -211,7 +212,7 @@
     },
     {
       "name": "welcome_title",
-      "value": "欢迎使用记得卡片 v1.6.6"
+      "value": "欢迎使用记得闪卡 v1.8.9"
     },
     {
       "name": "welcome_section1_title",
@@ -219,7 +220,7 @@
     },
     {
       "name": "welcome_section1_body",
-      "value": "【新增】浏览页：侧边栏牌组/标签树、批量操作、查找替换、卡片预览\n【新增】统计页：9 大图表分区、图表偏好\n【新增】媒体管理：检查/回收站/清空\n【新增】桌面卡片：长按桌面空白处 → 服务卡片 → 添加 jidecards 统计卡片，桌面翻看复习热力/记忆率/今日计数等\n【新增】极简灰主题；全主题对比度通过 WCAG 与华为无障碍规范\n【修复】AnkiWeb 同步证书、媒体同步中断续传、统计页解码错误"
+      "value": "【新增】定时学习提醒：首页「更多」→「提醒」可新建多个提醒项，每项独立设置时间、通知标题、通知内容；支持 {{待学}} {{待复习}} 占位符自动替换实际卡片数量；关闭 App 时自动刷新提醒，到点推送系统通知\n【新增】桌面卡片：长按桌面空白处 → 服务卡片 → 添加记得闪卡的桌面卡片，可在桌面查看今日学习进度、复习热力、记忆率、难度分布等统计信息，支持左右翻页\n【新增】设置页底部「当前模式」分组，明文说明简洁版与实验版区别\n【优化】设置页改为全屏独立页面，「学习布局」分组合并复习页布局、首页显示卡片\n【优化】今日进度卡片固定展开；「显示今日进度卡片」更名为「首页显示卡片」\n【优化】桌面卡片去掉月历页，接入统计页后端数据\n【修复】FSRS 开关后桌面卡片数据刷新、难度分布数据提取，及设置页、浏览页多项 UI 细节"
     },
     {
       "name": "welcome_section2_title",
@@ -227,11 +228,12 @@
     },
     {
       "name": "welcome_section2_body",
-      "value": "点击访问官方 ankiweb.net/shared/decks 下载社区共享牌组，导入后即可开始学习（推荐）"
+      "value": "点击访问官方"
     },
     { "name": "welcome_section2_way1_label", "value": "方式 1：" },
     { "name": "welcome_section2_way2_label", "value": "方式 2：" },
-    { "name": "welcome_section2_qq_prefix", "value": "加入记得卡片 QQ 群 " },
+    { "name": "welcome_section2_way1_tail", "value": "下载社区共享牌组，导入后即可开始学习（推荐）" },
+    { "name": "welcome_section2_qq_prefix", "value": "加入记得闪卡 QQ 群 " },
     { "name": "welcome_section2_qq_suffix", "value": "，获取牌组与学习资源；发现 bug 可反馈给群主" },
     { "name": "welcome_section2_hint", "value": "以上方式也可在左上角「更多」→「设置」→「关于」中再次查看" },
     {
@@ -281,6 +283,18 @@
     {
       "name": "study_more",
       "value": "更多"
+    },
+    {
+      "name": "study_handwrite",
+      "value": "手写"
+    },
+    {
+      "name": "study_whiteboard_close",
+      "value": "关闭"
+    },
+    {
+      "name": "study_whiteboard_clear",
+      "value": "清空"
     },
     {
       "name": "study_bury",
@@ -364,7 +378,7 @@
     },
     {
       "name": "today_recall_rate",
-      "value": "今日回忆率"
+      "value": "今日答对率"
     },
     {
       "name": "today_answered_count",
@@ -416,7 +430,7 @@
     },
     {
       "name": "ankiweb_guide_message",
-      "value": "记得卡片是不请求任何用户数据，无任何内部收费与内置广告的开源软件。本身不预置学习或卡片记忆内容。你可以前往 AnkiWeb 查找公开分享的牌组，下载后再导入应用中使用。"
+      "value": "记得闪卡是不请求任何用户数据，无任何内部收费与内置广告的开源软件。本身不预置学习或卡片记忆内容。你可以前往 AnkiWeb 查找公开分享的牌组，下载后再导入应用中使用。"
     },
     {
       "name": "ankiweb_guide_url_label",
@@ -566,7 +580,7 @@
     },
     {
       "name": "licenses_app_body",
-      "value": "记得卡片（jidecards）由 wuweiyouzuoju 开发，依据 GNU Affero General Public License v3.0 or later（AGPL-3.0-or-later）发布。您可以依照该许可证获取、使用、复制、修改和再发布本软件。"
+      "value": "记得闪卡（jidecards）由 wuweiyouzuoju 开发，依据 GNU Affero General Public License v3.0 or later（AGPL-3.0-or-later）发布。您可以依照该许可证获取、使用、复制、修改和再发布本软件。"
     },
     {
       "name": "licenses_source_section",
@@ -606,7 +620,7 @@
     },
     {
       "name": "licenses_trademark_body",
-      "value": "记得卡片是独立开发的第三方项目，并非 Anki 官方客户端，也未获得 Ankitects 的赞助、认可或支持。Anki 是 Ankitects Pty Ltd 的注册商标。"
+      "value": "记得闪卡是独立开发的第三方项目，并非 Anki 官方客户端，也未获得 Ankitects 的赞助、认可或支持。Anki 是 Ankitects Pty Ltd 的注册商标。"
     },
     {
       "name": "licenses_disclaimer_section",
@@ -812,8 +826,8 @@
     { "name": "settings_study_layout_float", "value": "浮动可拖" },
     { "name": "study_toolbar_drag_hint", "value": "在复习页按住浮动工具栏可拖到屏幕左右侧；松手后自动吸附到最近侧并保存位置。" },
     { "name": "settings_study_layout_help", "value": "复习页操作按钮的布局方式：\n\n• 底部固定：操作按钮贴在屏幕底部，传统体验，适合多数用户。\n\n• 浮动可拖：操作按钮浮在屏幕上方，可按住拖到屏幕左右侧，松手后自动吸附到最近侧并保存位置。适合单手操作或大屏设备。" },
-    { "name": "settings_home_today_summary", "value": "显示今日进度卡片" },
-    { "name": "settings_home_today_summary_hint", "value": "关闭后主页顶部不再显示今日摘要与月历卡片" },
+    { "name": "settings_home_today_summary", "value": "首页显示卡片" },
+    { "name": "settings_home_today_summary_hint", "value": "控制主页顶部是否显示今日摘要卡与月历卡片。\n\n• 开启：主页顶部显示今日摘要卡与月历卡片，可快速查看当日学习进度与月度复习分布。\n\n• 关闭：主页顶部不再显示这两张卡片，主页更简洁。" },
     {
       "name": "appearance_theme",
       "value": "外观主题"
@@ -824,7 +838,7 @@
     },
     {
       "name": "app_about_title",
-      "value": "记得卡片 / jidecards"
+      "value": "记得闪卡 / jidecards"
     },
     {
       "name": "app_about_copyright",
@@ -850,7 +864,7 @@
     { "name": "rate_guide_message", "value": "意见也可以直接反馈给我" },
     { "name": "rate_guide_button_rate", "value": "去好评" },
     { "name": "rate_guide_button_feedback", "value": "意见反馈" },
-    { "name": "rate_guide_button_later", "value": "稀后" },
+    { "name": "rate_guide_button_later", "value": "稍后" },
     { "name": "rate_guide_feedback_copied", "value": "反馈邮箱已复制到剪贴板" },
     {
       "name": "feedback_title",
@@ -1209,6 +1223,23 @@
     { "name": "browser_action_flag_orange", "value": "橙色" },
     { "name": "browser_action_flag_green", "value": "绿色" },
     { "name": "browser_action_flag_blue", "value": "蓝色" },
+    { "name": "browser_action_change_notetype", "value": "更改笔记类型" },
+    { "name": "browser_action_set_due_error", "value": "设置到期日失败" },
+    { "name": "browser_action_reposition_error", "value": "重排位置失败" },
+    { "name": "browser_action_change_notetype_error", "value": "更改笔记类型失败" },
+    { "name": "browser_action_set_due_hint", "value": "0=今天，5=5天后，1-3=随机天数" },
+    { "name": "browser_action_set_due_placeholder", "value": "输入到期日" },
+    { "name": "browser_action_reposition_start", "value": "起始位置" },
+    { "name": "browser_action_reposition_step", "value": "步长" },
+    { "name": "browser_action_reposition_random", "value": "随机" },
+    { "name": "browser_action_reposition_shift", "value": "顺移已有" },
+    { "name": "browser_action_change_notetype_select", "value": "选择新笔记类型" },
+    { "name": "browser_action_change_notetype_field_map", "value": "字段映射" },
+    { "name": "browser_action_change_notetype_template_map", "value": "模板映射" },
+    { "name": "browser_action_change_notetype_no_map", "value": "不映射" },
+    { "name": "browser_action_change_notetype_loading", "value": "加载映射信息..." },
+    { "name": "browser_action_change_notetype_old", "value": "原笔记类型" },
+    { "name": "browser_action_change_notetype_new", "value": "新笔记类型" },
     { "name": "browser_info_title", "value": "卡片信息" },
     { "name": "browser_info_loading", "value": "加载中..." },
     { "name": "browser_info_load_error", "value": "加载卡片信息失败" },
@@ -1340,10 +1371,35 @@
     { "name": "notetype_editor_saved", "value": "已保存" },
     { "name": "notetype_editor_parse_error", "value": "解析笔记类型数据失败" },
     { "name": "settings_simple_mode", "value": "当前模式" },
-    { "name": "settings_simple_mode_hint", "value": "已为多数用户调好默认值，非必要不建议关闭以使用原版的细节调整。" },
+    { "name": "settings_simple_mode_hint", "value": "已为多数用户调好默认值，非必要不建议关闭以使用实验版的细节调整。" },
     { "name": "settings_simple_mode_simple", "value": "简洁版" },
     { "name": "settings_simple_mode_full", "value": "实验版" },
-    { "name": "settings_simple_mode_help", "value": "简洁版（默认推荐）：保留闪卡学习所需的全部功能，适合大多数用户。\n\n原版在简洁版基础上额外显示以下高级功能：\n• 调度器设置（FSRS 参数微调、目标记忆保持率）\n• 术语表管理\n• 笔记类型管理（新建/编辑字段与模板）\n• 查找空卡、查找重复笔记、清除未用标签\n• 长按牌组的自定义学习与创建过滤牌组\n• 牌组选项的高级设置（最大答题时间、衰减、FSRS 等）\n\n原版适合需要对卡片进行深度定制和精细操作的用户。原版模式下可能遇到部分实验性功能，如有问题请切换回简洁版。非必要不建议切换，简洁版已可满足全部日常学习需求。" },
+    { "name": "settings_simple_mode_help", "value": "简洁版（默认推荐）：保留闪卡学习所需的全部功能，适合大多数用户。\n\n实验版在简洁版基础上额外显示以下高级功能：\n• 调度器设置（FSRS 参数微调、目标记忆保持率）\n• 术语表管理\n• 笔记类型管理（新建/编辑字段与模板）\n• 查找空卡、查找重复笔记、清除未用标签\n• 长按牌组的自定义学习与创建过滤牌组\n• 牌组选项的高级设置（最大答题时间、衰减、FSRS 等）\n• 实验性功能（点击屏幕区域快速答题、卡片手写白板）\n\n实验版适合需要对卡片进行深度定制和精细操作的用户。实验版包含仍在打磨的实验性功能，如有问题请切换回简洁版。非必要不建议切换，简洁版已可满足全部日常学习需求。" },
+    { "name": "settings_experimental_group", "value": "实验性功能" },
+    { "name": "settings_experimental_group_hint", "value": "以下功能仅在「实验版」模式下生效；仍在打磨，如有问题请关闭并切回简洁版。" },
+    { "name": "settings_tap_zones_label", "value": "点击屏幕区域快速答题" },
+    { "name": "settings_tap_zones_hint", "value": "答题阶段把屏幕划成 2×2 四象限：左上=重来，右上=困难，左下=良好，右下=简单；点屏幕大区域即可评分。看卡阶段点屏幕任意位置翻面。误触概率较高，建议先熟悉评分按钮后再启用。" },
+    { "name": "settings_study_whiteboard_label", "value": "卡片手写白板" },
+    { "name": "settings_study_whiteboard_hint", "value": "学习页浮动工具栏加「手写」按钮，按下后叠加笔迹层，可在卡片区域手写答案。提供清空、撤销、关闭按钮，笔迹在退出时不保存。" },
+    { "name": "reminder_list_title", "value": "提醒" },
+    { "name": "reminder_help_icon", "value": "ⓘ" },
+    { "name": "reminder_list_empty", "value": "暂无提醒" },
+    { "name": "reminder_list_empty_hint", "value": "点击右上角 + 新建提醒" },
+    { "name": "reminder_edit_title_create", "value": "新建提醒" },
+    { "name": "reminder_edit_title_edit", "value": "编辑提醒" },
+    { "name": "reminder_edit_time_label", "value": "时间" },
+    { "name": "reminder_edit_time_colon", "value": ":" },
+    { "name": "reminder_edit_notification_title", "value": "通知标题" },
+    { "name": "reminder_edit_title_placeholder", "value": "jidecards 学习提醒" },
+    { "name": "reminder_edit_notification_content", "value": "通知内容" },
+    { "name": "reminder_edit_content_placeholder", "value": "今日待学习 {{待学}} 张，待复习 {{待复习}} 张" },
+    { "name": "reminder_edit_placeholder_hint", "value": "点下方标签快速插入数量占位符，发送提醒时自动替换成实际卡片数量；留空用默认文案" },
+    { "name": "reminder_edit_insert_new", "value": "＋待学" },
+    { "name": "reminder_edit_insert_review", "value": "＋待复习" },
+    { "name": "reminder_edit_token_new", "value": "{{待学}}" },
+    { "name": "reminder_edit_token_review", "value": "{{待复习}}" },
+    { "name": "reminder_edit_delete", "value": "删除此提醒" },
+    { "name": "reminder_list_create_button", "value": "+ 新建提醒" },
     { "name": "media_check", "value": "检查媒体" },
     { "name": "media_checking", "value": "检查中…" },
     { "name": "media_unused_count", "value": "未使用 %d 个" },

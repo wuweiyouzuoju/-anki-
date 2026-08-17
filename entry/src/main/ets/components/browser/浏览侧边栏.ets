@@ -97,6 +97,7 @@ export struct 浏览侧边栏 {
   onDeleteTag: (tagName: string) => void = (_name: string): void => {};
   onCompleteTag: (tagName: string) => void = (_name: string): void => {};
   onToggle折叠: (section: 侧边栏分区) => void = (_section: 侧边栏分区): void => {};
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
 
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景: string = '#2F5FD0';
 
@@ -188,8 +189,8 @@ export struct 浏览侧边栏 {
             })
         }
         .width('100%')
-        .height(56)
-        .padding({ left: 应用尺寸.间距_16, right: 应用尺寸.间距_16 })
+        .height(56 + this.状态栏高度)
+        .padding({ left: 应用尺寸.间距_16, right: 应用尺寸.间距_16, top: this.状态栏高度 })
         .alignItems(VerticalAlign.Center)
 
         // 错误提示

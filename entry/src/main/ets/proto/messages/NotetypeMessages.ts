@@ -198,3 +198,205 @@ export function encodeUpdateNotetypeLegacyRequest(json: string, skipChecks: bool
   }
   return writer.转为字节();
 }
+
+// ========================================================
+// ChangeNotetype（更改笔记类型）相关编解码
+// 来源：proto/anki/notetypes.proto
+// 用于浏览页 T8 批量操作「更改笔记类型」：
+//   GetChangeNotetypeInfo(method 14) → ChangeNotetypeInfo（含字段/模板名 + 默认 input）
+//   ChangeNotetype(method 15) → OpChanges
+// ========================================================
+
+/** 编码 GetChangeNotetypeInfoRequest{old_notetype_id, new_notetype_id}。 */
+export function encodeGetChangeNotetypeInfoRequest(旧笔记类型ID: number, 新笔记类型ID: number): Uint8Array {
+  const writer = new 协议写入器();
+  if (旧笔记类型ID !== 0) {
+    writer.写入64位整数(1, 旧笔记类型ID);
+  }
+  if (新笔记类型ID !== 0) {
+    writer.写入64位整数(2, 新笔记类型ID);
+  }
+  return writer.转为字节();
+}
+
+/**
+ * anki.notetypes.ChangeNotetypeInfo 的解码视图。
+ * - old/newFieldNames / old/newTemplateNames：字段名/模板名列表（UI 渲染映射表用）
+ * - input：后端给出的 ChangeNotetypeRequest 默认值（含 current_schema / old_notetype_name 等前端不直接构造的字段）
+ * - oldNotetypeName：旧笔记类型名（UI 展示用）
+ *
+ * Invariants: input.new_fields / input.new_templates 元素值含义：
+ *   -1 = 该新字段/模板不映射任何旧项（即丢弃/留空）
+ *   ≥0 = 映射到旧字段/模板的 ord 索引
+ * Extension Points: UI 默认显示 input 的映射；用户可改 new_fields/new_templates 后回传。
+ */
+export interface 变更笔记类型信息 {
+  oldFieldNames: string[];
+  oldTemplateNames: string[];
+  newFieldNames: string[];
+  newTemplateNames: string[];
+  input: 变更笔记类型请求;
+  oldNotetypeName: string;
+}
+
+/** anki.notetypes.ChangeNotetypeRequest 的可编辑视图。 */
+export interface 变更笔记类型请求 {
+  noteIds: number[];
+  /** 新字段映射：每个新字段对应的旧字段 ord（-1=不映射）；长度 = 新字段数 */
+  newFields: number[];
+  /** 新模板映射：每个新模板对应的旧模板 ord（-1=不映射）；长度 = 新模板数 */
+  newTemplates: number[];
+  oldNotetypeId: number;
+  newNotetypeId: number;
+  currentSchema: number;
+  oldNotetypeName: string;
+  isCloze: boolean;
+}
+
+/** 解码 ChangeNotetypeRequest 嵌套消息（int32 数组用 packed 也可 unpacked，需兼容两种）。 */
+function decodeChangeNotetypeRequest(bytes: Uint8Array): 变更笔记类型请求 {
+  const reader = new 协议读取器(bytes);
+  const out: 变更笔记类型请求 = {
+    noteIds: [],
+    newFields: [],
+    newTemplates: [],
+    oldNotetypeId: 0,
+    newNotetypeId: 0,
+    currentSchema: 0,
+    oldNotetypeName: '',
+    isCloze: false
+  };
+  let tag;
+  while ((tag = reader.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        // repeated int64 note_ids：packed 与 unpacked 都可能出现
+        if (tag.线类型 === 2) {
+          out.noteIds = out.noteIds.concat(reader.读取打包64位整数());
+        } else {
+          out.noteIds.push(reader.读取64位整数());
+        }
+        break;
+      case 2:
+        // repeated int32 new_fields（可为 -1，proto3 int32 负数走 10 字节补码，与 int64 同编码）
+        if (tag.线类型 === 2) {
+          out.newFields = out.newFields.concat(reader.读取打包64位整数().map((v: number): number => v | 0));
+        } else {
+          out.newFields.push(reader.读取64位整数() | 0);
+        }
+        break;
+      case 3:
+        // repeated int32 new_templates
+        if (tag.线类型 === 2) {
+          out.newTemplates = out.newTemplates.concat(reader.读取打包64位整数().map((v: number): number => v | 0));
+        } else {
+          out.newTemplates.push(reader.读取64位整数() | 0);
+        }
+        break;
+      case 4:
+        out.oldNotetypeId = reader.读取64位整数();
+        break;
+      case 5:
+        out.newNotetypeId = reader.读取64位整数();
+        break;
+      case 6:
+        out.currentSchema = reader.读取64位整数();
+        break;
+      case 7:
+        out.oldNotetypeName = reader.读取字符串();
+        break;
+      case 8:
+        out.isCloze = reader.读取布尔();
+        break;
+      default:
+        reader.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/** 解码 ChangeNotetypeInfo（GetChangeNotetypeInfo 的返回）。 */
+export function decodeChangeNotetypeInfo(bytes: Uint8Array): 变更笔记类型信息 {
+  const reader = new 协议读取器(bytes);
+  const out: 变更笔记类型信息 = {
+    oldFieldNames: [],
+    oldTemplateNames: [],
+    newFieldNames: [],
+    newTemplateNames: [],
+    input: {
+      noteIds: [],
+      newFields: [],
+      newTemplates: [],
+      oldNotetypeId: 0,
+      newNotetypeId: 0,
+      currentSchema: 0,
+      oldNotetypeName: '',
+      isCloze: false
+    },
+    oldNotetypeName: ''
+  };
+  let tag;
+  while ((tag = reader.读取标签()) !== null) {
+    switch (tag.字段号) {
+      case 1:
+        out.oldFieldNames.push(reader.读取字符串());
+        break;
+      case 2:
+        out.oldTemplateNames.push(reader.读取字符串());
+        break;
+      case 3:
+        out.newFieldNames.push(reader.读取字符串());
+        break;
+      case 4:
+        out.newTemplateNames.push(reader.读取字符串());
+        break;
+      case 5:
+        out.input = decodeChangeNotetypeRequest(reader.读取字节());
+        break;
+      case 6:
+        out.oldNotetypeName = reader.读取字符串();
+        break;
+      default:
+        reader.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
+
+/**
+ * 编码 ChangeNotetypeRequest（method 15 入参）。
+ * noteIds / newFields / newTemplates 都用 packed 编码；
+ * newFields / newTemplates 中的 -1 需用 64 位补码编码（prost int32 负数走 zigzag 是错的，proto3 int32 负数等同于 int64 补码）。
+ *
+ * Invariants: oldNotetypeId / newNotetypeId / currentSchema / oldNotetypeName / isCloze 必须从
+ *   GetChangeNotetypeInfo 返回的 input 原样回传，前端不修改这些字段。
+ */
+export function encodeChangeNotetypeRequest(req: 变更笔记类型请求): Uint8Array {
+  const writer = new 协议写入器();
+  if (req.noteIds.length > 0) {
+    writer.写入打包64位整数(1, req.noteIds);
+  }
+  if (req.newFields.length > 0) {
+    // int32 负数（-1）走 64 位补码编码（10 字节全 0xFF），与 prost int32 一致
+    writer.写入打包64位整数(2, req.newFields);
+  }
+  if (req.newTemplates.length > 0) {
+    writer.写入打包64位整数(3, req.newTemplates);
+  }
+  if (req.oldNotetypeId !== 0) {
+    writer.写入64位整数(4, req.oldNotetypeId);
+  }
+  if (req.newNotetypeId !== 0) {
+    writer.写入64位整数(5, req.newNotetypeId);
+  }
+  if (req.currentSchema !== 0) {
+    writer.写入64位整数(6, req.currentSchema);
+  }
+  if (req.oldNotetypeName !== '') {
+    writer.写入字符串(7, req.oldNotetypeName);
+  }
+  if (req.isCloze) {
+    writer.写入布尔(8, true);
+  }
+  return writer.转为字节();
+}

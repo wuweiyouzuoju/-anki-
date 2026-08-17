@@ -30,8 +30,18 @@ import { 查找重复对话框 } from './settings/查找重复对话框';
 import { 笔记类型管理面板 } from './settings/笔记类型管理面板';
 import { 笔记类型编辑器 } from './settings/笔记类型编辑器';
 import { 简洁模式AppStorage键, 加载简洁模式, 保存简洁模式 } from '../model/简洁模式存储';
+import {
+  TapZones开关AppStorage键,
+  手写白板开关AppStorage键,
+  加载TapZones开关,
+  保存TapZones开关,
+  加载手写白板开关,
+  保存手写白板开关
+} from '../model/实验性功能存储';
 import { 字段帮助面板 } from './字段帮助面板';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
+import { 应用尺寸 } from '../utils/应用尺寸';
+import { 按下态按钮 } from './common/按下态按钮';
 
 // 分组头部 的按引用传参载体：@Builder 按值参数会被快照，@State 变化不重跑 builder，
 // 三角形不转（数据库检查/关于分组曾因此不旋转）；ArkTS 要求字面量对应显式 interface。
@@ -74,6 +84,9 @@ export struct 设置面板 {
   // 让 @Builder 内的主色按钮（右上角完成、数据库检查）在颜色主题切换瞬间同步更新（与 外观分组 同款机制）。
   @StorageLink(颜色键.动作主色) private 动作主色链接: string = '';
   @StorageLink(颜色键.主色按钮背景) private 主色按钮背景链接: string = '';
+  @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
+  @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
   主题模式切换回调: (模式: 主题模式) => void = (模式: 主题模式): void => {
   };
   颜色主题切换回调: (主题: 颜色主题) => void = (主题: 颜色主题): void => {
@@ -112,6 +125,10 @@ export struct 设置面板 {
   @State private 数据分组展开: boolean = false;
   @State private 数据库分组展开: boolean = false;
   @State private 关于分组展开: boolean = false;
+  // 当前模式分组（底部）：展开后明文说明 + Select 选择框，替代顶部条 Select
+  @State private 当前模式分组展开: boolean = false;
+  // 实验性功能分组（仅实验版可见）：Tap Zones + 手写白板开关，默认折叠
+  @State private 实验性分组展开: boolean = false;
   // 不在契约要求中但保持父组件统一管理，便于后续按分组排序。
   // FSRS 分组默认折叠：减少设置页首屏信息密度，用户按需展开。
   @State private 调度器分组展开: boolean = false;
@@ -146,6 +163,9 @@ export struct 设置面板 {
   @State private 编辑笔记类型名: string = '';
   // 简洁模式：默认 true，隐藏调度分组/术语分组等高级功能
   @StorageLink(简洁模式AppStorage键) private 简洁模式: boolean = true;
+  // 实验性功能：仅「实验版」模式下设置页可见；学习页生效前会再校验当前为实验版
+  @StorageLink(TapZones开关AppStorage键) private TapZones开关: boolean = false;
+  @StorageLink(手写白板开关AppStorage键) private 手写白板开关: boolean = false;
   // 清除未用标签状态：数据管理分组入口 → 确认对话框 → 调后端
   @State private 清除标签忙碌: boolean = false;
 
@@ -157,13 +177,18 @@ export struct 设置面板 {
     // 加载持久化的简洁模式值到 AppStorage，让 @StorageLink 跨重启保持一致
     const 持久化值: boolean = await 加载简洁模式();
     AppStorage.setOrCreate<boolean>(简洁模式AppStorage键, 持久化值);
+    // 实验性功能开关同样加载持久化值，让 @StorageLink 跨重启保持一致
+    const TapZones值: boolean = await 加载TapZones开关();
+    AppStorage.setOrCreate<boolean>(TapZones开关AppStorage键, TapZones值);
+    const 手写白板值: boolean = await 加载手写白板开关();
+    AppStorage.setOrCreate<boolean>(手写白板开关AppStorage键, 手写白板值);
   }
 
   private 取本地化文本(资源: Resource): string {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id);
   }
 
-  /** 简洁模式 Select 选项：简洁版 / 原版 */
+  /** 简洁模式 Select 选项：简洁版 / 实验版 */
   private 简洁模式选项(): SelectOption[] {
     return [
       { value: this.取本地化文本($r('app.string.settings_simple_mode_simple')) },
@@ -800,46 +825,48 @@ export struct 设置面板 {
   // ========================================================
   build() {
     Stack() {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.遮罩色())
-        // 磨砂玻璃质感：模糊下层内容避免叠字，材质着色跟随应用内主题（思路参考：华为开发者文档 backgroundBlurStyle）
-        .backgroundBlurStyle(BlurStyle.Thin, {
-          colorMode: this.是否深色 ? ThemeColorMode.DARK : ThemeColorMode.LIGHT,
-          adaptiveColor: AdaptiveColor.DEFAULT
-        })
-        // 遮罩扩展进安全区，否则状态栏/导航条区域露出下层背景
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-        .onClick(() => {
-          this.关闭回调();
-        })
-        .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
-
-      List({ space: 12 }) {
-        // 标题栏
-        ListItem() {
+      Column() {
+        // 顶部条（与统计/提醒/浏览页同款：左返回 + 中标题 + 右确认）
+        Stack() {
           Row() {
-            Text($r('app.string.settings_title'))
-              .fontSize(22)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(设置面板色板_取(this.是否深色).主文字)
+            按下态按钮({
+              文案: $r('app.string.study_back'),
+              选中态背景: this.主色容器色,
+              字色: $r('app.color.text_primary'),
+              点击回调: (): void => { this.关闭回调(); }
+            })
             Blank()
-            Text($r('app.string.settings_confirm'))
-              .fontSize(16)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.解析主色())
-              .padding({ left: 12, right: 4, top: 8, bottom: 8 })
-              .onClick(() => {
-                this.关闭回调();
-              })
+            按下态按钮({
+              文案: $r('app.string.settings_confirm'),
+              选中态背景: this.主色容器色,
+              字色: this.动作主色链接,
+              点击回调: (): void => { this.关闭回调(); }
+            })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-          .backgroundColor(设置面板色板_取(this.是否深色).背景)
-          .borderRadius(12)
-        }
+          .height('100%')
+          .padding({ left: 应用尺寸.页面内边距_水平, right: 应用尺寸.页面内边距_水平 })
+          .hitTestBehavior(HitTestMode.Transparent)
 
+          Text($r('app.string.settings_title'))
+            .fontSize(应用尺寸.字号_面板标题)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .hitTestBehavior(HitTestMode.Transparent)
+        }
+        .width('100%')
+        .height(应用尺寸.工具栏高度 + this.状态栏高度)
+        .padding({
+          top: this.状态栏高度 + 应用尺寸.间距_8,
+          bottom: 应用尺寸.间距_8
+        })
+        .backgroundColor(this.页面底色微染值)
+        .alignContent(Alignment.Center)
+
+        // 内容区
+        List({ space: 12 }) {
         // 1. 外观与语言分组
         ListItem() {
           外观分组({
@@ -945,11 +972,12 @@ export struct 设置面板 {
             if (this.数据库分组展开) {
               Button(this.数据库检查中 ? $r('app.string.check_db_running') : $r('app.string.check_db_title'))
                 .width('100%')
-                .height(44)
-                .fontSize(15)
-                .fontColor('#FFFFFF')
-                .backgroundColor(this.解析主色按钮背景())
-                .borderRadius(22)
+                .height(40)
+                .fontSize(12)
+                .padding({ left: 4, right: 4 })
+                .fontColor(设置面板色板_取(this.是否深色).主文字)
+                .backgroundColor(设置面板色板_取(this.是否深色).标签背景)
+                .borderRadius(20)
                 .enabled(!this.数据库检查中)
                 .opacity(this.数据库检查中 ? 0.6 : 1)
                 .onClick((): void => { this.执行数据库检查(); })
@@ -1038,61 +1066,177 @@ export struct 设置面板 {
           .borderRadius(12)
         }
 
-        // 9. 当前模式（置底；左侧标题+ⓘ 占满左侧，右侧 Select 选择框；宽度与其他分组行对齐）
+        // 9. 当前模式分组（底部）：展开后明文说明 + Select 选择框
         ListItem() {
-          Row() {
-            Row() {
-              Text(this.取本地化文本($r('app.string.settings_simple_mode')))
-                .fontSize(15)
-                .fontColor(设置面板色板_取(this.是否深色).主文字)
-              Button($r('app.string.field_help_button'))
-                .type(ButtonType.Normal)
-                .backgroundColor(Color.Transparent)
-                .fontSize(14)
-                .fontColor(设置面板色板_取(this.是否深色).三级文字)
-                .width(28)
-                .height(28)
-                .padding(0)
-                .margin({ left: 4 })
-                .onClick(() => {
-                  this.说明标题 = $r('app.string.settings_simple_mode');
-                  this.说明正文 = $r('app.string.settings_simple_mode_help');
-                  this.显示说明浮层 = true;
-                })
+          Column() {
+            this.分组头部({
+              标题: this.取本地化文本($r('app.string.settings_simple_mode')),
+              已展开: this.当前模式分组展开,
+              切换回调: (): void => { this.当前模式分组展开 = !this.当前模式分组展开; }
+            })
+
+            if (this.当前模式分组展开) {
+              Column({ space: 12 }) {
+                // 明文说明（原 ⓘ 浮层内容直接铺开，不使用 ⓘ 按钮）
+                Text($r('app.string.settings_simple_mode_help'))
+                  .fontSize(13)
+                  .fontColor(设置面板色板_取(this.是否深色).次文字)
+                  .width('100%')
+                  .lineHeight(20)
+
+                Divider()
+                  .color(设置面板色板_取(this.是否深色).分隔线)
+                  .strokeWidth(1)
+                  .margin({ top: 4, bottom: 4 })
+
+                // 最下方选择框：简洁版 / 实验版
+                Row() {
+                  Text(this.取本地化文本($r('app.string.settings_simple_mode')))
+                    .fontSize(15)
+                    .fontColor(设置面板色板_取(this.是否深色).主文字)
+                  Blank()
+                  Select(this.简洁模式选项())
+                    .selected(this.简洁模式 ? 0 : 1)
+                    .value(this.简洁模式
+                      ? this.取本地化文本($r('app.string.settings_simple_mode_simple'))
+                      : this.取本地化文本($r('app.string.settings_simple_mode_full')))
+                    .controlSize(ControlSize.SMALL)
+                    .onSelect((索引: number): void => {
+                      保存简洁模式(索引 === 0);
+                    })
+                }
+                .width('100%')
+                .height(48)
+
+              }
+              .width('100%')
             }
-            .layoutWeight(1)
-            Select(this.简洁模式选项())
-              .selected(this.简洁模式 ? 0 : 1)
-              .value(this.简洁模式
-                ? this.取本地化文本($r('app.string.settings_simple_mode_simple'))
-                : this.取本地化文本($r('app.string.settings_simple_mode_full')))
-              .controlSize(ControlSize.SMALL)
-              .onSelect((索引: number): void => {
-                保存简洁模式(索引 === 0);
-              })
           }
           .width('100%')
           .padding(16)
           .backgroundColor(设置面板色板_取(this.是否深色).背景)
           .borderRadius(12)
         }
+
+        // 10. 实验性功能分组：仅「实验版」模式下可见；包含 Tap Zones 快速答题、卡片手写白板。
+        // 每个开关旁加 ⓘ 按钮，点击在根 Stack 顶层弹出 字段帮助面板 说明用法（与 FSRS 分组模式一致）。
+        if (!this.简洁模式) {
+          ListItem() {
+            Column() {
+              // 分组头部：标题 + ⓘ（说明哪些功能算实验性）
+              Row() {
+                Text(this.取本地化文本($r('app.string.settings_experimental_group')))
+                  .fontSize(15)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(设置面板色板_取(this.是否深色).主文字)
+                Button($r('app.string.field_help_button'))
+                  .type(ButtonType.Normal)
+                  .backgroundColor(Color.Transparent)
+                  .fontSize(14)
+                  .fontColor(设置面板色板_取(this.是否深色).三级文字)
+                  .width(28)
+                  .height(28)
+                  .padding(0)
+                  .margin({ left: 6 })
+                  .onClick(() => {
+                    this.说明标题 = $r('app.string.settings_experimental_group');
+                    this.说明正文 = $r('app.string.settings_experimental_group_hint');
+                    this.显示说明浮层 = true;
+                  })
+                Blank()
+                Text('▼')
+                  .fontSize(11)
+                  .fontColor(设置面板色板_取(this.是否深色).弱化文字)
+                  .rotate({ angle: this.实验性分组展开 ? 0 : -90 })
+                  .animation({ duration: 150, curve: Curve.EaseOut })
+              }
+              .width('100%')
+              .height(40)
+              .onClick(() => {
+                this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => {
+                  this.实验性分组展开 = !this.实验性分组展开;
+                });
+              })
+
+              if (this.实验性分组展开) {
+                Column({ space: 12 }) {
+                  // Tap Zones：点击屏幕区域快速答题
+                  Row() {
+                    Text(this.取本地化文本($r('app.string.settings_tap_zones_label')))
+                      .fontSize(15)
+                      .fontColor(设置面板色板_取(this.是否深色).主文字)
+                    Button($r('app.string.field_help_button'))
+                      .type(ButtonType.Normal)
+                      .backgroundColor(Color.Transparent)
+                      .fontSize(14)
+                      .fontColor(设置面板色板_取(this.是否深色).三级文字)
+                      .width(28)
+                      .height(28)
+                      .padding(0)
+                      .margin({ left: 6 })
+                      .onClick(() => {
+                        this.说明标题 = $r('app.string.settings_tap_zones_label');
+                        this.说明正文 = $r('app.string.settings_tap_zones_hint');
+                        this.显示说明浮层 = true;
+                      })
+                    Blank()
+                    Toggle({ type: ToggleType.Switch, isOn: this.TapZones开关 })
+                      .onChange((开启: boolean): void => {
+                        保存TapZones开关(开启);
+                      })
+                  }
+                  .width('100%')
+                  .height(48)
+
+                  // 卡片手写白板：浮动工具栏加「手写」按钮
+                  Row() {
+                    Text(this.取本地化文本($r('app.string.settings_study_whiteboard_label')))
+                      .fontSize(15)
+                      .fontColor(设置面板色板_取(this.是否深色).主文字)
+                    Button($r('app.string.field_help_button'))
+                      .type(ButtonType.Normal)
+                      .backgroundColor(Color.Transparent)
+                      .fontSize(14)
+                      .fontColor(设置面板色板_取(this.是否深色).三级文字)
+                      .width(28)
+                      .height(28)
+                      .padding(0)
+                      .margin({ left: 6 })
+                      .onClick(() => {
+                        this.说明标题 = $r('app.string.settings_study_whiteboard_label');
+                        this.说明正文 = $r('app.string.settings_study_whiteboard_hint');
+                        this.显示说明浮层 = true;
+                      })
+                    Blank()
+                    Toggle({ type: ToggleType.Switch, isOn: this.手写白板开关 })
+                      .onChange((开启: boolean): void => {
+                        保存手写白板开关(开启);
+                      })
+                  }
+                  .width('100%')
+                  .height(48)
+                }
+                .width('100%')
+              }
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor(设置面板色板_取(this.是否深色).背景)
+            .borderRadius(12)
+          }
+        }
+
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 8, bottom: 16 })
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
+        .alignListItem(ListItemAlign.Center)
       }
-      .width('88%')
-      .constraintSize({ maxWidth: 480 })
-      .height('88%')
-      .padding(16)
-      .scrollBar(BarState.Off)
-      .edgeEffect(EdgeEffect.Spring)
-      .alignListItem(ListItemAlign.Center)
-      .onClick(() => {
-      })
-      .transition(TransitionEffect.asymmetric(
-        TransitionEffect.opacity(0)
-          .combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }),
-        TransitionEffect.opacity(0)
-          .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
-      ))
+      .width('100%')
+      .height('100%')
+      .backgroundColor(this.页面底色微染值)
 
       // FSRS 子分组 ⓘ 上抛的说明浮层：放在根 Stack 顶层，
       // 与 高级牌组选项面板 的 字段帮助面板 渲染位置一致。

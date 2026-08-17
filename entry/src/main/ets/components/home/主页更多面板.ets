@@ -5,7 +5,7 @@
 //
 // @作用
 // 首页"更多"按钮触发的下拉动作菜单（顶部弹出形态，纯 UI 积木）。
-// 与 主页操作面板 同模式：透明承接层 + 左上角下拉的 3 个条目（设置/浏览/统计）。
+// 与 主页操作面板 同模式：透明承接层 + 左上角下拉的 4 个条目（设置/浏览/统计/提醒）。
 // 触发按钮在左上角，菜单锚定其下方弹出，手指零移动；
 // 不加 dim/磨砂遮罩，透明层承接外部点击关闭。
 //
@@ -34,6 +34,7 @@ export struct 主页更多面板 {
   设置回调: () => void = (): void => {};
   浏览回调: () => void = (): void => {};
   统计回调: () => void = (): void => {};
+  提醒回调: () => void = (): void => {};
   关闭回调: () => void = (): void => {};
 
   build() {
@@ -76,6 +77,17 @@ export struct 主页更多面板 {
           .height(应用尺寸.行动按钮高度)
           .textAlign(TextAlign.Center)
           .onClick((): void => this.统计回调())
+        Divider()
+          .color($r('app.color.border_subtle'))
+          .strokeWidth(应用尺寸.卡片边框)
+          .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+        Text('提醒')
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .height(应用尺寸.行动按钮高度)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => this.提醒回调())
       }
       .width(160)
       .backgroundColor($r('app.color.surface_card'))

@@ -53,15 +53,11 @@ export async function 应用系统栏样式(
 ): Promise<void> {
   try {
     const 主窗口: window.Window = await window.getLastWindow(上下文);
-    // 优先用 AppStorage 中的页面底色微染（已混入主题主色），让状态栏/导航栏与界面同色；
-    // 早期初始化阶段（AppStorage 尚未写入）回退到中性底色。
-    const 微染: string | undefined = AppStorage.get<string>(颜色键.页面底色微染);
-    const 栏色: string = 微染 !== undefined && 微染.length > 0
-      ? 微染
-      : (是否深色 ? 深色系统栏色 : 浅色系统栏色);
+    // 沉浸式全屏布局下，状态栏/导航栏背景设为透明，让应用内容（含弹层磨砂）透过显示。
+    // 状态栏文字明暗根据深浅色模式设置，保证可读性。
     await 主窗口.setWindowSystemBarProperties({
-      statusBarColor: 栏色,
-      navigationBarColor: 栏色,
+      statusBarColor: '#00000000',
+      navigationBarColor: '#00000000',
       isStatusBarLightIcon: 是否深色,
       isNavigationBarLightIcon: 是否深色
     });

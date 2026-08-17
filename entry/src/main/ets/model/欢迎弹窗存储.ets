@@ -34,7 +34,7 @@ const 存储名: string = 'jidecards_settings';
 const 欢迎已展示键: string = 'welcome_shown';
 const 上下文键: string = 'abilityContext';
 // 当前应用版本号：发版时同步修改此处与 welcome_title 的 vX.Y.Z
-const 当前版本: string = '1.6.6';
+const 当前版本: string = '1.8.1';
 
 function 取上下文(): common.UIAbilityContext | null {
   const 上下文: common.UIAbilityContext | undefined =
@@ -60,6 +60,38 @@ export async function 是否已展示欢迎弹窗(): Promise<boolean> {
   }
 }
 
+// ========================================================
+// @名称 是否为升级用户
+//
+// @作用
+// 判断本次启动是否为「旧版本升级到当前版本」的场景。
+// 判据：preferences 中 welcome_shown 存的旧版本号非空，且不等于当前版本号。
+// 全新安装（值为空）→ false；同版本重复启动（值=当前版本）→ false。
+//
+// @输入
+// 无
+//
+// @输出
+// Promise<boolean>：true=旧版本升级而来；false=全新安装或同版本重复启动。
+//
+// @副作用
+// 只读 preferences，不写入。
+// ========================================================
+export async function 是否为升级用户(): Promise<boolean> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return false;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
+    const 值: preferences.ValueType = await 存储.get(欢迎已展示键, '');
+    const 旧版本: string = 值 as string;
+    return 旧版本 !== '' && 旧版本 !== 当前版本;
+  } catch (错误) {
+    return false;
+  }
+}
+
 export async function 标记已展示欢迎弹窗(): Promise<void> {
   const 上下文: common.UIAbilityContext | null = 取上下文();
   if (上下文 === null) {
@@ -68,6 +100,58 @@ export async function 标记已展示欢迎弹窗(): Promise<void> {
   try {
     const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
     await 存储.put(欢迎已展示键, 当前版本);
+    await 存储.flush();
+  } catch (错误) {
+    // 偏好不可用时不阻断；下次启动可能再次尝试展示。
+  }
+}
+
+// ========================================================
+// @名称 升级好评引导「每版本只弹一次」持久化
+//
+// @作用
+// 旧版本升级到当前版本时，在欢迎弹窗关闭后弹一次好评引导。
+// 用 preferences 持久化「已弹版本号」，每个版本只弹一次。
+//
+// @输入
+// 无（内部从 AppStorage 取 abilityContext）
+//
+// @输出
+// 是否已弹升级好评(): Promise<boolean>
+// 标记已弹升级好评(): Promise<void>
+//
+// @业务规则
+// KEY 为 upgrade_rate_shown（存版本号字符串，如 '1.8.0'）。
+// 版本号变化时重新弹；失败静默降级。
+//
+// @副作用
+// 读写 preferences（@kit.ArkData）的 jidecards_settings store。
+// ========================================================
+
+const 升级好评已弹键: string = 'upgrade_rate_shown';
+
+export async function 是否已弹升级好评(): Promise<boolean> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return false;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
+    const 值: preferences.ValueType = await 存储.get(升级好评已弹键, '');
+    return 值 === 当前版本;
+  } catch (错误) {
+    return false;
+  }
+}
+
+export async function 标记已弹升级好评(): Promise<void> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
+    await 存储.put(升级好评已弹键, 当前版本);
     await 存储.flush();
   } catch (错误) {
     // 偏好不可用时不阻断；下次启动可能再次尝试展示。

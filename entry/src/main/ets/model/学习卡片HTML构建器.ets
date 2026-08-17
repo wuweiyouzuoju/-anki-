@@ -177,9 +177,19 @@ export function 原始侧HTML(渲染结果: RenderedCard, 侧面: 卡片正反�
   return 节点流转HTML(节点列表);
 }
 
-/** 剥除 Anki [sound:xxx] 标签，原位留小标记示意有音频；播放由原生 SoundPlayer 负责 */
+/** 视频扩展名正则：匹配 [sound:xxx.mp4] 等视频文件，由 webview <video> 内联播放。
+ *  Anki 约定音视频统一走 [sound:] 语法，前端按扩展名分流：视频交 webview，音频交原生 SoundPlayer。 */
+const 视频扩展名正则: RegExp = /\.(mp4|webm|mov|m4v|ogv)$/i;
+
+/** 剥除 Anki [sound:xxx] 标签：音频文件留小标记由原生 SoundPlayer 播放；
+ *  视频文件改用 <video> 标签交给 webview 内联播放（playsinline 防止全屏跳转）。 */
 function 剥除音频标签(html: string): string {
-  return html.replace(/\[sound:([^\]]+)\]/g, '<span class="sound-flag">♪</span>');
+  return html.replace(/\[sound:([^\]]+)\]/g, (_匹配: string, 文件名: string): string => {
+    if (视频扩展名正则.test(文件名)) {
+      return `<video src="${媒体基地址}${encodeURIComponent(文件名)}" controls playsinline style="max-width:100%;display:block;margin:8px auto"></video>`;
+    }
+    return '<span class="sound-flag">♪</span>';
+  });
 }
 
 // ========================================================
@@ -341,6 +351,147 @@ const 图片遮罩渲染脚本: string = `<script>
 </script>`;
 
 // ========================================================
+// @块ID MODEL-STUDY-HTML-013
+// @名称 数学公式渲染脚本（MathJax）
+//
+// @作用
+// 在 <head> 注入 MathJax 3.x 配置 + 异步加载脚本，让 webview 自动渲染
+// \(...\) \[...\] $...$ $$...$$ 四类 LaTeX 公式分隔符。
+//
+// @输入
+// 无（自包含脚本，由 构建卡片HTML 拼到 <head> 末尾）
+//
+// @输出
+// string：以 <script>...</script> 包裹的 JS 文本
+//
+// @业务规则
+// - 仅在 RenderedCard.latexSvg=false 时注入：latexSvg=true 表示后端已把 LaTeX
+//   编译成 SVG 嵌入正文（如安装了 TeX Live 的桌面端导出的卡片），前端再注入
+//   MathJax 会重复处理已渲染的 SVG，浪费性能。
+// - CDN 走 jsdelivr（应用已申请 ohos.permission.INTERNET）；async 异步加载，
+//   网络失败时降级为原始 LaTeX 文本展示，不阻塞卡片渲染。
+// - skipHtmlTags 避免 MathJax 扫描 <script>/<pre>/<code> 等代码块内的反斜杠。
+// - inlineMath/displayMath 同时配置 \(...\) 与 $...$ 两套分隔符，覆盖 Anki 桌面端
+//   reviewer 默认配置 + 社区牌组常见写法。
+//
+// @副作用
+// 无（脚本在 webview 内执行，操作 DOM）
+// ========================================================
+const 数学公式脚本: string = `<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['\\\\(', '\\\\)'], ['$', '$']],
+    displayMath: [['\\\\[', '\\\\]'], ['$$', '$$']]
+  },
+  svg: { fontCache: 'global' },
+  options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+};
+</script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>`;
+
+// ========================================================
+// @块ID MODEL-STUDY-HTML-014
+// @名称 可折叠字段样式与脚本
+//
+// @作用
+// 为 .anki-collapsible class 提供"长内容默认折叠 + 点击展开"能力，对齐
+// AnkiDroid 的 Collapsible Fields 功能；同时美化原生 <details>/<summary>
+// 让卡片模板里用 HTML5 折叠元素也有一致样式。
+//
+// @输入
+// 无（自包含 CSS+JS，由 构建卡片HTML 拼到 <style> 与 <head> 末尾）
+//
+// @输出
+// string：CSS 文本（拼到 <style> 末尾）与 <script> 脚本（拼到 <head> 末尾）
+//
+// @业务规则
+// - 不自动检测长字段：避免破坏现有卡片渲染。用户在卡片模板里用
+//   <div class="anki-collapsible">...长内容...</div> 主动声明需折叠的字段。
+// - 默认 max-height: 200px 折叠；点击 toggle 按钮切换 expanded 状态。
+// - toggle 按钮文案用 ▼/▲ 字符避免 i18n（model 层不能用 $r）。
+// - IIFE 防重定义：if (window.ankiCollapsibleInit) return 防止翻面/切卡时
+//   重复绑定按钮导致每张卡出现多个 toggle。
+// - setup 幂等：data-anki-init 标记防止单个 .anki-collapsible 元素被绑多次。
+// - 兼容 DOMContentLoaded 已触发场景（loadData 注入 HTML 后 readyState
+//   可能已是 complete，监听 DOMContentLoaded 不会触发，需立即执行 initAll）。
+//
+// @副作用
+// 无（脚本在 webview 内执行，操作 DOM）
+// ========================================================
+const 可折叠字段样式: string = `
+.anki-collapsible {
+  max-height: 200px;
+  overflow: hidden;
+  position: relative;
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: rgba(128, 128, 128, 0.06);
+  border-radius: 8px;
+  transition: max-height 0.25s ease;
+}
+.anki-collapsible.expanded { max-height: none; }
+.anki-collapsible-toggle {
+  display: block;
+  text-align: center;
+  padding: 6px;
+  color: #2E6BE6;
+  cursor: pointer;
+  font-size: 0.85em;
+  user-select: none;
+}
+.anki-collapsible-toggle::before { content: '▼'; margin-right: 4px; }
+.anki-collapsible-toggle.expanded::before { content: '▲'; }
+details {
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: rgba(128, 128, 128, 0.06);
+  border-radius: 8px;
+}
+details > summary {
+  cursor: pointer;
+  font-weight: 500;
+  list-style: none;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.2s;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+`;
+
+const 可折叠字段脚本: string = `<script>
+(function () {
+  if (window.ankiCollapsibleInit) { return; }
+  window.ankiCollapsibleInit = true;
+  function setup(el) {
+    if (el.dataset.ankiInit === '1') { return; }
+    el.dataset.ankiInit = '1';
+    el.classList.add('collapsed');
+    var btn = document.createElement('div');
+    btn.className = 'anki-collapsible-toggle';
+    btn.addEventListener('click', function () {
+      var expanded = el.classList.toggle('expanded');
+      el.classList.toggle('collapsed', !expanded);
+      btn.classList.toggle('expanded', expanded);
+    });
+    if (el.parentNode) { el.parentNode.insertBefore(btn, el.nextSibling); }
+  }
+  function initAll() {
+    var nodes = document.querySelectorAll('.anki-collapsible');
+    for (var i = 0; i < nodes.length; i++) { setup(nodes[i]); }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAll);
+  } else {
+    initAll();
+  }
+})();
+</script>`;
+
+// ========================================================
 // @块ID MODEL-STUDY-HTML-006
 // @名称 构建卡片HTML
 //
@@ -371,7 +522,11 @@ const 图片遮罩渲染脚本: string = `<script>
 // ========================================================
 export function 构建卡片HTML(渲染结果: RenderedCard, 侧面: 卡片正反面): string {
   const 正文: string = 剥除音频标签(重写媒体地址(原始侧HTML(渲染结果, 侧面)));
-  const 样式: string = `${渲染结果.css}\n${基础样式}\n${图片遮罩渲染样式}`;
+  const 样式: string = `${渲染结果.css}\n${基础样式}\n${图片遮罩渲染样式}\n${可折叠字段样式}`;
+  // latexSvg=true：后端已把 LaTeX 编译成 SVG 嵌入正文，前端不再注入 MathJax 避免重复处理。
+  // latexSvg=false：注入 MathJax（async 异步加载）扫描 \(...\) \[...\] $...$ $$...$$ 公式；
+  // 加载失败降级为原始 LaTeX 文本，不阻塞卡片渲染。
+  const 数学脚本: string = 渲染结果.latexSvg ? '' : 数学公式脚本;
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -379,6 +534,8 @@ export function 构建卡片HTML(渲染结果: RenderedCard, 侧面: 卡片正�
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>${样式}</style>
 ${图片遮罩渲染脚本}
+${数学脚本}
+${可折叠字段脚本}
 </head>
 <body class="card">${正文}</body>
 </html>`;

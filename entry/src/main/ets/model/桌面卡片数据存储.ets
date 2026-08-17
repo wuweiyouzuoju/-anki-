@@ -6,18 +6,17 @@
 //
 // @作用
 // 桌面服务卡片（2×4 统计卡片）的数据桥接层。
-// 主进程拉取 GraphsView 后提取 8 页所需数据，JSON 序列化存入 preferences；
+// 主进程拉取 GraphsView 后提取 7 页所需数据，JSON 序列化存入 preferences；
 // FormExtensionAbility（独立进程）读取后通过 formProvider.updateForm 推送到卡片 UI。
 //
-// 8 页数据：
-// 1. 月历热力图：reviewCountsByDaysAgo（Map<'YYYY-MM-DD', 复习次数>）
-// 2. 记忆率：retrievability.average（0-100 百分制）+ fsrs 标志
-// 3. 今日计数：today { answerCount, correctCount, learnCount, reviewCount, relearnCount }
-// 4. 卡片状态：cardCounts.excludingInactive（newCards/learn/relearn/young/mature/suspended/buried）
-// 5. 小时分布：hours.allTime（24 元素 HourBucket）
-// 6. 难度分布：eases.eases map → 桶数组 + average
-// 7. 间隔分布：intervals.intervals map → 桶数组
-// 8. 未来到期预测：futureDue 未来 7 天到期数数组
+// 7 页数据：
+// 1. 记忆率：retrievability.average（0-100 百分制）+ fsrs 标志
+// 2. 今日计数：today { answerCount, correctCount, learnCount, reviewCount, relearnCount }
+// 3. 卡片状态：cardCounts.excludingInactive（newCards/learn/relearn/young/mature/suspended/buried）
+// 4. 小时分布：hours.allTime（24 元素 HourBucket）
+// 5. 难度分布：eases.eases map → 桶数组 + average
+// 6. 间隔分布：intervals.intervals map → 桶数组
+// 7. 未来到期预测：futureDue 未来 7 天到期数数组
 //
 // @输入
 // 保存：桌面卡片数据 接口
@@ -31,7 +30,6 @@
 // - 数据流方向：主进程写 → 卡片进程读（单向，跨进程通过 filesDir 共享文件）
 // - 用文件系统而非 preferences：preferences 跨 Ability 共享行为不稳定，
 //   filesDir 路径 /data/storage/el2/database/<bundleName>/base/files 跨 Ability 确定共享
-// - 月历数据存转换后的 'YYYY-MM-DD' 键（跨日安全），卡片侧用 构建月历 重建
 // - Map 字段统一转为 [键, 值][] 数组（卡片沙箱无法直接 JSON.parse Map）
 // - 未来到期只存未来 7 天（含今天），减少数据量
 // - 持久化失败记录 hilog，卡片显示上次数据或空态
@@ -46,7 +44,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { util } from '@kit.ArkTS';
 import { formBindingData, formProvider } from '@kit.FormKit';
-import type { GraphsView, TodayCounts } from '../proto/messages/StatsMessages';
+import type { GraphsView, TodayCounts, Eases } from '../proto/messages/StatsMessages';
 
 const 日志域: string = 'WidgetData';
 const 数据文件名: string = 'widget_stats.json';
@@ -58,11 +56,10 @@ const 上下文键: string = 'abilityContext';
 // @名称 桌面卡片数据结构
 //
 // @作用
-// 8 页 Swiper 卡片所需数据的序列化载体。
+// 7 页 Swiper 卡片所需数据的序列化载体。
 // 全部为基础类型或其数组，可 JSON.stringify；卡片侧 JSON.parse 后直接渲染。
 //
 // @字段说明
-// 月历数据：[日期键, 复习次数][] 二元组数组
 // 记忆率：0-100 百分制；fsrsEnabled=false 时卡片显示"未启用 FSRS"
 // 今日计数：直接透传 TodayCounts 的子集
 // 卡片状态：7 个分桶计数（newCards/learn/relearn/young/mature/suspended/buried）
@@ -88,8 +85,11 @@ export interface 难度分布数据 {
 }
 
 export interface 桌面卡片数据 {
-  // 页1：月历热力图 —— [日期键 'YYYY-MM-DD', 复习次数][]
-  月历数据: [string, number][];
+  // 页1：今日进度（主页今日进度卡样式：完成/待学/进度条/牌组数/今日答对率）
+  今日完成数: number;       // = graphs.today.answerCount
+  待学数: number;           // 牌组树 newCount+learnCount+reviewCount 聚合
+  牌组数: number;           // 牌组树节点数
+  今日答对率: number;        // correctCount/answerCount，0-1；-1 表示今日无答题
   // 页2：记忆率
   记忆率: number;           // 0-100 百分制，0 表示无 FSRS 数据
   fsrs已启用: boolean;
@@ -151,33 +151,22 @@ function 取上下文(): common.UIAbilityContext | null {
 // @输出
 // 桌面卡片数据（已剥离 Map/Resource 等不可序列化类型）
 // ========================================================
-export function 提取卡片数据(图表数据: GraphsView): 桌面卡片数据 {
+export function 提取卡片数据(图表数据: GraphsView, 待学数: number = 0, 牌组数: number = 0): 桌面卡片数据 {
   const 主题色: 主题色载体 = 读取主题色();
   const 当前时刻: Date = new Date();
 
-  // 页1：月历 —— reviewCountsByDaysAgo → 'YYYY-MM-DD' 键
-  const 月历数据: [string, number][] = [];
-  if (图表数据.reviewCountsByDaysAgo !== null) {
-    图表数据.reviewCountsByDaysAgo.forEach((各阶段计数, 天偏移: number) => {
-      const 合计: number =
-        各阶段计数.learn + 各阶段计数.relearn + 各阶段计数.young + 各阶段计数.mature + 各阶段计数.filtered;
-      if (合计 <= 0) {
-        return;
-      }
-      const 日期: Date = new Date(当前时刻.getFullYear(), 当前时刻.getMonth(), 当前时刻.getDate() + 天偏移);
-      const 键: string = `${日期.getFullYear()}-${补零两位(日期.getMonth() + 1)}-${补零两位(日期.getDate())}`;
-      月历数据.push([键, 合计]);
-    });
-  }
+  // 页1：今日进度（主页今日进度卡样式）
+  const 今日: TodayCounts | null = 图表数据.today;
+  const 今日答题数: number = 今日 !== null ? 今日.answerCount : 0;
+  const 今日正确数: number = 今日 !== null ? 今日.correctCount : 0;
+  const 今日完成数: number = 今日答题数; // 完成数 = 答题数（learn+review+relearn+filtered 全口径）
+  const 今日答对率: number = 今日答题数 > 0 ? 今日正确数 / 今日答题数 : -1;
 
   // 页2：记忆率
   const 记忆率: number = 图表数据.retrievability !== null ? 图表数据.retrievability.average : 0;
   const fsrs已启用: boolean = 图表数据.fsrs;
 
-  // 页3：今日计数
-  const 今日: TodayCounts | null = 图表数据.today;
-  const 今日答题数: number = 今日 !== null ? 今日.answerCount : 0;
-  const 今日正确数: number = 今日 !== null ? 今日.correctCount : 0;
+  // 页3：今日计数（详细分桶，与今日进度页互补）
   const 今日新学数: number = 今日 !== null ? 今日.learnCount : 0;
   const 今日复习数: number = 今日 !== null ? 今日.reviewCount : 0;
   const 今日重学数: number = 今日 !== null ? 今日.relearnCount : 0;
@@ -211,7 +200,18 @@ export function 提取卡片数据(图表数据: GraphsView): 桌面卡片数据
   }
 
   // 页6：难度分布 —— FSRS 用 difficulty，SM-2 用 eases，两者结构相同（Eases）
-  const 难度源 = 图表数据.difficulty !== null ? 图表数据.difficulty : 图表数据.eases;
+  // 回退规则：FSRS 启用时后端可能返回 difficulty 对象但其 eases map 为 null/空
+  // （卡片尚未经过 FSRS 算法），此时回退到 eases（SM-2 历史难度数据）。
+  let 难度源: Eases | null = null;
+  if (图表数据.difficulty !== null
+      && 图表数据.difficulty.eases !== null
+      && 图表数据.difficulty.eases.size > 0) {
+    难度源 = 图表数据.difficulty;
+  } else if (图表数据.eases !== null
+             && 图表数据.eases.eases !== null
+             && 图表数据.eases.eases.size > 0) {
+    难度源 = 图表数据.eases;
+  }
   const 难度桶数组: [number, number][] = [];
   if (难度源 !== null && 难度源.eases !== null) {
     难度源.eases.forEach((计数: number, 桶: number) => {
@@ -252,7 +252,10 @@ export function 提取卡片数据(图表数据: GraphsView): 桌面卡片数据
   未来到期.sort((a, b) => a[0] - b[0]);
 
   return {
-    月历数据,
+    今日完成数,
+    待学数,
+    牌组数,
+    今日答对率,
     记忆率,
     fsrs已启用,
     今日答题数,
@@ -298,10 +301,6 @@ function 读取主题色(): 主题色载体 {
     卡片底色: 是否深色 ? '#252830' : '#FFFFFF',
     是否深色
   };
-}
-
-function 补零两位(值: number): string {
-  return 值 < 10 ? `0${值}` : `${值}`;
 }
 
 // ========================================================

@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Native bridge 声明文件强制 LF 行尾
+# 防止 core.autocrlf=true 在 git restore 时把 LF 转为 CRLF，
+# 导致 native-bridge-contract.test.mjs 契约测试（两份 oh-package.json5 严格相等比较）失败
+native/napi_bridge/oh-package.json5 text eol=lf
+native/napi_bridge/index.d.ts text eol=lf
+entry/src/main/cpp/types/libjidecards/oh-package.json5 text eol=lf
+entry/src/main/cpp/types/libjidecards/index.d.ts text eol=lf

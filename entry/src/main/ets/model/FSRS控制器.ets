@@ -44,13 +44,20 @@
 
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { 牌组配置服务 } from '../backend/牌组配置服务';
+import { 统计服务 } from '../backend/统计服务';
+import { 牌组服务 } from '../backend/牌组服务';
+import { 后端会话 } from '../backend/后端会话';
+import { 保存卡片数据, 提取卡片数据 } from './桌面卡片数据存储';
+import { 平铺牌组树 } from './牌组层级';
 import type {
   DeckConfig,
   DeckConfigsForUpdateView,
   UpdateDeckConfigsInput
 } from '../proto/messages/DeckConfigMessages';
 import { UPDATE_DECK_CONFIGS_MODE_NORMAL } from '../proto/messages/DeckConfigMessages';
+import type { GraphsView } from '../proto/messages/StatsMessages';
 
 const 存储名: string = 'jidecards_settings';
 const FSRS已初始化键: string = 'fsrs_initialized';
@@ -174,7 +181,46 @@ export async function 设置FSRS开启状态(开启: boolean): Promise<boolean> 
   const 视图: DeckConfigsForUpdateView = await 服务.获取牌组配置编辑视图(默认牌组ID);
   const 请求: UpdateDeckConfigsInput = 构造请求(视图, 开启, 开启);
   await 服务.更新牌组配置(请求);
+  // FSRS 状态变更后主动刷新桌面卡片数据：用户在设置页开/关 FSRS 后，
+  // 桌面卡片的"记忆率/难度分布"页需立即反映新状态，否则会一直显示
+  // "未启用 FSRS"（仅靠首页加载触发推送，用户不回首页就不会刷新）。
+  刷新桌面卡片数据().catch((错误: Object): void => {
+    hilog.error(0x0000, 'FSRS控制器', `切换FSRS后刷新桌面卡片数据失败: ${错误}`);
+  });
   return 开启;
+}
+
+// ========================================================
+// @名称 刷新桌面卡片数据
+// @作用 拉取最新 GraphsView 并推送到桌面卡片（FSRS 切换 / 主题切换等需立即反映的场景）
+// @副作用 调用 统计服务 + 保存卡片数据（写 filesDir + formProvider.updateForm）
+// ========================================================
+export async function 刷新桌面卡片数据(): Promise<void> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return;
+  }
+  try {
+    await 后端会话.获取实例().确保已打开(上下文.filesDir);
+    const 统计: 统计服务 = new 统计服务();
+    const graphs: GraphsView = await 统计.获取图表统计(new Date().getDate());
+    // 拉牌组树算待学数/牌组数，供桌面卡片今日进度页（失败时传0）
+    let 总待学: number = 0;
+    let 牌组总数: number = 0;
+    try {
+      const 牌组: 牌组服务 = new 牌组服务();
+      const tree = await 牌组.获取牌组树();
+      for (const 子节点 of tree.children) {
+        总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
+      }
+      牌组总数 = 平铺牌组树(tree).length;
+    } catch (_牌组错误) {
+      // 牌组树拉取失败不阻塞，桌面卡片显示0
+    }
+    await 保存卡片数据(提取卡片数据(graphs, 总待学, 牌组总数));
+  } catch (错误) {
+    hilog.error(0x0000, 'FSRS控制器', `刷新桌面卡片数据异常: ${错误}`);
+  }
 }
 
 // ========================================================

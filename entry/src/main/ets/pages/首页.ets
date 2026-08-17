@@ -17,6 +17,9 @@ import { 数据迁移意图, 数据迁移模式, 导出牌组选项 } from '../c
 import { 同步面板 } from '../components/同步面板';
 import { 主页顶部工具栏 } from '../components/home/主页顶部工具栏';
 import { 主页更多面板 } from '../components/home/主页更多面板';
+import { 学习提醒页 } from './学习提醒页';
+import { 学习提醒编辑页, 学习提醒编辑参数 } from './学习提醒编辑页';
+import { 设置页 } from './设置页';
 import { 主页摘要分页 } from '../components/home/主页摘要分页';
 import { 主页牌组列表 } from '../components/home/主页牌组列表';
 import { 牌组选项协调器 } from '../components/home/牌组选项协调器';
@@ -60,18 +63,18 @@ import { 加载牌组别名映射, 加载牌组色调映射, 保存牌组别名,
 import { 加载全部牌组顺序, 保存牌组顺序 } from '../model/牌组顺序存储';
 import { 加载已隐藏牌组ID列表, 隐藏牌组, 取消隐藏全部牌组 } from '../model/隐藏牌组存储';
 import { 加载上次牌组ID, 保存上次牌组ID, 清除上次牌组ID } from '../model/上次牌组存储';
-import { 确保FSRS已开启一次, 加载FSRS开启状态, 设置FSRS开启状态 } from '../model/FSRS控制器';
-import { 是否已展示好评引导, 标记已展示好评引导 } from '../model/好评引导存储';
-import { 加载显示今日进度卡, 保存摘要展开状态, 加载摘要展开状态, 主页今日进度卡AppStorage键 } from '../model/主页偏好';
-import { 提取卡片数据, 保存卡片数据 } from '../model/桌面卡片数据存储';
-import { 好评引导对话框 } from '../components/好评引导对话框';
+import { 确保FSRS已开启一次, 加载FSRS开启状态, 设置FSRS开启状态, 刷新桌面卡片数据 } from '../model/FSRS控制器';
+import { 是否已弹升级好评, 标记已弹升级好评 } from '../model/欢迎弹窗存储';
+import { 打开应用内好评 } from '../utils/好评引导';
+import { 加载显示今日进度卡, 主页今日进度卡AppStorage键 } from '../model/主页偏好';
+import { 提取卡片数据, 保存卡片数据, 桌面卡片数据 } from '../model/桌面卡片数据存储';
 import { 应用主题 } from '../utils/主题控制器';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 选取数据文件 } from '../utils/文件导入助手';
 import { 可见牌组行, 平铺牌组树 } from '../model/牌组层级';
 import { 检查节流标记, 获取节流奖励 } from '../utils/操作节流';
 import { 欢迎弹窗 } from '../components/欢迎弹窗';
-import { 是否已展示欢迎弹窗, 标记已展示欢迎弹窗 } from '../model/欢迎弹窗存储';
+import { 是否已展示欢迎弹窗, 标记已展示欢迎弹窗, 是否为升级用户 } from '../model/欢迎弹窗存储';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { CustomTransition } from '../utils/自定义转场';
 
@@ -98,6 +101,8 @@ struct 首页 {
   // 桌面卡片 DeepLink 信号：EntryAbility 处理DeepLink 收到 jidecards://stats 时写时间戳，
   // @Watch 监听变化触发 桌面卡片跳转_回调 调 打开统计页。0 = 无跳转请求。
   @StorageLink('navigateToStats') @Watch('桌面卡片跳转_回调') private 桌面卡片跳转信号: number = 0;
+  // 设置页数据迁移/同步/取消隐藏完成后写时间戳，@Watch 监听变化触发 加载主页数据 刷新
+  @StorageLink('需要刷新主页') @Watch('需要刷新主页_回调') private 需要刷新主页信号: number = 0;
   // 主页今日进度卡开关：用户在设置页「复习页布局」分组末尾切换，
   // 写 AppStorage 触发本 @StorageLink 自动重渲染，包裹 主页摘要分页 的 if 直接控制显示。
   // 默认 true 保持新用户开箱即见；aboutToAppear 时调 加载显示今日进度卡 同步 preferences 持久化值。
@@ -106,6 +111,8 @@ struct 首页 {
   // 改用 @Provide/@Consume 让 牌组详情面板 内部根据 选中的牌组ID 自查 主页快照，
   @Provide('selectedDeckId') private 选中的牌组ID: string = '';
   @Provide('snapshot') private 主页快照数据: 主页快照 = 空主页快照;
+  // 图表快照：静默加载图表 后用 提取卡片数据 转成纯基础类型，传给 主页摘要分页 渲染 Swiper 多页统计
+  @State private 图表快照: 桌面卡片数据 | null = null;
   @State private 加载状态: 主页加载状态 = 'loading';
   @State private 当前断点: string = 'xs';
   @State private 主题模式值: 主题模式 = 'system';
@@ -116,6 +123,8 @@ struct 首页 {
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景色: string = '#2F5FD0';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
+  // 状态栏高度（沉浸式全屏下，牌组详情覆盖层顶部条需让出状态栏区域，避免按钮叠在状态栏上）
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
   // 顶部 设置/创建牌组 两按钮共用一个 pressed 状态：0=无，1=设置，2=创建牌组
   @State private 工具栏按下状态: number = 0;
   @State private 显示设置: boolean = false;
@@ -123,7 +132,7 @@ struct 首页 {
   @State private 显示创建牌组: boolean = false;
   @State private 创建父牌组ID: string = '';
   @State private 显示主页操作: boolean = false;
-  // 更多下拉菜单（设置/浏览/统计收纳）：左上角"更多"按钮触发
+  // 更多下拉菜单（设置/浏览/统计/提醒收纳）：左上角"更多"按钮触发
   @State private 显示更多菜单: boolean = false;
   @State private 创建牌组中: boolean = false;
   @State private 创建牌组错误: string = '';
@@ -176,17 +185,13 @@ struct 首页 {
   // 同级子牌组拖拽排序模式：true 时所有 牌组列表项 进入可拖态、顶部显示「完成排序」Bar、onClick 不选牌。
   // 通过长按某 牌组列表项 弹菜单 → 选「拖动排序」进入；点「完成」按钮退出并重新拉取数据。
   @State private 排序模式中: boolean = false;
-  // 主页今日进度折叠态（B12-Y2 2026-07-21）：默认折叠，点击展开后渲染完整 Swiper
-  // B12-Y4 2026-07-25：aboutToAppear 从 preferences 加载持久化值（加载摘要展开状态），
-  // 用户上次展开 → 本次启动保持展开；用户上次折叠 → 保持折叠。onToggleExpand 切换时落盘。
-  @State private 摘要折叠: boolean = true;
   // 上次选中牌组恢复标志：仅在首次 加载主页数据 完成后恢复一次，避免 onPop 刷新时反复覆盖用户主动取消的选中态
   private 上次牌组已恢复: boolean = false;
   // 首次启动欢迎弹窗：介绍基础操作/个性设置/作者的话，由 aboutToAppear → 显示欢迎弹窗一次 触发
   @State private 显示欢迎弹窗: boolean = false;
-  // 好评引导弹窗：用户首次完成一份牌组学习回到主页后展示一次，
-  // 由 开始学习 onPop → 检查学习完成标记 触发；频率由 好评引导存储 控制为「只弹一次」。
-  @State private 显示好评引导: boolean = false;
+  // 升级用户关闭欢迎弹窗后直接拉起系统应用内好评弹窗（仅升级用户 + 未展示过好评引导时置 true）
+  // 频率由 upgrade_rate_shown 控制为「每版本只弹一次」
+  @State private 升级后弹好评引导: boolean = false;
   @State private 显示节流奖励: boolean = false;
   @State private 节流奖励文案: string = '';
   // 窄屏详情显隐（方案 C 2026-07-25）：点牌组后 true，根 Stack 内 牌组详情面板 盖住列表，替代推栈 NavDestination
@@ -196,7 +201,6 @@ struct 首页 {
     this.恢复主题();
     this.恢复颜色主题();
     this.恢复今日进度卡开关();
-    this.恢复摘要展开状态();
     // 首次启动弹一次欢迎弹窗（preferences 持久化标记，仅展示一次）。
     // fire-and-forget：不阻塞首页加载；await 自然延迟弹窗时机到 UI 就绪后。
     this.显示欢迎弹窗一次();
@@ -207,24 +211,33 @@ struct 首页 {
   // @名称 显示欢迎弹窗一次
   //
   // @作用
-  // 首次启动展示欢迎弹窗（介绍基础操作/个性设置/作者的话）；已展示过则跳过。
+  // 首次启动展示欢迎弹窗（介绍此次更新改动/获取牌组/作者的话）；已展示过则跳过。
+  // 若为旧版本升级用户且未弹过当前版本的升级好评引导，则关闭欢迎弹窗后接着弹好评引导。
   //
   // @输入
   // 无（读取 preferences 标记）
   //
   // @输出
   // 设置 显示欢迎弹窗 状态为 true 触发弹窗渲染
+  // 若为升级用户且未弹过当前版本升级好评，设置 升级后弹好评引导 = true
   //
   // @业务规则
   // 先标记再弹窗：即使弹窗 UI 未显示，也保证「只弹一次」语义；最坏情况是用户没看到。
+  // 升级好评引导用独立版本号标记 upgrade_rate_shown，每个版本只弹一次，与学习完成触发解耦。
   //
   // @副作用
-  // 写 preferences 持久化「已展示」标记
+  // 写 preferences 持久化 welcome_shown 和 upgrade_rate_shown
   // ========================================================
   private async 显示欢迎弹窗一次(): Promise<void> {
     const 已展示: boolean = await 是否已展示欢迎弹窗();
     if (已展示) {
       return;
+    }
+    // 升级用户 + 未弹过当前版本升级好评 → 关闭欢迎弹窗后接着弹好评引导
+    const 是升级用户: boolean = await 是否为升级用户();
+    if (是升级用户 && !(await 是否已弹升级好评())) {
+      await 标记已弹升级好评();
+      this.升级后弹好评引导 = true;
     }
     await 标记已展示欢迎弹窗();
     this.显示欢迎弹窗 = true;
@@ -243,9 +256,6 @@ struct 首页 {
    */
   onBackPress(): boolean {
     if (this.显示数据迁移) { this.显示数据迁移 = false; return true; }
-    if (this.显示同步面板) { this.显示同步面板 = false; return true; }
-    if (this.显示设置) { this.显示设置 = false; return true; }
-    if (this.显示许可证) { this.显示许可证 = false; return true; }
     if (this.显示牌组定制) { this.显示牌组定制 = false; return true; }
     if (this.显示自定义学习) { this.显示自定义学习 = false; return true; }
     if (this.显示过滤牌组面板) { this.显示过滤牌组面板 = false; return true; }
@@ -253,7 +263,6 @@ struct 首页 {
     if (this.显示创建牌组) { this.显示创建牌组 = false; return true; }
     if (this.显示主页操作) { this.显示主页操作 = false; return true; }
     if (this.显示更多菜单) { this.显示更多菜单 = false; return true; }
-    if (this.显示好评引导) { this.显示好评引导 = false; return true; }
     if (this.显示节流奖励) { this.显示节流奖励 = false; return true; }
     if (this.显示欢迎弹窗) { this.显示欢迎弹窗 = false; return true; }
     if (this.显示牌组详情) { this.显示牌组详情 = false; return true; }
@@ -291,6 +300,13 @@ struct 首页 {
   private 桌面卡片跳转_回调(): void {
     if (this.桌面卡片跳转信号 > 0) {
       this.打开统计页();
+    }
+  }
+
+  // 设置页数据迁移/同步/取消隐藏完成后触发首页刷新
+  private 需要刷新主页_回调(): void {
+    if (this.需要刷新主页信号 > 0) {
+      this.加载主页数据();
     }
   }
 
@@ -335,7 +351,15 @@ struct 首页 {
       hilog.info(0x4342, 'jidecards', `首页: 静默加载图表结果 graphs=${graphs === null ? 'null' : '非null'}`);
       // 桌面卡片数据桥接：graphs 非空时提取 8 页数据存 filesDir，供 FormExtensionAbility 读取
       if (graphs !== null) {
-        保存卡片数据(提取卡片数据(graphs)).catch((e: Object): void => {
+        // 算待学数（牌组树 newCount+learnCount+reviewCount 聚合）和牌组数，供桌面卡片今日进度页
+        let 总待学: number = 0;
+        for (const 子节点 of tree.children) {
+          总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
+        }
+        const 牌组总数: number = 平铺牌组树(tree).length;
+        const 卡片数据: 桌面卡片数据 = 提取卡片数据(graphs, 总待学, 牌组总数);
+        this.图表快照 = 卡片数据;
+        保存卡片数据(卡片数据).catch((e: Object): void => {
           hilog.error(0x4342, 'jidecards', `首页: 保存卡片数据失败 ${e}`);
         });
       }
@@ -627,33 +651,6 @@ struct 首页 {
     AppStorage.setOrCreate<boolean>(主页今日进度卡AppStorage键, 开启);
   }
 
-  // ========================================================
-  // @块ID UI-PAGE-HOME-020
-  // @名称 恢复摘要展开状态
-  //
-  // @作用
-  // 启动时从 preferences 加载「摘要是否展开」状态，同步写 摘要折叠 @State。
-  // 用户上次展开 → 本次启动保持展开（直接看到月历 Swiper）；
-  // 用户上次折叠或未设置 → 保持折叠（默认今日摘要卡）。
-  //
-  // @输入
-  // 无
-  //
-  // @输出
-  // 更新 摘要折叠 字段（展开状态 = !折叠状态）
-  //
-  // @业务规则
-  // 不写 AppStorage：摘要展开状态仅首页使用，无跨组件广播需求（与「今日进度卡」不同）。
-  // fire-and-forget：aboutToAppear 同步调用不 await，避免阻塞首页加载；默认折叠态先渲染，加载完成后切到展开态。
-  //
-  // @副作用
-  // 读 preferences（jidecards_settings store 的 home_summary_expanded）。
-  // ========================================================
-  private async 恢复摘要展开状态(): Promise<void> {
-    const 展开: boolean = await 加载摘要展开状态();
-    this.摘要折叠 = !展开;
-  }
-
   private 取能力上下文(): common.UIAbilityContext | null {
     const context: common.UIAbilityContext | undefined =
       AppStorage.get<common.UIAbilityContext>('abilityContext');
@@ -675,6 +672,10 @@ struct 首页 {
     this.主题模式值 = mode;
     this.应用激活主题(mode);
     保存主题模式(mode);
+    // 桌面卡片运行在独立进程，无法访问 AppStorage，必须显式推送最新主题色
+    刷新桌面卡片数据().catch((错误: Object): void => {
+      hilog.error(0x0000, '首页', `切换主题后刷新桌面卡片数据失败: ${错误}`);
+    });
   }
 
   /** 切换颜色主题：写入 AppStorage 触发全局 @StorageProp 重渲染 + 持久化。 */
@@ -683,6 +684,10 @@ struct 首页 {
     AppStorage.setOrCreate<颜色主题>('colorTheme', theme);
     应用颜色主题(theme, this.是否深色());
     保存颜色主题(theme);
+    // 桌面卡片运行在独立进程，无法访问 AppStorage，必须显式推送最新主题色
+    刷新桌面卡片数据().catch((错误: Object): void => {
+      hilog.error(0x0000, '首页', `切换颜色主题后刷新桌面卡片数据失败: ${错误}`);
+    });
   }
 
   private 是否深色(): boolean {
@@ -748,7 +753,6 @@ struct 首页 {
       param: params,
       onPop: (): void => {
         this.加载主页数据();
-        this.检查学习完成标记();
       }
     });
   }
@@ -778,41 +782,6 @@ struct 首页 {
       name: 'StatsPage',
       param: params
     });
-  }
-
-  // ========================================================
-  // @名称 检查学习完成标记
-  //
-  // @作用
-  // 学习页 pop 回调中调用：读取 AppStorage 的 studyJustFinished 标记（由 学习页 在
-  // 完成学习且展示时刻毫秒 > 0 时写入），若为 true 且本设备未展示过好评引导，
-  // 则触发 好评引导对话框 弹窗，并标记「已展示」（只弹一次）。
-  //
-  // @输入
-  // 无（读 AppStorage + preferences）
-  //
-  // @输出
-  // 可能设置 显示好评引导 = true 触发弹窗渲染
-  //
-  // @业务规则
-  // 先标记再弹窗：即使弹窗 UI 未显示，也保证「只弹一次」语义（参考 显示AnkiWeb引导一次）。
-  // 一进来就空队列（展示时刻毫秒=0）的学习页不会写标记，避免新用户刚进空牌组就弹好评引导。
-  //
-  // @副作用
-  // 读 AppStorage；写 preferences 的 rate_guide_shown=true；清空 AppStorage 标记。
-  // ========================================================
-  private async 检查学习完成标记(): Promise<void> {
-    const studyCompleted: boolean | undefined = AppStorage.get<boolean>('studyJustFinished');
-    // 无论是否弹窗都清空标记，避免下次返回主页重复弹
-    AppStorage.setOrCreate('studyJustFinished', false);
-    if (!studyCompleted) {
-      return;
-    }
-    if (await 是否已展示好评引导()) {
-      return;
-    }
-    await 标记已展示好评引导();
-    this.显示好评引导 = true;
   }
 
   /** 新建牌组全链路：确保已打开 → NewDeck → AddDeck → 刷新主页并选中新牌组。 */
@@ -1687,6 +1656,20 @@ struct 首页 {
         pageDeckOptions: (param as 添加笔记页参数).deckOptions ?? [],
         pathStack: this.页面栈
       })
+    } else if (name === 'ReminderPage') {
+      学习提醒页({
+        pathStack: this.页面栈
+      })
+    } else if (name === 'ReminderEditPage') {
+      学习提醒编辑页({
+        pathStack: this.页面栈,
+        项: (param as 学习提醒编辑参数).项,
+        是否新建: (param as 学习提醒编辑参数).是否新建
+      })
+    } else if (name === 'SettingsPage') {
+      设置页({
+        pathStack: this.页面栈
+      })
     }
   }
 
@@ -1721,15 +1704,8 @@ struct 首页 {
               Column({ space: 应用尺寸.间距_12 }) {
                 if (this.显示今日进度卡) {
                   主页摘要分页({
-                    摘要折叠: this.摘要折叠,
-                    onToggleExpand: (): void => {
-                      this.摘要折叠 = !this.摘要折叠;
-                      // B12-Y4 2026-07-25：落盘展开状态，让下次启动保持用户偏好。
-                      // 展开状态 = !折叠状态；fire-and-forget 不 await，失败仅丢失下次启动的值。
-                      保存摘要展开状态(!this.摘要折叠);
-                    },
                     主页快照数据: this.主页快照数据,
-                    月历: this.月历
+                    图表快照: this.图表快照
                   })
                 }
                 主页牌组列表({
@@ -1838,80 +1814,6 @@ struct 首页 {
         .height('100%')
         .backgroundColor(this.页面底色微染值)
 
-        if (this.显示设置) {
-          设置面板({
-            当前主题模式: this.主题模式值,
-            是否深色: this.是否深色(),
-            当前颜色主题: this.颜色主题值,
-            主题模式切换回调: (mode: 主题模式): void => {
-              this.切换主题(mode);
-            },
-            颜色主题切换回调: (theme: 颜色主题): void => {
-              this.切换颜色主题(theme);
-            },
-            打开许可证回调: (): void => {
-              this.显示许可证 = true;
-            },
-            导入数据回调: (): void => {
-              this.显示设置 = false;
-              this.打开数据迁移('importDeck', 0, true);
-            },
-            导出数据回调: (): void => {
-              this.显示设置 = false;
-              this.打开数据迁移('exportDeck', this.已选中牌组() ? Number(this.选中的牌组ID) : 0, true);
-            },
-            点击已隐藏牌组回调: (): void => {
-              this.显示隐藏牌组对话框();
-            },
-            // 查找重复对话框点重复组：关闭设置面板并推栈浏览页（带初始搜索串）
-            跳转浏览页回调: (initialSearch: string): void => {
-              this.显示设置 = false;
-              this.打开带搜索浏览页(initialSearch);
-            },
-            // 用户在 同步分组 点「先备份后同步」：导出整个 collection 为 .colpkg
-            // 用户备份完手动回设置页点「立即同步」—— 备份与同步两步分离
-            先备份后同步回调: (): void => {
-              this.显示设置 = false;
-              this.打开数据迁移('exportPersonalData', 0, false);
-            },
-            // 用户在 同步分组 点「立即同步」：暂存 auth + 账号名，挂载 同步面板 弹窗
-            打开同步弹窗回调: (auth: SyncAuth, accountName: string): void => {
-              this.同步面板认证 = auth;
-              this.同步面板账号名 = accountName;
-              this.显示同步面板 = true;
-            },
-            关闭回调: (): void => {
-              this.显示设置 = false;
-            }
-          })
-        }
-
-        if (this.显示同步面板) {
-          同步面板({
-            是否深色: this.是否深色(),
-            账号名: this.同步面板账号名,
-            初始鉴权: this.同步面板认证,
-            同步完成回调: (): void => {
-              this.加载主页数据();
-              this.同步后检查FSRS();
-            },
-            关闭回调: (): void => {
-              this.显示同步面板 = false;
-              this.同步面板认证 = null;
-              this.同步面板账号名 = '';
-            }
-          })
-        }
-
-        if (this.显示许可证) {
-          许可证面板({
-            isDark: this.是否深色(),
-            onClose: (): void => {
-              this.显示许可证 = false;
-            }
-          })
-        }
-
         if (this.显示主页操作) {
           主页操作面板({
             创建牌组回调: (): void => {
@@ -1930,12 +1832,12 @@ struct 首页 {
           })
         }
 
-        // 更多下拉菜单：设置/浏览/统计 三项收纳
+        // 更多下拉菜单：设置/浏览/统计/提醒 四项收纳
         if (this.显示更多菜单) {
           主页更多面板({
             设置回调: (): void => {
               this.显示更多菜单 = false;
-              this.显示设置 = true;
+              this.页面栈.pushPath({ name: 'SettingsPage' });
             },
             浏览回调: (): void => {
               this.显示更多菜单 = false;
@@ -1944,6 +1846,10 @@ struct 首页 {
             统计回调: (): void => {
               this.显示更多菜单 = false;
               this.打开统计页();
+            },
+            提醒回调: (): void => {
+              this.显示更多菜单 = false;
+              this.页面栈.pushPath({ name: 'ReminderPage' });
             },
             关闭回调: (): void => {
               this.显示更多菜单 = false;
@@ -1973,11 +1879,11 @@ struct 首页 {
                 })
             }
             .width('100%')
-            .height(应用尺寸.工具栏高度)
+            .height(应用尺寸.工具栏高度 + this.状态栏高度)
             .padding({
               left: 应用尺寸.页面内边距_水平,
               right: 应用尺寸.页面内边距_水平,
-              top: 应用尺寸.间距_8,
+              top: this.状态栏高度 + 应用尺寸.间距_8,
               bottom: 应用尺寸.间距_8
             })
             .backgroundColor(this.页面底色微染值)
@@ -2114,22 +2020,20 @@ struct 首页 {
         // 首次启动欢迎弹窗：放最顶层，确保覆盖所有浮层
         //   关闭时调 标记已展示欢迎弹窗 持久化（已在 显示欢迎弹窗一次 中提前标记，
         //   这里仅关闭状态；即使弹窗未显示也已标记，保证「只弹一次」语义）
+        //   若为升级用户且未弹过当前版本好评，关闭后直接拉起系统应用内好评弹窗
+        //   （commentManager.showCommentDialog，失败回退应用市场详情页 DeepLink）
         if (this.显示欢迎弹窗) {
           欢迎弹窗({
             是否深色: this.是否深色(),
             onClose: (): void => {
               this.显示欢迎弹窗 = false;
-            }
-          })
-        }
-
-        // 好评引导弹窗：用户首次完成一份牌组学习回到主页后展示一次，
-        // 挂载在最顶层确保覆盖其他弹窗（与 AnkiWeb引导对话框 同款磨砂遮罩）
-        if (this.显示好评引导) {
-          好评引导对话框({
-            isDark: this.是否深色(),
-            onClose: (): void => {
-              this.显示好评引导 = false;
+              if (this.升级后弹好评引导) {
+                this.升级后弹好评引导 = false;
+                const context = this.取能力上下文();
+                if (context !== null) {
+                  打开应用内好评(context, 'com.jide.kapian');
+                }
+              }
             }
           })
         }
@@ -2199,6 +2103,7 @@ struct 首页 {
     .hideTitleBar(true)
     .mode(NavigationMode.Stack)
     .navDestination(this.页面映射)
-    .customNavContentTransition(this.自定义转场回调)
+    // 用箭头函数包裹，避免方法引用丢失 this 绑定后 transition 回调内 this 为 undefined（BUG：从二级页面 push 三级页面时崩溃 "Cannot read property getUIContext of undefined"）。
+    .customNavContentTransition((from: NavContentInfo, to: NavContentInfo, op: NavigationOperation): NavigationAnimatedTransition | undefined => this.自定义转场回调(from, to, op))
   }
 }

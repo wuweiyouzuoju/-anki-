@@ -211,3 +211,27 @@ export function decodeCompleteTagResponse(bytes: Uint8Array): CompleteTagRespons
   }
   return res;
 }
+
+// ---- NoteIdsAndTagsRequest（AddNoteTags / RemoveNoteTags 共用入参） ----
+
+/**
+ * anki.tags.NoteIdsAndTagsRequest：批量给笔记添加/移除标签的入参。
+ * 字段来源：third_party/anki/proto/anki/tags.proto NoteIdsAndTagsRequest
+ * - field 1: repeated int64 note_ids（packed）
+ * - field 2: string tags（空格分隔的多个标签，可含 :: 路径）
+ */
+export interface NoteIdsAndTagsRequest {
+  noteIds: number[];
+  tags: string;
+}
+
+export function encodeNoteIdsAndTagsRequest(req: NoteIdsAndTagsRequest): Uint8Array {
+  const w = new 协议写入器();
+  if (req.noteIds.length > 0) {
+    w.写入打包64位整数(1, req.noteIds);
+  }
+  if (req.tags !== '') {
+    w.写入字符串(2, req.tags);
+  }
+  return w.转为字节();
+}

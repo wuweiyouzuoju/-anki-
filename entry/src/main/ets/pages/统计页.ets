@@ -48,6 +48,10 @@ import { 真实保留率卡 } from '../components/stats/真实保留率卡';
 import { 记忆率卡 } from '../components/stats/记忆率卡';
 import { 图表偏好面板 } from '../components/stats/图表偏好面板';
 import { 字段帮助面板 } from '../components/字段帮助面板';
+import { 提取卡片数据, 保存卡片数据 } from '../model/桌面卡片数据存储';
+import { 牌组服务 } from '../backend/牌组服务';
+import { 平铺牌组树 } from '../model/牌组层级';
+import type { DeckTreeNode } from '../proto/messages/DeckMessages';
 import type { GraphsView, GraphPreferences } from '../proto/messages/StatsMessages';
 import { Weekday } from '../proto/messages/StatsMessages';
 
@@ -86,6 +90,7 @@ export struct 统计页 {
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景色: string = '#2F5FD0';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
   @State private 主题模式值: 主题模式 = 'system';
 
@@ -145,6 +150,25 @@ export struct 统计页 {
         this.图表偏好 = 默认偏好();
       }
       this.阶段 = 'content';
+      // 顺带刷新桌面卡片数据：用户进入统计页时把最新 GraphsView 推送到桌面卡片，
+      // 避免桌面卡片长期显示旧数据（FSRS 切换、复习后未回首页等场景）。
+      // 拉牌组树算待学数/牌组数，供桌面卡片今日进度页（失败时传0，桌面卡片显示"-"）
+      try {
+        const 牌组服务实例 = new 牌组服务();
+        const tree: DeckTreeNode = await 牌组服务实例.获取牌组树();
+        let 总待学: number = 0;
+        for (const 子节点 of tree.children) {
+          总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
+        }
+        const 牌组总数: number = 平铺牌组树(tree).length;
+        保存卡片数据(提取卡片数据(图表, 总待学, 牌组总数)).catch((e: Object): void => {
+          hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
+        });
+      } catch (_牌组错误) {
+        保存卡片数据(提取卡片数据(图表)).catch((e: Object): void => {
+          hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
+        });
+      }
     } catch (error) {
       this.阶段 = 'error';
       this.错误详情 = error instanceof Error ? error.message : `${error}`;
@@ -221,11 +245,11 @@ export struct 统计页 {
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .height(应用尺寸.工具栏高度)
+    .height(应用尺寸.工具栏高度 + this.状态栏高度)
     .padding({
       left: 应用尺寸.页面内边距_水平,
       right: 应用尺寸.页面内边距_水平,
-      top: 应用尺寸.间距_8,
+      top: this.状态栏高度 + 应用尺寸.间距_8,
       bottom: 应用尺寸.间距_8
     })
     .backgroundColor(this.页面底色微染值)

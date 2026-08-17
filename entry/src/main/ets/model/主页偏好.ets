@@ -5,35 +5,30 @@
 // @名称 主页偏好持久化
 //
 // @作用
-// 主页 UI 显示项的 preferences 持久化：当前包含两个开关——
-// 1. 「是否显示今日进度卡片」（跨组件同步用 AppStorage 'homeShowTodaySummary'）
-// 2. 「摘要是否展开」（仅首页 aboutToAppear 读、onToggleExpand 写，无跨组件广播）
+// 主页 UI 显示项的 preferences 持久化：当前包含「是否显示今日进度卡片」开关
+// （跨组件同步用 AppStorage 'homeShowTodaySummary'）。
 // 用 preferences（@kit.ArkData）存储，复用 jidecards_settings store
 // （与 AnkiWeb引导存储 同 store，key 前缀独立）。
 //
 // @输入
-// 无（读取开关）；开启: boolean / 展开: boolean（保存）
+// 无（读取开关）；开启: boolean（保存）
 //
 // @输出
 // 加载显示今日进度卡(): Promise<boolean>
 // 保存显示今日进度卡(开启): Promise<void>
-// 加载摘要展开状态(): Promise<boolean>
-// 保存摘要展开状态(展开): Promise<void>
 // 主页今日进度卡AppStorage键: string  // 跨组件广播键名常量
 //
 // @业务规则
 // 「今日进度卡」默认值 true：保持新用户开箱即见体验；
-// 「摘要展开」默认值 false：新用户默认折叠，点击展开后记住状态下次保持展开。
 // 'homeShowTodaySummary' 是 AppStorage 协议字段，保留英文，不可中文化。
 //
 // @副作用
 // 读写 preferences 的 jidecards_settings store；
-// 「今日进度卡」保存时同步写 AppStorage 触发 @StorageLink 监听方重渲染；
-// 「摘要展开」仅 preferences 持久化，无 AppStorage 广播（仅首页使用，无跨组件需求）。
+// 「今日进度卡」保存时同步写 AppStorage 触发 @StorageLink 监听方重渲染。
 //
 // @注意
 // preferences 中的字符串键（'jidecards_settings' / 'home_show_today_summary' /
-// 'home_summary_expanded' / 'abilityContext'）属持久化协议字段，保留英文，不可中文化。
+// 'abilityContext'）属持久化协议字段，保留英文，不可中文化。
 // ========================================================
 
 import { common } from '@kit.AbilityKit';
@@ -41,7 +36,6 @@ import { preferences } from '@kit.ArkData';
 
 const 存储名: string = 'jidecards_settings';
 const 显示今日进度卡键: string = 'home_show_today_summary';
-const 摘要展开状态键: string = 'home_summary_expanded';
 const 上下文键: string = 'abilityContext';
 
 // ========================================================
@@ -130,70 +124,6 @@ export async function 保存显示今日进度卡(开启: boolean): Promise<void
   try {
     const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
     await 存储.put(显示今日进度卡键, 开启);
-    await 存储.flush();
-  } catch (错误) {
-    // 持久化失败可接受：UI 已切换，下次启动会回退到上次保存的值。
-  }
-}
-
-// ========================================================
-// @块ID MODEL-HOME-PREF-005
-// @名称 加载摘要展开状态
-//
-// @作用
-// 读取主页摘要 Swiper 的展开/折叠状态：展开 = 显示完整月历 Swiper；折叠 = 仅显示今日摘要卡。
-// 仅首页 aboutToAppear 调用一次，无跨组件广播需求（与「今日进度卡」不同）。
-//
-// @输入
-// 无
-//
-// @输出
-// Promise<boolean>：true=展开（默认 false 折叠）；读取失败或未设置时返回 false。
-//
-// @业务规则
-// 默认值 false：新用户首次启动看到折叠态（今日摘要卡），点击展开后下次启动保持展开。
-//
-// @副作用
-// 只读 preferences，不写入。
-// ========================================================
-export async function 加载摘要展开状态(): Promise<boolean> {
-  const 上下文: common.UIAbilityContext | null = 取上下文();
-  if (上下文 === null) {
-    return false;
-  }
-  try {
-    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
-    const 值: preferences.ValueType = await 存储.get(摘要展开状态键, false);
-    return 值 === true;
-  } catch (错误) {
-    return false;
-  }
-}
-
-// ========================================================
-// @块ID MODEL-HOME-PREF-006
-// @名称 保存摘要展开状态
-//
-// @作用
-// 持久化主页摘要 Swiper 的展开/折叠状态。仅首页 onToggleExpand 调用，无 AppStorage 广播。
-//
-// @输入
-// 展开: boolean - true=展开月历 Swiper；false=折叠为今日摘要卡
-//
-// @输出
-// Promise<void>。持久化失败仅丢失下次启动后的值，不回滚 UI（与 学习布局存储 同款）。
-//
-// @副作用
-// 写入 preferences 的 home_summary_expanded 并 flush 落盘。
-// ========================================================
-export async function 保存摘要展开状态(展开: boolean): Promise<void> {
-  const 上下文: common.UIAbilityContext | null = 取上下文();
-  if (上下文 === null) {
-    return;
-  }
-  try {
-    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
-    await 存储.put(摘要展开状态键, 展开);
     await 存储.flush();
   } catch (错误) {
     // 持久化失败可接受：UI 已切换，下次启动会回退到上次保存的值。

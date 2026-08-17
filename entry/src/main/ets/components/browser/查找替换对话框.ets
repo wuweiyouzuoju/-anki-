@@ -273,42 +273,38 @@ export struct 查找替换对话框 {
         }
         .width('100%')
 
-        // 应用范围
-        Column({ space: 应用尺寸.间距_5 }) {
-          Text($r('app.string.browser_find_scope'))
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor($r('app.color.text_secondary'))
-            .width('100%')
-          Row({ space: 应用尺寸.间距_16 }) {
-            Row({ space: 应用尺寸.间距_5 }) {
-              Radio({ value: 'selected', group: 'findReplaceScope' })
-                .checked(this.仅选中)
-                .enabled(!this.busy && this.有选中笔记)
-                .onChange((值: boolean): void => {
-                  if (值) {
-                    this.仅选中 = true;
-                  }
-                })
-              Text($r('app.string.browser_find_scope_selected'))
-                .fontSize(应用尺寸.字号_正文)
-                .fontColor(this.有选中笔记
-                  ? $r('app.color.text_primary')
-                  : $r('app.color.text_tertiary'))
-            }
+        // 应用范围（横向排列，与正则/区分大小写一致）
+        Row({ space: 应用尺寸.间距_16 }) {
+          Row({ space: 应用尺寸.间距_5 }) {
+            Radio({ value: 'selected', group: 'findReplaceScope' })
+              .checked(this.仅选中)
+              .radioStyle({ checkedBackgroundColor: this.主色按钮背景 })
+              .enabled(!this.busy && this.有选中笔记)
+              .onChange((值: boolean): void => {
+                if (值) {
+                  this.仅选中 = true;
+                }
+              })
+            Text($r('app.string.browser_find_scope_selected'))
+              .fontSize(应用尺寸.字号_正文)
+              .fontColor(this.有选中笔记
+                ? $r('app.color.text_primary')
+                : $r('app.color.text_tertiary'))
+          }
 
-            Row({ space: 应用尺寸.间距_5 }) {
-              Radio({ value: 'all', group: 'findReplaceScope' })
-                .checked(!this.仅选中)
-                .enabled(!this.busy)
-                .onChange((值: boolean): void => {
-                  if (值) {
-                    this.仅选中 = false;
-                  }
-                })
-              Text($r('app.string.browser_find_scope_all'))
-                .fontSize(应用尺寸.字号_正文)
-                .fontColor($r('app.color.text_primary'))
-            }
+          Row({ space: 应用尺寸.间距_5 }) {
+            Radio({ value: 'all', group: 'findReplaceScope' })
+              .checked(!this.仅选中)
+              .radioStyle({ checkedBackgroundColor: this.主色按钮背景 })
+              .enabled(!this.busy)
+              .onChange((值: boolean): void => {
+                if (值) {
+                  this.仅选中 = false;
+                }
+              })
+            Text($r('app.string.browser_find_scope_all'))
+              .fontSize(应用尺寸.字号_正文)
+              .fontColor($r('app.color.text_primary'))
           }
         }
         .width('100%')

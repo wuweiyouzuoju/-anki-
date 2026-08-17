@@ -30,8 +30,9 @@ test('About keeps copyright and licenses entry, stays free of heavy legal wordin
 });
 
 test('open-source entry opens a real legal surface instead of an unavailable stub', () => {
+  // 2026-08-15：许可证面板从首页迁移到设置页（设置页改为全屏独立页面）。
   const panel = read('entry/src/main/ets/components/设置面板.ets');
-  const page = read('entry/src/main/ets/pages/首页.ets');
+  const page = read('entry/src/main/ets/pages/设置页.ets');
 
   assert.match(panel, /打开许可证回调/);
   assert.match(page, /许可证面板\(\{/);

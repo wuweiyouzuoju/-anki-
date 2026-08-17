@@ -41,8 +41,11 @@ import { 声音播放器 } from '../utils/声音播放器';
 import { TTS播放器 } from '../utils/TTS播放器';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 学习浮动工具栏 } from '../components/学习浮动工具栏';
+import { 学习手写白板层 } from '../components/学习手写白板层';
 import { 学习阶段 } from '../utils/吸附计算器';
 import { 加载学习布局模式, 学习布局模式 } from '../model/学习布局存储';
+import { 简洁模式AppStorage键, 加载简洁模式 } from '../model/简洁模式存储';
+import { TapZones开关AppStorage键, 加载TapZones开关, 手写白板开关AppStorage键, 加载手写白板开关 } from '../model/实验性功能存储';
 import { 加载主题模式 } from '../model/主题存储';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
 import { 颜色键 } from '../model/颜色主题';
@@ -110,6 +113,14 @@ export struct 学习页 {
   @State private 学习布局模式值: 学习布局模式 = 'bottom';
   /** 主题模式 + 系统暗黑，用于浮动工具栏底色判断（与 首页.ets 同套机制）。 */
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
+  /** 简洁模式：实验性功能（Tap Zones）仅在「实验版」模式下生效 */
+  @StorageLink(简洁模式AppStorage键) private 简洁模式: boolean = true;
+  /** Tap Zones 开关：answer 阶段把屏幕划成 2×2 象限直接评分；question 阶段不拦截 */
+  @StorageLink(TapZones开关AppStorage键) private TapZones开关: boolean = false;
+  /** 手写白板开关：开启后「更多」菜单出现「手写」入口，进入后叠加 Canvas 笔迹层 */
+  @StorageLink(手写白板开关AppStorage键) private 手写白板开关: boolean = false;
+  /** 手写模式：用户点「手写」进入后置 true，关闭白板层后置 false */
+  @State private 手写模式: boolean = false;
   @State private 主题模式值: 主题模式 = 'system';
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.动作主色按下) private 动作主色按下色: string = '#1E4FB8';
@@ -118,6 +129,8 @@ export struct 学习页 {
   @StorageProp(颜色键.主色按钮按下) private 主色按钮按下色: string = '#1E4FB8';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
+  // 状态栏高度（沉浸式全屏下，顶部条需让出状态栏区域，避免按钮叠在状态栏上）
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
   @State private 显示答案按下: boolean = false;
   // 4 个评分按钮共用一个 pressed 状态：按下时记下对应 rating，松开恢复 -1。
   // 用单状态而非 4 个 boolean，避免 4 个 @State 字段爆炸；onTouch Up/Cancel 都恢复 -1 保证松手必复位。
@@ -159,6 +172,25 @@ export struct 学习页 {
       this.学习布局模式值 = await 加载学习布局模式();
     } catch (error) {
       this.学习布局模式值 = 'bottom';
+    }
+    // 实验性功能开关同样加载持久化值，让 @StorageLink 跨重启保持一致
+    try {
+      const 简洁模式持久化值: boolean = await 加载简洁模式();
+      AppStorage.setOrCreate<boolean>(简洁模式AppStorage键, 简洁模式持久化值);
+    } catch (error) {
+      // 加载失败保留默认值 true（简洁版）
+    }
+    try {
+      const TapZones持久化值: boolean = await 加载TapZones开关();
+      AppStorage.setOrCreate<boolean>(TapZones开关AppStorage键, TapZones持久化值);
+    } catch (error) {
+      // 加载失败保留默认值 false（关闭）
+    }
+    try {
+      const 手写白板持久化值: boolean = await 加载手写白板开关();
+      AppStorage.setOrCreate<boolean>(手写白板开关AppStorage键, 手写白板持久化值);
+    } catch (error) {
+      // 加载失败保留默认值 false（关闭）
     }
     this.加载兜底文案();
     this.启动会话();
@@ -277,12 +309,6 @@ export struct 学习页 {
         await this.TTS播放器实例.停止();
         this.阶段 = 'done';
         await this.加载完成页信息();
-        // 学习完成标记：仅在「已学过至少一张卡」（展示时刻毫秒 > 0）时写入 AppStorage，
-        // 首页 onPop 检测到此标记后弹一次好评引导（由 好评引导存储 控制「只弹一次」）。
-        // 一进来就空队列（展示时刻毫秒=0）不写标记，避免新用户刚进空牌组就弹好评引导。
-        if (this.展示时刻毫秒 > 0) {
-          AppStorage.setOrCreate('studyJustFinished', true);
-        }
         return;
       }
       this.当前卡片 = queued.cards[0];
@@ -428,10 +454,19 @@ export struct 学习页 {
   }
 
   private 更多菜单(): MenuElement[] {
-    return [
+    const 菜单: MenuElement[] = [
       { value: this.取文案($r('app.string.study_undo')), action: () => { this.撤销上次(); }, enabled: this.可撤销 },
       { value: this.取文案($r('app.string.study_delete_card')), action: () => { this.请求删除当前卡(); }, enabled: this.阶段 === 'question' || this.阶段 === 'answer' }
     ];
+    // 实验性功能「手写」入口：仅在手写白板开关 + 实验版 + question/answer 阶段时显示
+    if (this.手写白板开关 && !this.简洁模式 && (this.阶段 === 'question' || this.阶段 === 'answer')) {
+      菜单.push({
+        value: this.取文案($r('app.string.study_handwrite')),
+        action: () => { this.手写模式 = true; },
+        enabled: true
+      });
+    }
+    return 菜单;
   }
 
   // ========================================================
@@ -976,11 +1011,11 @@ export struct 学习页 {
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .height(应用尺寸.工具栏高度)
+    .height(应用尺寸.工具栏高度 + this.状态栏高度)
     .padding({
       left: 应用尺寸.页面内边距_水平,
       right: 应用尺寸.页面内边距_水平,
-      top: 应用尺寸.间距_8,
+      top: this.状态栏高度 + 应用尺寸.间距_8,
       bottom: 应用尺寸.间距_8
     })
     .backgroundColor(this.页面底色微染值)
@@ -1024,6 +1059,45 @@ export struct 学习页 {
         })
         .width('100%')
         .height('100%')
+
+      // Tap Zones：实验性功能，仅「实验版」模式下且开关开启时生效。
+      // 仅 answer 阶段铺满卡片区域，2×2 象限映射 Again/Hard/Good/Easy；
+      // question 阶段不加拦截层，保留 Web 触摸（选中文本、点击图片查看大图等）。
+      // 浮动工具栏在外层 Stack 上层，其按钮始终可点不被本层覆盖。
+      if (this.阶段 === 'answer' && this.TapZones开关 && !this.简洁模式) {
+        Column() {
+          Row() {
+            Column()
+              .width('50%')
+              .height('100%')
+              .onClick(() => { this.评分(RATING_AGAIN); })
+            Column()
+              .width('50%')
+              .height('100%')
+              .onClick(() => { this.评分(RATING_HARD); })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .hitTestBehavior(HitTestMode.Block)
+
+          Row() {
+            Column()
+              .width('50%')
+              .height('100%')
+              .onClick(() => { this.评分(RATING_GOOD); })
+            Column()
+              .width('50%')
+              .height('100%')
+              .onClick(() => { this.评分(RATING_EASY); })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .hitTestBehavior(HitTestMode.Block)
+        }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.Block)
+      }
 
       if (this.有音频) {
         Button($r('app.string.study_replay_sound'))
@@ -1377,6 +1451,17 @@ export struct 学习页 {
             },
             评分回调: (rating: number): void => {
               this.评分(rating);
+            }
+          })
+        }
+
+        // 手写白板层：实验性功能，仅当用户从「更多」菜单点「手写」进入后显示；
+        // 全屏覆盖卡片区域，提供关闭/撤销/清空。关闭时回调置 手写模式=false。
+        if (this.手写模式) {
+          学习手写白板层({
+            是否深色: this.是否深色(),
+            onClose: (): void => {
+              this.手写模式 = false;
             }
           })
         }

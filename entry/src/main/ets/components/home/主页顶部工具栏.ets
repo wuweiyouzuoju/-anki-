@@ -35,6 +35,7 @@ export struct 主页顶部工具栏 {
   @Prop 主色容器色: ResourceColor;
   @Prop 页面底色微染值: ResourceColor;
   @Prop 动作主色: ResourceColor;
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
 
   build() {
     Row() {
@@ -55,11 +56,11 @@ export struct 主页顶部工具栏 {
       })
     }
     .width('100%')
-    .height(应用尺寸.工具栏高度)
+    .height(应用尺寸.工具栏高度 + this.状态栏高度)
     .padding({
       left: 应用尺寸.页面内边距_水平,
       right: 应用尺寸.页面内边距_水平,
-      top: 应用尺寸.间距_8,
+      top: this.状态栏高度 + 应用尺寸.间距_8,
       bottom: 应用尺寸.间距_8
     })
     .backgroundColor(this.页面底色微染值)

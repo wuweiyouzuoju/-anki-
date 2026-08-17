@@ -129,23 +129,32 @@ test('revised home uses a full-window toolbar without greeting or bottom navigat
     /\.expandSafeArea\(\[SafeAreaType\.SYSTEM\],\s*\[SafeAreaEdge\.TOP, SafeAreaEdge\.BOTTOM\]\)/);
 });
 
-test('summary pager hosts two manually navigated cards without auto-looping', () => {
+test('summary pager hosts Swiper 8 pages with today progress and stats', () => {
   const page = read('entry/src/main/ets/pages/首页.ets');
   const summary = read('entry/src/main/ets/components/home/主页摘要分页.ets');
 
-  // Swiper 与卡组件移至 主页摘要分页 积木组件
+  // 主页摘要分页 改成 Swiper 8 页（用户决策 2026-08-15）：今日进度 + 7 统计页
+  assert.match(summary, /今日摘要卡\(\{/);
   assert.match(summary, /Swiper\(\)/);
-  assert.match(summary, /\.autoPlay\(false\)/);
-  // loop=false：2 张卡不需要首末循环；旧 loop=true 在边界依赖 cachedCount，
-  // 未设时首末衔接可能短暂白屏（HarmonyOS Swiper 官方文档明确）。
-  assert.match(summary, /\.loop\(false\)/);
-  for (const component of ['今日摘要卡', '月历卡']) {
-    const componentPath = `entry/src/main/ets/components/${component}.ets`;
-    assert.equal(existsSync(projectUrl(componentPath)), true, `${componentPath} must exist`);
-    assert.match(summary, new RegExp(`${component}\\(\\{`));
-  }
-  // 构建月历 仍在 首页.ets 加载主页数据 中调用（业务逻辑保留）
-  assert.match(page, /构建月历/);
+  assert.match(summary, /今日进度页/);
+  assert.match(summary, /记忆率页/);
+  assert.match(summary, /今日计数页/);
+  assert.match(summary, /卡片状态页/);
+  assert.match(summary, /小时分布页/);
+  assert.match(summary, /难度分布页/);
+  assert.match(summary, /间隔分布页/);
+  assert.match(summary, /未来到期页/);
+  assert.doesNotMatch(summary, /月历卡/);
+  // 折叠功能已取消：今日摘要卡 不再接收 已折叠 / 切换展开回调
+  assert.doesNotMatch(summary, /已折叠/);
+  assert.doesNotMatch(summary, /切换展开回调/);
+  assert.doesNotMatch(summary, /摘要折叠/);
+  assert.doesNotMatch(summary, /onToggleExpand/);
+  // 首页 不再保留 摘要折叠 @State、恢复摘要展开状态 方法、保存摘要展开状态 调用
+  assert.doesNotMatch(page, /摘要折叠/);
+  assert.doesNotMatch(page, /恢复摘要展开状态/);
+  assert.doesNotMatch(page, /保存摘要展开状态/);
+  assert.doesNotMatch(page, /加载摘要展开状态/);
   assert.doesNotMatch(page, /streakDays/);
 });
 
@@ -204,16 +213,15 @@ test('theme settings persist three modes and synchronize system bars', () => {
   assert.match(ability, /应用系统栏样式\(this\.context, isDark\)/);
 });
 
-test('Schulte-style settings keep the approved modal architecture and about content', () => {
+test('Schulte-style settings keep the approved full-screen page architecture and about content', () => {
+  // 2026-08-15：设置页从模态弹窗改为全屏独立页面，移除遮罩色背景、88% 宽度与 maxWidth:480 模态约束。
+  // 顶部条改用页面底色背景 + 状态栏高度 padding，模态遮罩色() 辅助方法保留供其他场景调用。
   const panelPath = 'entry/src/main/ets/components/设置面板.ets';
   assert.equal(existsSync(projectUrl(panelPath)), true, `${panelPath} must exist`);
 
   const panel = read(panelPath);
   assert.match(panel, /Stack\(\)/);
-  assert.match(panel, /backgroundColor\(this\.遮罩色\(\)\)/);
   assert.match(panel, /List\(\{ space: 12 \}\)/);
-  assert.match(panel, /width\('88%'\)/);
-  assert.match(panel, /constraintSize\(\{ maxWidth: 480 \}\)/);
   assert.match(panel, /外观分组展开/);
   assert.match(panel, /数据分组展开/);
   assert.match(panel, /数据库分组展开/);

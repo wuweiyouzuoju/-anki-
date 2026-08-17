@@ -46,7 +46,8 @@ import type {
   RenameTagsRequest,
   FindAndReplaceTagRequest,
   CompleteTagRequest,
-  CompleteTagResponse
+  CompleteTagResponse,
+  NoteIdsAndTagsRequest
 } from '../proto/messages/TagsMessages';
 import {
   decodeTagTreeNode,
@@ -56,7 +57,8 @@ import {
   encodeSetTagCollapsedRequest,
   encodeRenameTagsRequest,
   encodeFindAndReplaceTagRequest,
-  encodeCompleteTagRequest
+  encodeCompleteTagRequest,
+  encodeNoteIdsAndTagsRequest
 } from '../proto/messages/TagsMessages';
 import { decodeOpChanges, decodeOpChangesWithCount } from '../proto/messages/CollectionMessages';
 import type { OpChanges } from '../proto/messages/CollectionMessages';
@@ -138,5 +140,33 @@ export class 标签服务 {
     const 响应字节 = await this.会话.调用(
       服务号.后端标签, 标签方法.补全标签, encodeCompleteTagRequest(请求));
     return decodeCompleteTagResponse(响应字节);
+  }
+
+  /**
+   * 添加笔记标签（AddNoteTags, method 7）。批量给指定笔记追加标签。
+   * @param 请求 noteIds（目标笔记 ID 列表） + tags（空格分隔的标签名，可含 :: 路径）
+   * @returns 受影响的笔记数
+   *
+   * Invariants: tags 为空格分隔的多个标签；后端会自动去重已存在的标签。
+   * Extension Points: 浏览页 T8 批量操作栏「添加标签」调用此方法。
+   */
+  async 添加笔记标签(请求: NoteIdsAndTagsRequest): Promise<number> {
+    const 响应字节 = await this.会话.调用(
+      服务号.后端标签, 标签方法.添加笔记标签, encodeNoteIdsAndTagsRequest(请求));
+    return decodeOpChangesWithCount(响应字节);
+  }
+
+  /**
+   * 移除笔记标签（RemoveNoteTags, method 8）。批量从指定笔记移除标签。
+   * @param 请求 noteIds（目标笔记 ID 列表） + tags（空格分隔的标签名，可含 :: 路径）
+   * @returns 受影响的笔记数
+   *
+   * Invariants: tags 为空格分隔的多个标签；后端对笔记上不存在的标签静默跳过。
+   * Extension Points: 浏览页 T8 批量操作栏「移除标签」调用此方法。
+   */
+  async 移除笔记标签(请求: NoteIdsAndTagsRequest): Promise<number> {
+    const 响应字节 = await this.会话.调用(
+      服务号.后端标签, 标签方法.移除笔记标签, encodeNoteIdsAndTagsRequest(请求));
+    return decodeOpChangesWithCount(响应字节);
   }
 }

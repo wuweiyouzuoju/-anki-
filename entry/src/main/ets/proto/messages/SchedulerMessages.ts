@@ -584,3 +584,87 @@ export function decode自定义学习默认值(bytes: Uint8Array): 自定义学�
   }
   return out;
 }
+
+// ========================================================
+// SetDueDate / SortCards / RepositionDefaults（浏览页 T8 批量操作用）
+// 字段来源：third_party/anki/proto/anki/scheduler.proto
+// ========================================================
+
+/**
+ * anki.scheduler.SetDueDateRequest：
+ * - field 1: repeated int64 card_ids（packed）
+ * - field 2: string days（如 "5"=5天后 / "1-3"=1~3 天随机 / "0"=今天）
+ * - field 3: config.OptionalStringConfigKey（持久化最近输入；前端不写则留空）
+ *
+ * Invariants: days 字符串格式与 Anki 桌面端「Set Due Date」对话框一致：
+ *   "0"=今天 / "1"=明天 / "5"=5 天后 / "1-3"=1~3 天随机 / "!1"=1 天后（FSRS 重排）
+ */
+export function encodeSetDueDateRequest(cardIds: number[], days: string): Uint8Array {
+  const w = new 协议写入器();
+  if (cardIds.length > 0) {
+    w.写入打包64位整数(1, cardIds);
+  }
+  if (days !== '') {
+    w.写入字符串(2, days);
+  }
+  // field 3 config_key 留空：前端不复用 Anki 桌面端的「记住上次输入」配置
+  return w.转为字节();
+}
+
+/**
+ * anki.scheduler.SortCardsRequest（即「Reposition / 重新定位」）：
+ * - field 1: repeated int64 card_ids（packed）
+ * - field 2: uint32 starting_from（起始位置，默认 1）
+ * - field 3: uint32 step_size（步长，默认 1）
+ * - field 4: bool randomize（是否随机打乱）
+ * - field 5: bool shift_existing（是否顺移已有新卡）
+ *
+ * Invariants: 仅对 new 队列卡片生效；review/learning 卡片位置不变。
+ */
+export function encodeSortCardsRequest(
+  cardIds: number[],
+  startingFrom: number,
+  stepSize: number,
+  randomize: boolean,
+  shiftExisting: boolean
+): Uint8Array {
+  const w = new 协议写入器();
+  if (cardIds.length > 0) {
+    w.写入打包64位整数(1, cardIds);
+  }
+  if (startingFrom !== 0) {
+    w.写入变长整数(2, startingFrom);
+  }
+  if (stepSize !== 0) {
+    w.写入变长整数(3, stepSize);
+  }
+  if (randomize) {
+    w.写入布尔(4, true);
+  }
+  if (shiftExisting) {
+    w.写入布尔(5, true);
+  }
+  return w.转为字节();
+}
+
+/** anki.scheduler.RepositionDefaultsResponse：前端 Reposition 对话框默认值 */
+export interface 重新定位默认值 {
+  random: boolean;
+  shift: boolean;
+}
+
+export function decode重新定位默认值(bytes: Uint8Array): 重新定位默认值 {
+  const r = new 协议读取器(bytes);
+  const out: 重新定位默认值 = { random: false, shift: false };
+  let tag;
+  while ((tag = r.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      out.random = r.读取布尔();
+    } else if (tag.字段号 === 2) {
+      out.shift = r.读取布尔();
+    } else {
+      r.跳过字段(tag.线类型);
+    }
+  }
+  return out;
+}
