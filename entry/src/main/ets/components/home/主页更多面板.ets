@@ -81,7 +81,7 @@ export struct 主页更多面板 {
           .color($r('app.color.border_subtle'))
           .strokeWidth(应用尺寸.卡片边框)
           .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
-        Text('提醒')
+        Text($r('app.string.reminder_list_title'))
           .fontSize(应用尺寸.字号_正文)
           .fontColor($r('app.color.text_primary'))
           .width('100%')

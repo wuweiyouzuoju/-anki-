@@ -30,7 +30,7 @@
     },
     {
       "name": "text_tertiary",
-      "value": "#8E9AAA"
+      "value": "#96A2B4"
     },
     {
       "name": "action_primary",
@@ -58,7 +58,7 @@
     },
     {
       "name": "error_text",
-      "value": "#F97066"
+      "value": "#FB7B72"
     },
     {
       "name": "warning_text",

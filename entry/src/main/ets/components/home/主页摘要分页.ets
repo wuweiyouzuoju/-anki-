@@ -28,6 +28,91 @@ import { 颜色键 } from '../../model/颜色主题';
 import { 桌面卡片数据 } from '../../model/桌面卡片数据存储';
 import { 主页快照 } from '../../model/主页模型';
 
+// ========================================================
+// 计数格组件：独立 struct 而非 @Builder——@Builder 按值传参不响应状态变化
+// （ArkUI 限制），图表快照更新后数值不刷新（学完卡回主页卡片数据停留旧值的根因）。
+// @Prop 数值变化自动触发重渲染。
+// ========================================================
+@Component
+struct 计数格组件 {
+  @Prop 标签: string = '';
+  @Prop 数值: number = 0;
+  /** 色型：primary/new/learn/review 主题色标记，或静态 hex */
+  @Prop 色型: string = 'primary';
+  @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
+  @StorageProp(颜色键.新卡计数色) private 新卡计数色: string = '#3974D9';
+  @StorageProp(颜色键.学习中计数色) private 学习中计数色: string = '#B56A22';
+  @StorageProp(颜色键.复习中计数色) private 复习中计数色: string = '#7056C8';
+
+  private 计数色取(色型: string): string {
+    switch (色型) {
+      case 'primary': return this.动作主色;
+      case 'new': return this.新卡计数色;
+      case 'learn': return this.学习中计数色;
+      case 'review': return this.复习中计数色;
+      default: return 色型;
+    }
+  }
+
+  build() {
+    Column({ space: 2 }) {
+      Text(this.数值.toString())
+        .fontSize(应用尺寸.字号_指标)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.计数色取(this.色型))
+      Text(this.标签)
+        .fontSize(应用尺寸.字号_正文_小)
+        .fontColor($r('app.color.text_secondary'))
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
+  }
+}
+
+// ========================================================
+// 柱状图组件：同 计数格组件 原因抽成 struct（@Builder 数组按值传参不刷新）。
+// 主题色 @StorageProp 体内直读，主题切换跟随刷新。
+// ========================================================
+@Component
+struct 柱状图组件 {
+  @Prop 数据: number[] = [];
+  @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
+
+  /** 柱高：按最大值等比缩放，最小 2vp 保证可见 */
+  private 柱高(值: number): number {
+    let 最大值: number = 1;
+    for (let i: number = 0; i < this.数据.length; i++) {
+      if (this.数据[i] > 最大值) {
+        最大值 = this.数据[i];
+      }
+    }
+    if (值 <= 0) {
+      return 2;
+    }
+    return Math.max(值 / 最大值 * 70, 2);
+  }
+
+  build() {
+    Row({ space: 1 }) {
+      ForEach(this.数据, (值: number, 索引: number) => {
+        Stack({ alignContent: Alignment.Bottom }) {
+          Column()
+            .width('70%')
+            .height(this.柱高(值))
+            .backgroundColor(this.动作主色)
+            .borderRadius(1)
+        }
+        .width('100%')
+        .height('100%')
+        .layoutWeight(1)
+      }, (值: number, 索引: number) => `${索引}_${值}`)
+    }
+    .width('100%')
+    .height(70)
+    .alignItems(VerticalAlign.Bottom)
+  }
+}
+
 @Component
 export struct 主页摘要分页 {
   @Prop 主页快照数据: 主页快照;
@@ -37,7 +122,13 @@ export struct 主页摘要分页 {
   @StorageProp(颜色键.新卡计数色) private 新卡计数色: string = '#3974D9';
   @StorageProp(颜色键.学习中计数色) private 学习中计数色: string = '#B56A22';
   @StorageProp(颜色键.复习中计数色) private 复习中计数色: string = '#7056C8';
+  @StorageProp('系统语言') private 系统语言: string = 'zh-Hans';
   @State private 当前页: number = 0;
+
+  // 本地化文案：系统语言为 en 时返回英，否则返回中
+  private t(中: string, 英: string): string {
+    return this.系统语言.startsWith('en') ? 英 : 中;
+  }
 
   // ========================================================
   // 页1：今日进度（复用 今日摘要卡 组件）
@@ -60,7 +151,7 @@ export struct 主页摘要分页 {
   记忆率页() {
     Column({ space: 应用尺寸.间距_8 }) {
       Row() {
-        Text('记忆率')
+        Text(this.t('记忆可提取性', 'Card Retrievability'))
           .fontSize(应用尺寸.字号_摘要标题)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -77,7 +168,7 @@ export struct 主页摘要分页 {
             .fontSize(32)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.动作主色)
-          Text('全库平均可提取率')
+          Text(this.t('全库平均可提取性', 'Avg Retrieval'))
             .fontSize(应用尺寸.字号_正文_小)
             .fontColor($r('app.color.text_secondary'))
             .margin({ left: 8, bottom: 4 })
@@ -87,10 +178,10 @@ export struct 主页摘要分页 {
         .alignItems(VerticalAlign.Bottom)
       } else {
         Column() {
-          Text('未启用 FSRS')
+          Text(this.t('未启用 FSRS', 'FSRS not enabled'))
             .fontSize(应用尺寸.字号_正文)
             .fontColor($r('app.color.text_secondary'))
-          Text('开启 FSRS 后显示全库记忆率')
+          Text(this.t('开启 FSRS 后显示全库记忆率', 'Enable FSRS to show retention'))
             .fontSize(应用尺寸.字号_正文_小)
             .fontColor($r('app.color.text_secondary'))
             .margin({ top: 4 })
@@ -115,7 +206,7 @@ export struct 主页摘要分页 {
   今日计数页() {
     Column({ space: 应用尺寸.间距_8 }) {
       Row() {
-        Text('今日学习')
+        Text(this.t('今日', 'Today'))
           .fontSize(应用尺寸.字号_摘要标题)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -124,15 +215,15 @@ export struct 主页摘要分页 {
       .width('100%')
 
       Row({ space: 应用尺寸.间距_10 }) {
-        this.计数格('答题', this.图表快照!.今日答题数, this.动作主色)
-        this.计数格('正确', this.图表快照!.今日正确数, '#238463')
+        计数格组件({ 标签: this.t('答题', 'Reviews'), 数值: this.图表快照!.今日答题数, 色型: 'primary' })
+        计数格组件({ 标签: this.t('正确', 'Correct'), 数值: this.图表快照!.今日正确数, 色型: '#238463' })
       }
       .width('100%')
 
       Row({ space: 应用尺寸.间距_10 }) {
-        this.计数格('新学', this.图表快照!.今日新学数, this.新卡计数色)
-        this.计数格('复习', this.图表快照!.今日复习数, this.复习中计数色)
-        this.计数格('重学', this.图表快照!.今日重学数, this.学习中计数色)
+        计数格组件({ 标签: this.t('学习', 'New'), 数值: this.图表快照!.今日新学数, 色型: 'new' })
+        计数格组件({ 标签: this.t('复习', 'Review'), 数值: this.图表快照!.今日复习数, 色型: 'review' })
+        计数格组件({ 标签: this.t('重学', 'Relearn'), 数值: this.图表快照!.今日重学数, 色型: 'learn' })
       }
       .width('100%')
     }
@@ -145,19 +236,51 @@ export struct 主页摘要分页 {
     .justifyContent(FlexAlign.Center)
   }
 
-  @Builder
-  计数格(标签: string, 数值: number, 颜色: string) {
-    Column({ space: 2 }) {
-      Text(数值.toString())
-        .fontSize(应用尺寸.字号_指标)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(颜色)
-      Text(标签)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_secondary'))
+  // 难度刻度标签：桶数 >=5 时取五等分点（0/25%/50%/75%/100% 索引）的难度值；
+  // <5 时逐桶显示。与桌面卡片同款，让三张柱图基线统一
+  private 难度刻度标签(): string[] {
+    const 桶: [number, number][] = this.图表快照!.难度分布.桶;
+    const n: number = 桶.length;
+    if (n === 0) {
+      return [];
     }
-    .layoutWeight(1)
-    .alignItems(HorizontalAlign.Center)
+    if (n < 5) {
+      const 标签: string[] = [];
+      for (let i: number = 0; i < n; i++) {
+        标签.push(`${桶[i][0]}%`);
+      }
+      return 标签;
+    }
+    return [
+      `${桶[0][0]}%`,
+      `${桶[Math.round((n - 1) * 0.25)][0]}%`,
+      `${桶[Math.round((n - 1) * 0.5)][0]}%`,
+      `${桶[Math.round((n - 1) * 0.75)][0]}%`,
+      `${桶[n - 1][0]}%`
+    ];
+  }
+
+  // 间隔刻度标签：同款五等分逻辑，显示间隔天数（与统计页 `${键}天` 标签一致）
+  private 间隔刻度标签(): string[] {
+    const 桶: [number, number][] = this.图表快照!.间隔分布;
+    const n: number = 桶.length;
+    if (n === 0) {
+      return [];
+    }
+    if (n < 5) {
+      const 标签: string[] = [];
+      for (let i: number = 0; i < n; i++) {
+        标签.push(`${桶[i][0]}天`);
+      }
+      return 标签;
+    }
+    return [
+      `${桶[0][0]}天`,
+      `${桶[Math.round((n - 1) * 0.25)][0]}天`,
+      `${桶[Math.round((n - 1) * 0.5)][0]}天`,
+      `${桶[Math.round((n - 1) * 0.75)][0]}天`,
+      `${桶[n - 1][0]}天`
+    ];
   }
 
   // ========================================================
@@ -167,7 +290,7 @@ export struct 主页摘要分页 {
   卡片状态页() {
     Column({ space: 应用尺寸.间距_8 }) {
       Row() {
-        Text('卡片状态')
+        Text(this.t('卡片数量', 'Card States'))
           .fontSize(应用尺寸.字号_摘要标题)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -176,16 +299,16 @@ export struct 主页摘要分页 {
       .width('100%')
 
       Row({ space: 应用尺寸.间距_10 }) {
-        this.计数格('新卡', this.图表快照!.卡片状态.新卡, this.新卡计数色)
-        this.计数格('学习', this.图表快照!.卡片状态.学习中, this.学习中计数色)
-        this.计数格('重学', this.图表快照!.卡片状态.重学中, '#B34C00')
+        计数格组件({ 标签: this.t('未学习', 'New'), 数值: this.图表快照!.卡片状态.新卡, 色型: 'new' })
+        计数格组件({ 标签: this.t('学习中', 'Learning'), 数值: this.图表快照!.卡片状态.学习中, 色型: 'learn' })
+        计数格组件({ 标签: this.t('重学中', 'Relearn'), 数值: this.图表快照!.卡片状态.重学中, 色型: '#B34C00' })
       }
       .width('100%')
 
       Row({ space: 应用尺寸.间距_10 }) {
-        this.计数格('年轻', this.图表快照!.卡片状态.年轻, this.复习中计数色)
-        this.计数格('成熟', this.图表快照!.卡片状态.成熟, '#238463')
-        this.计数格('暂停', this.图表快照!.卡片状态.暂停, '#991B1B')
+        计数格组件({ 标签: this.t('欠熟练', 'Young'), 数值: this.图表快照!.卡片状态.年轻, 色型: 'review' })
+        计数格组件({ 标签: this.t('已熟练', 'Mature'), 数值: this.图表快照!.卡片状态.成熟, 色型: '#238463' })
+        计数格组件({ 标签: this.t('已暂停', 'Suspended'), 数值: this.图表快照!.卡片状态.暂停, 色型: '#991B1B' })
       }
       .width('100%')
     }
@@ -199,13 +322,23 @@ export struct 主页摘要分页 {
   }
 
   // ========================================================
-  // 页5：小时分布（24 柱简化柱状图）
+  // 页5：小时分布（24 柱简化柱状图，窗口跟随统计页小时分布卡的档位选择）
   // ========================================================
+  private 小时分布窗口标签(): string {
+    switch (this.图表快照?.小时分布窗口 ?? 0) {
+      case 1: return this.t('逐小时分析（近3月）', 'Hourly (3M)');
+      case 2: return this.t('逐小时分析（近1年）', 'Hourly (1Y)');
+      case 3: return this.t('逐小时分析（全部）', 'Hourly (All)');
+      default: return this.t('逐小时分析（近1月）', 'Hourly (1M)');
+    }
+  }
+
   @Builder
   小时分布页() {
-    Column({ space: 应用尺寸.间距_8 }) {
+    // 间距收紧为 4：加小时刻度行后 8 间距会超出卡片固定高度 150
+    Column({ space: 应用尺寸.间距_4 }) {
       Row() {
-        Text('小时分布')
+        Text(this.小时分布窗口标签())
           .fontSize(应用尺寸.字号_摘要标题)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -213,7 +346,38 @@ export struct 主页摘要分页 {
       }
       .width('100%')
 
-      this.柱状图(this.图表快照!.小时分布.map((项: [number, number]): number => 项[0]), this.动作主色)
+      柱状图组件({ 数据: this.图表快照!.小时分布.map((项: [number, number]): number => 项[0]) })
+
+      // 小时刻度：五等分居中，五个数字中心落点 10%/30%/50%/70%/90%，间距严格相等
+      //（与统计页小时分布卡、桌面卡片同款）
+      Row() {
+        Text('0')
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+        Text('6')
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+        Text('12')
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+        Text('18')
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+        Text('23')
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+      }
+      .width('100%')
     }
     .width('100%')
     .height(150)
@@ -228,20 +392,33 @@ export struct 主页摘要分页 {
   // ========================================================
   @Builder
   难度分布页() {
-    Column({ space: 应用尺寸.间距_8 }) {
+    // 间距与其他柱图页统一为 4：加刻度行后 8 间距会超出卡片固定高度 150
+    Column({ space: 应用尺寸.间距_4 }) {
       Row() {
-        Text('难度分布')
+        Text(this.t('卡片难度', 'Difficulty'))
           .fontSize(应用尺寸.字号_摘要标题)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
-        Text(`平均 ${Math.round(this.图表快照!.难度分布.平均 / 10)}%`)
+        Text(this.t(`平均 ${Math.round(this.图表快照!.难度分布.平均)}%`, `Avg ${Math.round(this.图表快照!.难度分布.平均)}%`))
           .fontSize(应用尺寸.字号_正文_小)
           .fontColor($r('app.color.text_secondary'))
       }
       .width('100%')
 
-      this.柱状图(this.图表快照!.难度分布.桶.map((项: [number, number]): number => 项[1]), this.复习中计数色)
+      柱状图组件({ 数据: this.图表快照!.难度分布.桶.map((项: [number, number]): number => 项[1]) })
+
+      // 难度刻度：五等分居中（与小时分布刻度行、桌面卡片同款），柱图基线与其他柱图页统一
+      Row() {
+        ForEach(this.难度刻度标签(), (标签: string) => {
+          Text(标签)
+            .fontSize(应用尺寸.字号_说明_小)
+            .fontColor($r('app.color.text_tertiary'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+        }, (标签: string) => 标签)
+      }
+      .width('100%')
     }
     .width('100%')
     .height(150)
@@ -256,9 +433,10 @@ export struct 主页摘要分页 {
   // ========================================================
   @Builder
   间隔分布页() {
-    Column({ space: 应用尺寸.间距_8 }) {
+    // 间距与小时分布/未来到期页统一为 4：翻页时柱图起始高度一致
+    Column({ space: 应用尺寸.间距_4 }) {
       Row() {
-        Text('间隔分布')
+        Text(this.t('复习间隔', 'Review Intervals'))
           .fontSize(应用尺寸.字号_摘要标题)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -266,7 +444,20 @@ export struct 主页摘要分页 {
       }
       .width('100%')
 
-      this.柱状图(this.图表快照!.间隔分布.map((项: [number, number]): number => 项[1]), this.新卡计数色)
+      柱状图组件({ 数据: this.图表快照!.间隔分布.map((项: [number, number]): number => 项[1]) })
+
+      // 间隔刻度：五等分居中显示间隔天数（与小时分布刻度行、桌面卡片同款），
+      // 柱图基线与其他柱图页统一
+      Row() {
+        ForEach(this.间隔刻度标签(), (标签: string) => {
+          Text(标签)
+            .fontSize(应用尺寸.字号_说明_小)
+            .fontColor($r('app.color.text_tertiary'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+        }, (标签: string) => 标签)
+      }
+      .width('100%')
     }
     .width('100%')
     .height(150)
@@ -277,13 +468,13 @@ export struct 主页摘要分页 {
   }
 
   // ========================================================
-  // 页8：未来到期预测
+  // 页8：未来到期预测（整月 30 天细条）
   // ========================================================
   @Builder
   未来到期页() {
-    Column({ space: 应用尺寸.间距_8 }) {
+    Column({ space: 应用尺寸.间距_4 }) {
       Row() {
-        Text('未来到期')
+        Text(this.t('预测', 'Future Due'))
           .fontSize(应用尺寸.字号_摘要标题)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
@@ -291,7 +482,27 @@ export struct 主页摘要分页 {
       }
       .width('100%')
 
-      this.柱状图(this.图表快照!.未来到期.map((项: [number, number]): number => 项[1]), this.动作主色)
+      柱状图组件({ 数据: this.图表快照!.未来到期.map((项: [number, number]): number => 项[1]) })
+
+      // 天数刻度：与小时分布页刻度行同款，今/+15/+29
+      Row() {
+        Text(this.t('今', 'Today'))
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.Start)
+        Text('+15')
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+        Text('+29')
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.End)
+      }
+      .width('100%')
     }
     .width('100%')
     .height(150)
@@ -302,37 +513,9 @@ export struct 主页摘要分页 {
   }
 
   // ========================================================
-  // 通用柱状图：数据数组 → 等宽柱状 Row
+  // 通用柱状图/计数格已抽成独立 struct 组件（柱状图组件/计数格组件）：
+  // @Builder 按值传参不响应状态变化，图表快照更新后不刷新。
   // ========================================================
-  @Builder
-  柱状图(数据: number[], 颜色: string) {
-    Row({ space: 2 }) {
-      ForEach(数据, (值: number, 索引: number) => {
-        Column()
-          .layoutWeight(1)
-          .height(this.柱高(值, 数据))
-          .backgroundColor(颜色)
-          .borderRadius(2)
-      }, (值: number, 索引: number) => `${索引}_${值}`)
-    }
-    .width('100%')
-    .height(70)
-    .alignItems(VerticalAlign.Bottom)
-  }
-
-  // 柱高：按最大值等比缩放，最小 2vp 保证可见
-  private 柱高(值: number, 数据: number[]): number {
-    let 最大值: number = 1;
-    for (let i: number = 0; i < 数据.length; i++) {
-      if (数据[i] > 最大值) {
-        最大值 = 数据[i];
-      }
-    }
-    if (值 <= 0) {
-      return 2;
-    }
-    return Math.max(值 / 最大值 * 70, 2);
-  }
 
   private 格式化时间(毫秒: number): string {
     if (毫秒 <= 0) return '';
@@ -340,7 +523,8 @@ export struct 主页摘要分页 {
     const 时: number = 日期.getHours();
     const 分: number = 日期.getMinutes();
     const 补零 = (n: number): string => n < 10 ? `0${n}` : `${n}`;
-    return `更新于 ${补零(时)}:${补零(分)}`;
+    const 前缀: string = this.t('更新于', 'Updated');
+    return `${前缀} ${补零(时)}:${补零(分)}`;
   }
 
   build() {

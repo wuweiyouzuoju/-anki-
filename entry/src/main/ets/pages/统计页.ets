@@ -40,17 +40,23 @@ import { 按下态按钮 } from '../components/common/按下态按钮';
 import { 统计图表分区 } from '../components/stats/统计图表分区';
 import { 今日计数卡 } from '../components/stats/今日计数卡';
 import { 预测卡 } from '../components/stats/预测卡';
+import { 日历卡 } from '../components/stats/日历卡';
+import { 复习卡 } from '../components/stats/复习卡';
 import { 卡片状态分布 } from '../components/stats/卡片状态分布';
 import { 小时分布卡 } from '../components/stats/小时分布卡';
 import { 难度分布卡 } from '../components/stats/难度分布卡';
 import { 间隔分布卡 } from '../components/stats/间隔分布卡';
+import { 稳定度分布卡 } from '../components/stats/稳定度分布卡';
 import { 真实保留率卡 } from '../components/stats/真实保留率卡';
 import { 记忆率卡 } from '../components/stats/记忆率卡';
+import { 回答按钮卡 } from '../components/stats/回答按钮卡';
+import { 新增卡 } from '../components/stats/新增卡';
 import { 图表偏好面板 } from '../components/stats/图表偏好面板';
 import { 字段帮助面板 } from '../components/字段帮助面板';
-import { 提取卡片数据, 保存卡片数据 } from '../model/桌面卡片数据存储';
+import { 提取卡片数据, 保存卡片数据, 加载小时分布窗口, 保存小时分布窗口 } from '../model/桌面卡片数据存储';
 import { 牌组服务 } from '../backend/牌组服务';
 import { 平铺牌组树 } from '../model/牌组层级';
+import type { 牌组汇总 } from '../model/主页模型';
 import type { DeckTreeNode } from '../proto/messages/DeckMessages';
 import type { GraphsView, GraphPreferences } from '../proto/messages/StatsMessages';
 import { Weekday } from '../proto/messages/StatsMessages';
@@ -79,6 +85,12 @@ export struct 统计页 {
   @State private 图表数据: GraphsView | null = null;
   @State private 图表偏好: GraphPreferences = 默认偏好();
   @State private 统计天数: number = 365;
+  // 牌组选择（顶部条内嵌下拉）：索引 0 = 全部牌组（搜索串空），>0 对应 牌组名列表[索引-1]
+  @State private 牌组选项: SelectOption[] = [];
+  @State private 选中牌组索引: number = 0;
+  private 牌组名列表: string[] = [];
+  // 小时分布时间段（0=近1月 1=近3月 2=近1年 3=全部）：与首页卡片/桌面卡片共用同一偏好
+  @State private 小时分布窗口: number = 0;
   @State private 显示偏好面板: boolean = false;
   // 分区帮助浮层：点击各分区 i 时由 onHelp 回调设置标题/正文，页面级 Stack 统一弹字段帮助面板
   @State private 显示分区帮助: boolean = false;
@@ -91,6 +103,8 @@ export struct 统计页 {
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
   @StorageProp('状态栏高度') private 状态栏高度: number = 0;
+  // 手势导航条高度（统计内容滚到底时需完整滚出导航条区域）
+  @StorageProp('导航条高度') private 导航条高度: number = 0;
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
   @State private 主题模式值: 主题模式 = 'system';
 
@@ -113,7 +127,62 @@ export struct 统计页 {
     );
     // 恢复主题模式（与浏览页同款，供 是否深色() 判断）
     this.主题模式值 = await 加载主题模式();
+    // 恢复小时分布窗口选择（首页卡片/桌面卡片跟随同一偏好）
+    this.小时分布窗口 = await 加载小时分布窗口();
+    this.加载牌组列表();
     await this.加载统计数据();
+  }
+
+  /** 顶部条牌组下拉选项：全部牌组 + 全库牌组全名（平铺牌组树前序） */
+  private 加载牌组列表(): void {
+    const 牌组服务实例 = new 牌组服务();
+    牌组服务实例.获取牌组树().then((tree: DeckTreeNode) => {
+      const 名列表: string[] = [];
+      平铺牌组树(tree).forEach((行: 牌组汇总) => {
+        名列表.push(行.fullName);
+      });
+      this.牌组名列表 = 名列表;
+      const 选项: SelectOption[] = [];
+      选项.push({ value: $r('app.string.stats_deck_all') } as SelectOption);
+      for (let i = 0; i < 名列表.length; i++) {
+        选项.push({ value: 名列表[i] } as SelectOption);
+      }
+      this.牌组选项 = 选项;
+    }).catch((_错误: Object): void => {
+      // 牌组列表加载失败时仅保留"全部牌组"，不阻塞统计
+    });
+  }
+
+  /** 当前统计搜索串：全部牌组 = 空串（全库）；选中牌组 = deck:"全名" */
+  private 取搜索串(): string {
+    if (this.选中牌组索引 <= 0 || this.选中牌组索引 > this.牌组名列表.length) {
+      return '';
+    }
+    const 名: string = this.牌组名列表[this.选中牌组索引 - 1];
+    return `deck:"${名}"`;
+  }
+
+  /** 牌组下拉切换：重选牌组后重新加载统计 */
+  private on牌组切换(索引: number): void {
+    if (索引 === this.选中牌组索引) {
+      return;
+    }
+    this.选中牌组索引 = 索引;
+    this.加载统计数据();
+  }
+
+  /** 预测卡积压复选框切换：即时写偏好并本地生效（Anki autoSavingPrefs 行为） */
+  private on积压变更(值: boolean): void {
+    const 新偏好: GraphPreferences = {
+      calendarFirstDayOfWeek: this.图表偏好.calendarFirstDayOfWeek,
+      cardCountsSeparateInactive: this.图表偏好.cardCountsSeparateInactive,
+      browserLinksSupported: this.图表偏好.browserLinksSupported,
+      futureDueShowBacklog: 值
+    };
+    this.图表偏好 = 新偏好;
+    this.统计服务实例.设置图表偏好(新偏好).catch((_错误: Object): void => {
+      // 写偏好失败不阻塞展示，下次打开回读旧值
+    });
   }
 
   /**
@@ -131,6 +200,33 @@ export struct 统计页 {
     return context === undefined ? null : context;
   }
 
+  /**
+   * 用当前 图表数据 + 小时分布窗口 提取卡片数据并保存推送。
+   * 拉牌组树算待学数/牌组数，供桌面卡片今日进度页（失败时传0，桌面卡片显示"-"）。
+   */
+  private async 刷新卡片快照(): Promise<void> {
+    const 图表: GraphsView | null = this.图表数据;
+    if (图表 === null) {
+      return;
+    }
+    try {
+      const 牌组服务实例 = new 牌组服务();
+      const tree: DeckTreeNode = await 牌组服务实例.获取牌组树();
+      let 总待学: number = 0;
+      for (const 子节点 of tree.children) {
+        总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
+      }
+      const 牌组总数: number = 平铺牌组树(tree).length;
+      保存卡片数据(提取卡片数据(图表, 总待学, 牌组总数, this.小时分布窗口)).catch((e: Object): void => {
+        hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
+      });
+    } catch (_牌组错误) {
+      保存卡片数据(提取卡片数据(图表, 0, 0, this.小时分布窗口)).catch((e: Object): void => {
+        hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
+      });
+    }
+  }
+
   private async 加载统计数据(): Promise<void> {
     this.阶段 = 'loading';
     try {
@@ -141,8 +237,9 @@ export struct 统计页 {
         return;
       }
       await 后端会话.获取实例().确保已打开(context.filesDir);
-      // 图表统计是主数据，偏好加载失败不阻塞（回退默认值）
-      const 图表: GraphsView = await this.统计服务实例.获取图表统计(this.统计天数);
+      // 图表统计是主数据，偏好加载失败不阻塞（回退默认值）。
+      // 搜索串为空 = 全库统计；选中牌组时传 deck:"全名"（后端 graph_data_for_search 牌组分支）
+      const 图表: GraphsView = await this.统计服务实例.获取图表统计(this.统计天数, this.取搜索串());
       this.图表数据 = 图表;
       try {
         this.图表偏好 = await this.统计服务实例.获取图表偏好();
@@ -150,24 +247,11 @@ export struct 统计页 {
         this.图表偏好 = 默认偏好();
       }
       this.阶段 = 'content';
-      // 顺带刷新桌面卡片数据：用户进入统计页时把最新 GraphsView 推送到桌面卡片，
+      // 顺带刷新桌面卡片数据（仅全库口径；选中单牌组时不覆盖首页/桌面卡片）：
+      // 用户进入统计页时把最新 GraphsView 推送到桌面卡片，
       // 避免桌面卡片长期显示旧数据（FSRS 切换、复习后未回首页等场景）。
-      // 拉牌组树算待学数/牌组数，供桌面卡片今日进度页（失败时传0，桌面卡片显示"-"）
-      try {
-        const 牌组服务实例 = new 牌组服务();
-        const tree: DeckTreeNode = await 牌组服务实例.获取牌组树();
-        let 总待学: number = 0;
-        for (const 子节点 of tree.children) {
-          总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
-        }
-        const 牌组总数: number = 平铺牌组树(tree).length;
-        保存卡片数据(提取卡片数据(图表, 总待学, 牌组总数)).catch((e: Object): void => {
-          hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
-        });
-      } catch (_牌组错误) {
-        保存卡片数据(提取卡片数据(图表)).catch((e: Object): void => {
-          hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
-        });
+      if (this.取搜索串() === '') {
+        await this.刷新卡片快照();
       }
     } catch (error) {
       this.阶段 = 'error';
@@ -213,15 +297,20 @@ export struct 统计页 {
   @Builder
   private 顶部条() {
     // 与浏览页顶部条同款：左返回 + 右图表偏好 用按下态按钮（胶囊样式 + 淡色边框）。
-    // 标题用 Stack 绝对居中（铺满宽度 + TextAlign.Center），不受左右按钮宽度差影响，
-    // 保证"统计"两字始终在屏幕水平中央。
+    // 中间为牌组选择下拉（对齐 Anki RangeBox 的牌组选择；索引 0=全部牌组）；
+    // 牌组列表未加载完成 / 仅全库无牌组时回退显示「统计」标题。
+    // Invariants:
+    // - 标题 Text（铺满宽度）必须声明在 Row 之前的下层，避免盖住左右按钮点击
+    // - Select 声明在 Row 之后的上层（Stack 后声明者在上），限宽 50% 居中不挡左右按钮
     Stack() {
-      Text($r('app.string.stats_page_title'))
-        .fontSize(应用尺寸.字号_面板标题)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .textAlign(TextAlign.Center)
+      if (this.牌组选项.length <= 1) {
+        Text($r('app.string.stats_page_title'))
+          .fontSize(应用尺寸.字号_面板标题)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .textAlign(TextAlign.Center)
+      }
 
       Row() {
         按下态按钮({
@@ -243,9 +332,28 @@ export struct 统计页 {
       .width('100%')
       .height('100%')
       .alignItems(VerticalAlign.Center)
+
+      if (this.牌组选项.length > 1) {
+        Select(this.牌组选项)
+          .selected(this.选中牌组索引)
+          .value(this.选中牌组索引 === 0
+            ? (this.牌组选项[0].value as ResourceStr)
+            : (this.牌组选项[this.选中牌组索引].value as ResourceStr))
+          .fontColor($r('app.color.text_primary'))
+          .font({ size: 应用尺寸.字号_正文_小 })
+          .selectedOptionFontColor($r('app.color.text_primary'))
+          .optionFontColor($r('app.color.text_primary'))
+          .backgroundColor(this.主色容器色)
+          .borderRadius(应用尺寸.圆角_进度条)
+          .constraintSize({ maxWidth: '50%' })
+          .onSelect((索引: number) => {
+            this.on牌组切换(索引);
+          })
+      }
     }
     .width('100%')
     .height(应用尺寸.工具栏高度 + this.状态栏高度)
+    .alignContent(Alignment.Center)
     .padding({
       left: 应用尺寸.页面内边距_水平,
       right: 应用尺寸.页面内边距_水平,
@@ -253,7 +361,6 @@ export struct 统计页 {
       bottom: 应用尺寸.间距_8
     })
     .backgroundColor(this.页面底色微染值)
-    .alignContent(Alignment.Center)
   }
 
   @Builder
@@ -273,7 +380,7 @@ export struct 统计页 {
             .borderRadius(应用尺寸.间距_8)
         }
 
-        // 今日计数
+        // 1. 今日计数（Anki TodayStats）
         统计图表分区({
           标题: $r('app.string.stats_section_today'),
           有数据: this.图表数据 !== null && this.图表数据.today !== null,
@@ -286,7 +393,7 @@ export struct 统计页 {
           })
         }
 
-        // 预测
+        // 2. 预测（Anki FutureDue）
         统计图表分区({
           标题: $r('app.string.stats_section_forecast'),
           有数据: this.图表数据 !== null && this.图表数据.futureDue !== null,
@@ -296,11 +403,47 @@ export struct 统计页 {
         }) {
           预测卡({
             预测数据: this.图表数据 !== null ? this.图表数据.futureDue : null,
-            显示积压: this.图表偏好.futureDueShowBacklog
+            显示积压: this.图表偏好.futureDueShowBacklog,
+            是否显示全部: this.统计天数 === 0,
+            on积压变更: (值: boolean): void => {
+              this.on积压变更(值);
+            }
           })
         }
 
-        // 卡片状态
+        // 3. 日历（Anki CalendarGraph，年历热力图）
+        统计图表分区({
+          标题: $r('app.string.stats_section_calendar'),
+          有数据: this.图表数据 !== null && this.图表数据.reviewCountsByDaysAgo !== null,
+          帮助标题: $r('app.string.stats_section_calendar'),
+          帮助正文: $r('app.string.stats_help_calendar'),
+          onHelp: this.on分区帮助.bind(this)
+        }) {
+          日历卡({
+            复习计数: this.图表数据 !== null ? this.图表数据.reviewCountsByDaysAgo : null,
+            日切小时: this.图表数据 !== null ? this.图表数据.rolloverHour : 0,
+            周首日: this.图表偏好.calendarFirstDayOfWeek,
+            统计天数: this.统计天数,
+            是否深色: this.是否深色()
+          })
+        }
+
+        // 4. 复习（Anki ReviewsGraph，5 系列堆叠柱）
+        统计图表分区({
+          标题: $r('app.string.stats_section_reviews'),
+          有数据: this.图表数据 !== null && this.图表数据.reviewCountsByDaysAgo !== null,
+          帮助标题: $r('app.string.stats_section_reviews'),
+          帮助正文: $r('app.string.stats_help_reviews'),
+          onHelp: this.on分区帮助.bind(this)
+        }) {
+          复习卡({
+            复习计数: this.图表数据 !== null ? this.图表数据.reviewCountsByDaysAgo : null,
+            复习时间: this.图表数据 !== null ? this.图表数据.reviewTimesByDaysAgo : null,
+            是否显示全部: this.统计天数 === 0
+          })
+        }
+
+        // 5. 卡片数量（Anki CardCounts）
         统计图表分区({
           标题: $r('app.string.stats_section_card_counts'),
           有数据: this.图表数据 !== null && this.图表数据.cardCounts !== null,
@@ -314,23 +457,41 @@ export struct 统计页 {
           })
         }
 
-        // 小时分布
+        // 6. 间隔分布（Anki IntervalsGraph）
         统计图表分区({
-          标题: $r('app.string.stats_section_hours'),
-          有数据: this.图表数据 !== null && this.图表数据.hours !== null,
-          帮助标题: $r('app.string.stats_section_hours'),
-          帮助正文: $r('app.string.stats_help_hours'),
+          标题: $r('app.string.stats_section_interval'),
+          有数据: this.图表数据 !== null && this.图表数据.intervals !== null,
+          帮助标题: $r('app.string.stats_section_interval'),
+          帮助正文: $r('app.string.stats_help_interval'),
           onHelp: this.on分区帮助.bind(this)
         }) {
-          小时分布卡({
-            小时数据: this.图表数据 !== null ? this.图表数据.hours : null
+          间隔分布卡({
+            间隔数据: this.图表数据 !== null ? this.图表数据.intervals : null
           })
         }
 
-        // 难度分布
+        // 7. 稳定度分布（Anki StabilityGraph，仅 FSRS）
+        if (this.图表数据 !== null && this.图表数据.fsrs) {
+          统计图表分区({
+            标题: $r('app.string.stats_section_stability'),
+            有数据: this.图表数据.stability !== null,
+            帮助标题: $r('app.string.stats_section_stability'),
+            帮助正文: $r('app.string.stats_help_stability'),
+            onHelp: this.on分区帮助.bind(this)
+          }) {
+            稳定度分布卡({
+              稳定度数据: this.图表数据.stability
+            })
+          }
+        }
+
+        // 8. 难度分布（Anki EaseGraph/DifficultyGraph 互斥合一：FSRS→difficulty，SM-2→eases）
         统计图表分区({
-          标题: $r('app.string.stats_section_ease'),
-          有数据: this.图表数据 !== null && this.图表数据.eases !== null,
+          标题: this.图表数据 !== null && this.图表数据.fsrs
+            ? $r('app.string.stats_section_ease')
+            : $r('app.string.stats_section_ease_sm2'),
+          有数据: this.图表数据 !== null
+            && (this.图表数据.eases !== null || this.图表数据.difficulty !== null),
           帮助标题: $r('app.string.stats_section_ease'),
           帮助正文: $r('app.string.stats_help_ease'),
           onHelp: this.on分区帮助.bind(this)
@@ -342,22 +503,22 @@ export struct 统计页 {
           })
         }
 
-        // 间隔分布
-        统计图表分区({
-          标题: $r('app.string.stats_section_interval'),
-          有数据: this.图表数据 !== null && this.图表数据.intervals !== null,
-          帮助标题: $r('app.string.stats_section_interval'),
-          帮助正文: $r('app.string.stats_help_interval'),
-          onHelp: this.on分区帮助.bind(this)
-        }) {
-          间隔分布卡({
-            间隔数据: this.图表数据 !== null ? this.图表数据.intervals : null,
-            FSRS稳定度: this.图表数据 !== null ? this.图表数据.stability : null,
-            是否FSRS: this.图表数据 !== null ? this.图表数据.fsrs : false
-          })
+        // 9. 记忆率（Anki RetrievabilityGraph，仅 FSRS）
+        if (this.图表数据 !== null && this.图表数据.fsrs) {
+          统计图表分区({
+            标题: $r('app.string.stats_section_retrievability'),
+            有数据: this.图表数据.retrievability !== null,
+            帮助标题: $r('app.string.stats_section_retrievability'),
+            帮助正文: $r('app.string.stats_help_retrievability'),
+            onHelp: this.on分区帮助.bind(this)
+          }) {
+            记忆率卡({
+              记忆率数据: this.图表数据.retrievability
+            })
+          }
         }
 
-        // 真实保留率
+        // 10. 真实保留率（Anki TrueRetention）
         统计图表分区({
           标题: $r('app.string.stats_section_retention'),
           有数据: this.图表数据 !== null && this.图表数据.trueRetention !== null,
@@ -366,20 +527,57 @@ export struct 统计页 {
           onHelp: this.on分区帮助.bind(this)
         }) {
           真实保留率卡({
-            保留率数据: this.图表数据 !== null ? this.图表数据.trueRetention : null
+            保留率数据: this.图表数据 !== null ? this.图表数据.trueRetention : null,
+            是否显示全部: this.统计天数 === 0
           })
         }
 
-        // 记忆率
+        // 11. 小时分布（Anki HourGraph）
         统计图表分区({
-          标题: $r('app.string.stats_section_retrievability'),
-          有数据: this.图表数据 !== null && this.图表数据.retrievability !== null,
-          帮助标题: $r('app.string.stats_section_retrievability'),
-          帮助正文: $r('app.string.stats_help_retrievability'),
+          标题: $r('app.string.stats_section_hours'),
+          有数据: this.图表数据 !== null && this.图表数据.hours !== null,
+          帮助标题: $r('app.string.stats_section_hours'),
+          帮助正文: $r('app.string.stats_help_hours'),
           onHelp: this.on分区帮助.bind(this)
         }) {
-          记忆率卡({
-            记忆率数据: this.图表数据 !== null ? this.图表数据.retrievability : null
+          小时分布卡({
+            小时数据: this.图表数据 !== null ? this.图表数据.hours : null,
+            时间段索引: this.小时分布窗口,
+            是否深色: this.是否深色(),
+            onRangeChange: (索引: number): void => {
+              this.小时分布窗口 = 索引;
+              保存小时分布窗口(索引).catch((): void => {});
+              // 切换窗口后立即把对应窗口数据推送到首页/桌面卡片
+              this.刷新卡片快照();
+            }
+          })
+        }
+
+        // 12. 回答按钮（Anki ButtonsGraph）
+        统计图表分区({
+          标题: $r('app.string.stats_section_buttons'),
+          有数据: this.图表数据 !== null && this.图表数据.buttons !== null,
+          帮助标题: $r('app.string.stats_section_buttons'),
+          帮助正文: $r('app.string.stats_help_buttons'),
+          onHelp: this.on分区帮助.bind(this)
+        }) {
+          回答按钮卡({
+            按钮数据: this.图表数据 !== null ? this.图表数据.buttons : null,
+            是否显示全部: this.统计天数 === 0
+          })
+        }
+
+        // 13. 新增（Anki AddedGraph）
+        统计图表分区({
+          标题: $r('app.string.stats_section_added'),
+          有数据: this.图表数据 !== null && this.图表数据.added !== null,
+          帮助标题: $r('app.string.stats_section_added'),
+          帮助正文: $r('app.string.stats_help_added'),
+          onHelp: this.on分区帮助.bind(this)
+        }) {
+          新增卡({
+            新增数据: this.图表数据 !== null ? this.图表数据.added : null,
+            是否显示全部: this.统计天数 === 0
           })
         }
       }
@@ -388,7 +586,8 @@ export struct 统计页 {
         left: 应用尺寸.间距_16,
         right: 应用尺寸.间距_16,
         top: 应用尺寸.间距_12,
-        bottom: 应用尺寸.间距_12
+        // 抬高避让手势导航条（AppGallery 导航栏适配要求）
+        bottom: 应用尺寸.间距_12 + this.导航条高度
       })
     }
     .width('100%')
@@ -403,7 +602,7 @@ export struct 统计页 {
         Column() {
           this.顶部条()
 
-          if (this.阶段 === 'loading') {
+          if (this.阶段 === 'loading' && this.图表数据 === null) {
             Text($r('app.string.stats_loading'))
               .fontSize(应用尺寸.字号_正文)
               .fontColor($r('app.color.text_secondary'))
@@ -421,7 +620,8 @@ export struct 统计页 {
               .padding(40)
           }
 
-          if (this.阶段 === 'content') {
+          // 切换牌组重载时保留旧图表（Anki 数据不闪空行为）
+          if (this.阶段 === 'content' || (this.阶段 === 'loading' && this.图表数据 !== null)) {
             this.统计内容()
           }
         }

@@ -158,6 +158,139 @@ test('summary pager hosts Swiper 8 pages with today progress and stats', () => {
   assert.doesNotMatch(page, /streakDays/);
 });
 
+test('hour histogram range is shared by stats page, home card and widget', () => {
+  const stats = read('entry/src/main/ets/pages/统计页.ets');
+  const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
+  const summary = read('entry/src/main/ets/components/home/主页摘要分页.ets');
+  const widget = read('entry/src/main/ets/widget/pages/统计卡片.ets');
+  const card = read('entry/src/main/ets/components/stats/小时分布卡.ets');
+
+  // 偏好持久化：统计页切换档位保存，三处提取/渲染前加载同一偏好
+  assert.match(store, /export async function 加载小时分布窗口/);
+  assert.match(store, /export async function 保存小时分布窗口/);
+  assert.match(store, /stats_hours_range/);
+  assert.match(stats, /保存小时分布窗口\(索引\)/);
+  assert.match(stats, /加载小时分布窗口\(\)/);
+  // 提取按窗口取对应时间段（0=1月 1=3月 2=1年 3=全部）
+  assert.match(store, /小时窗口 === 1 \? 小时源\.threeMonths/);
+  assert.match(store, /小时分布窗口: 小时窗口/);
+  // 统计页切换后立即推送卡片快照
+  assert.match(stats, /刷新卡片快照\(\)/);
+  // 首页/FSRS 控制器提取时加载窗口偏好
+  const home = read('entry/src/main/ets/pages/首页.ets');
+  const fsrs = read('entry/src/main/ets/model/FSRS控制器.ets');
+  assert.match(home, /提取卡片数据\(graphs, 总待学, 牌组总数, await 加载小时分布窗口\(\)\)/);
+  assert.match(fsrs, /提取卡片数据\(graphs, 总待学, 牌组总数, await 加载小时分布窗口\(\)\)/);
+  // 两处卡片标题跟随窗口（不再固定"全部"）
+  assert.doesNotMatch(summary, /小时分布（全部）'\)/);
+  assert.doesNotMatch(widget, /小时分布（全部）'\)/);
+  assert.match(summary, /小时分布窗口标签\(\)/);
+  assert.match(widget, /小时分布窗口标签\(\)/);
+  // 小时分布卡档位选择由统计页 @Link 管理 + 切换回调
+  assert.match(card, /@Link 时间段索引: number/);
+  assert.match(card, /onRangeChange/);
+  // 桌面卡片：刻度数字独立成行（0/6/12/18/23），禁止与柱子同列混排（会遮挡柱子且顶高柱区）
+  assert.doesNotMatch(widget, /索引 % 3 === 0/);
+  // 三处小时刻度统一五等分居中：数字中心间距严格相等（贴边 Start/End 会让首尾段偏窄）
+  for (const 标签 of ['0', '6', '12', '18', '23']) {
+    assert.match(widget, new RegExp(`Text\\('${标签}'\\)[\\s\\S]{0,120}layoutWeight\\(1\\)[\\s\\S]{0,40}TextAlign\\.Center`));
+    assert.match(card, new RegExp(`Text\\('${标签}'\\)[\\s\\S]{0,120}layoutWeight\\(1\\)[\\s\\S]{0,40}TextAlign\\.Center`));
+    assert.match(summary, new RegExp(`Text\\('${标签}'\\)[\\s\\S]{0,120}layoutWeight\\(1\\)[\\s\\S]{0,40}TextAlign\\.Center`));
+  }
+  assert.doesNotMatch(widget, /layoutWeight\(3\)/);
+  assert.doesNotMatch(card, /layoutWeight\(3\)/);
+  assert.doesNotMatch(summary, /layoutWeight\(3\)/);
+});
+
+test('difficulty percent values are used as-is, never divided by 10', () => {
+  // 后端 eases.rs：SM-2 键 = ease_factor/10、平均 = median/10；FSRS 键 = percent_to_bin(D×100)、平均 = median×100
+  // —— 两种模式的键与平均都已是百分比，前端直接显示，不得再 /10
+  const stats = read('entry/src/main/ets/components/stats/难度分布卡.ets');
+  const widget = read('entry/src/main/ets/widget/pages/统计卡片.ets');
+  const home = read('entry/src/main/ets/components/home/主页摘要分页.ets');
+  for (const [名称, 源] of [['统计页', stats], ['桌面卡片', widget], ['首页摘要', home]]) {
+    assert.doesNotMatch(源, /平均[\s\S]{0,80}\/\s*10/, `${名称}难度平均值不得再除以 10`);
+  }
+  assert.doesNotMatch(stats, /键\s*\/\s*10/, '难度桶标签直接用后端百分比键');
+  // % 由参数携带，资源模式尾部不得再挂 %（曾致双 %% 显示）
+  const strings = read('entry/src/main/resources/base/element/string.json');
+  const enStrings = read('entry/src/main/resources/en_US/element/string.json');
+  assert.doesNotMatch(strings, /stats_ease_average[^}]*%s%/);
+  assert.doesNotMatch(enStrings, /stats_ease_average[^}]*%s%/);
+});
+
+test('graphs request days must be 365 everywhere, never derived from current date', () => {
+  // 后端 hours 四档（近1月/3月/1年/全部）都从 days 限定的 revlog 里统计，
+  // 首页/FSRS控制器曾误传 new Date().getDate()（今天是几号），导致
+  // 首页摘要与桌面卡片的小时分布和统计页（365）完全不一致。
+  const home = read('entry/src/main/ets/pages/首页.ets');
+  const fsrs = read('entry/src/main/ets/model/FSRS控制器.ets');
+  const stats = read('entry/src/main/ets/pages/统计页.ets');
+  assert.match(home, /获取图表统计\(365\)/, '首页静默加载图表必须传 365');
+  assert.match(fsrs, /获取图表统计\(365\)/, 'FSRS控制器刷新桌面卡片必须传 365');
+  for (const [名称, 源] of [['首页', home], ['FSRS控制器', fsrs], ['统计页', stats]]) {
+    assert.doesNotMatch(源, /获取图表统计\(new Date\(\)/, `${名称}禁止用日期函数派生统计天数`);
+  }
+});
+
+test('widget payload stays under the 2KB form transfer limit', () => {
+  // FormBindingData 跨进程传输上限约 2KB：难度桶（SM-2 键域 130~390 可上百桶）与
+  // 间隔桶不截断时 JSON 超限，updateForm 静默失败，桌面卡片冻结在旧数据。
+  const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
+  assert.match(store, /聚合分布桶\(难度桶数组, 20\)/, '难度桶必须聚合分箱到 ≤20 桶');
+  assert.match(store, /间隔桶数组\.slice\(0, 20\)/, '间隔分布必须截断到 ≤20 桶');
+  assert.match(store, /聚合分布桶[\s\S]*?桶宽/, '聚合分布桶函数必须存在且等宽分箱');
+});
+
+test('widget push falls back to running form infos when formId file is empty', () => {
+  // 旧版本添加的卡片从未注册过 formId，主进程主动推送会静默跳过；
+  // formId 列表为空时必须用 getPublishedRunningFormInfos 兜底（FormInfo 无 formId
+  // 字段，只有 RunningFormInfo 有）并写回文件自愈。
+  const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
+  assert.match(store, /ids\.length === 0[\s\S]{0,200}从系统拉取formId/, '推送前 formId 为空必须走系统兜底');
+  assert.match(store, /getPublishedRunningFormInfos\(\)/, '兜底必须调用 getPublishedRunningFormInfos');
+  assert.match(store, /覆盖写formId文件/, '兜底结果必须写回 formId 文件自愈');
+});
+
+test('interval graph always shows intervals; stability is a separate FSRS-only graph', () => {
+  // 对齐 Anki 官方（桌面/AnkiDroid 同源 rslib）：Review Intervals 与 FSRS 无关，
+  // 始终显示卡片实际间隔；Card Stability 是独立图，仅 FSRS 启用时显示。
+  // 曾错误地把 stability 混入间隔分布卡（FSRS 时替换 intervals），导致统计页与卡片口径混乱。
+  const interval = read('entry/src/main/ets/components/stats/间隔分布卡.ets');
+  const statsPage = read('entry/src/main/ets/pages/统计页.ets');
+  const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
+  assert.doesNotMatch(interval, /FSRS稳定度|是否FSRS/, '间隔分布卡不得含 FSRS 分支');
+  assert.match(statsPage, /间隔分布卡\(\{[^}]*间隔数据/, '统计页间隔分布卡只接 intervals');
+  assert.match(statsPage, /图表数据\.fsrs[^)]*稳定度分布卡|稳定度分布卡/, '统计页须有独立稳定度分布卡');
+  assert.match(statsPage, /图表数据 !== null && this\.图表数据\.fsrs\)/, '稳定度卡仅在 FSRS 启用时渲染');
+  assert.match(store, /间隔源: Intervals \| null = 图表数据\.intervals/, '卡片快照间隔分布只用 intervals');
+});
+
+test('forecast shows a full month of thin bars in stats page, home card and widget', () => {
+  const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
+  const summary = read('entry/src/main/ets/components/home/主页摘要分页.ets');
+  const widget = read('entry/src/main/ets/widget/pages/统计卡片.ets');
+  const card = read('entry/src/main/ets/components/stats/预测卡.ets');
+
+  // 数据层提取整月 30 天（0~29），缺失天补 0
+  assert.match(store, /天偏移 >= 0 && 天偏移 <= 29/);
+  assert.match(store, /for \(let i: number = 0; i <= 29; i\+\+\)/);
+  // 桌面卡片与首页摘要：整月细条 + 今/+15/+29 刻度行（独立成行，不与柱子混排）
+  // 标题与统计页统一为 Anki 官方名称（Future Due → 未来到期预测）
+  assert.match(widget, /未来到期预测/);
+  assert.match(summary, /未来到期预测/);
+  assert.match(widget, /Text\(.*'今'.*\)[\s\S]{0,200}TextAlign\.Start/);
+  assert.match(widget, /Text\('\+29'\)[\s\S]{0,200}TextAlign\.End/);
+  // 首页摘要卡已本地化：今 → this.t('今', 'Today')，+29 仍为字面量
+  assert.match(summary, /Text\(this\.t\('今',\s*'Today'\)\)/);
+  assert.match(summary, /Text\('\+29'\)/);
+  // 统计页预测卡：范围切换 + 绿色渐变（对齐 Anki FutureDue），图内积压复选框
+  assert.doesNotMatch(card, /PanGesture|偏移X|柱子宽度/);
+  assert.match(card, /范围索引: number = 0/);
+  assert.match(card, /取预测柱色/);
+  assert.match(card, /on积压变更/);
+});
+
 test('home UI uses shared dimension tokens instead of magic numbers', () => {
   const dimensPath = 'entry/src/main/ets/utils/应用尺寸.ets';
   assert.equal(existsSync(projectUrl(dimensPath)), true, `${dimensPath} must exist`);

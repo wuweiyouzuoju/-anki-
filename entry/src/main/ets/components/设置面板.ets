@@ -32,11 +32,8 @@ import { 笔记类型编辑器 } from './settings/笔记类型编辑器';
 import { 简洁模式AppStorage键, 加载简洁模式, 保存简洁模式 } from '../model/简洁模式存储';
 import {
   TapZones开关AppStorage键,
-  手写白板开关AppStorage键,
   加载TapZones开关,
-  保存TapZones开关,
-  加载手写白板开关,
-  保存手写白板开关
+  保存TapZones开关
 } from '../model/实验性功能存储';
 import { 字段帮助面板 } from './字段帮助面板';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
@@ -87,6 +84,8 @@ export struct 设置面板 {
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp('状态栏高度') private 状态栏高度: number = 0;
+  // 手势导航条高度（列表滚到底时最后分组需完整滚出导航条区域）
+  @StorageProp('导航条高度') private 导航条高度: number = 0;
   主题模式切换回调: (模式: 主题模式) => void = (模式: 主题模式): void => {
   };
   颜色主题切换回调: (主题: 颜色主题) => void = (主题: 颜色主题): void => {
@@ -127,7 +126,7 @@ export struct 设置面板 {
   @State private 关于分组展开: boolean = false;
   // 当前模式分组（底部）：展开后明文说明 + Select 选择框，替代顶部条 Select
   @State private 当前模式分组展开: boolean = false;
-  // 实验性功能分组（仅实验版可见）：Tap Zones + 手写白板开关，默认折叠
+  // 实验性功能分组（仅实验版可见）：Tap Zones 开关，默认折叠（手写白板已移除开关，常驻学习页更多菜单）
   @State private 实验性分组展开: boolean = false;
   // 不在契约要求中但保持父组件统一管理，便于后续按分组排序。
   // FSRS 分组默认折叠：减少设置页首屏信息密度，用户按需展开。
@@ -165,7 +164,6 @@ export struct 设置面板 {
   @StorageLink(简洁模式AppStorage键) private 简洁模式: boolean = true;
   // 实验性功能：仅「实验版」模式下设置页可见；学习页生效前会再校验当前为实验版
   @StorageLink(TapZones开关AppStorage键) private TapZones开关: boolean = false;
-  @StorageLink(手写白板开关AppStorage键) private 手写白板开关: boolean = false;
   // 清除未用标签状态：数据管理分组入口 → 确认对话框 → 调后端
   @State private 清除标签忙碌: boolean = false;
 
@@ -180,8 +178,6 @@ export struct 设置面板 {
     // 实验性功能开关同样加载持久化值，让 @StorageLink 跨重启保持一致
     const TapZones值: boolean = await 加载TapZones开关();
     AppStorage.setOrCreate<boolean>(TapZones开关AppStorage键, TapZones值);
-    const 手写白板值: boolean = await 加载手写白板开关();
-    AppStorage.setOrCreate<boolean>(手写白板开关AppStorage键, 手写白板值);
   }
 
   private 取本地化文本(资源: Resource): string {
@@ -1118,44 +1114,20 @@ export struct 设置面板 {
           .borderRadius(12)
         }
 
-        // 10. 实验性功能分组：仅「实验版」模式下可见；包含 Tap Zones 快速答题、卡片手写白板。
-        // 每个开关旁加 ⓘ 按钮，点击在根 Stack 顶层弹出 字段帮助面板 说明用法（与 FSRS 分组模式一致）。
+        // 10. 实验性功能分组：仅「实验版」模式下可见；包含 Tap Zones 快速答题。
+        // 分组头部与其他分组同款（无 ⓘ）；开关行旁的 ⓘ 保留说明用法。
         if (!this.简洁模式) {
           ListItem() {
             Column() {
-              // 分组头部：标题 + ⓘ（说明哪些功能算实验性）
-              Row() {
-                Text(this.取本地化文本($r('app.string.settings_experimental_group')))
-                  .fontSize(15)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor(设置面板色板_取(this.是否深色).主文字)
-                Button($r('app.string.field_help_button'))
-                  .type(ButtonType.Normal)
-                  .backgroundColor(Color.Transparent)
-                  .fontSize(14)
-                  .fontColor(设置面板色板_取(this.是否深色).三级文字)
-                  .width(28)
-                  .height(28)
-                  .padding(0)
-                  .margin({ left: 6 })
-                  .onClick(() => {
-                    this.说明标题 = $r('app.string.settings_experimental_group');
-                    this.说明正文 = $r('app.string.settings_experimental_group_hint');
-                    this.显示说明浮层 = true;
-                  })
-                Blank()
-                Text('▼')
-                  .fontSize(11)
-                  .fontColor(设置面板色板_取(this.是否深色).弱化文字)
-                  .rotate({ angle: this.实验性分组展开 ? 0 : -90 })
-                  .animation({ duration: 150, curve: Curve.EaseOut })
-              }
-              .width('100%')
-              .height(40)
-              .onClick(() => {
-                this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => {
-                  this.实验性分组展开 = !this.实验性分组展开;
-                });
+              // 分组头部：与其他分组同款（字号/字色/折叠箭头统一），不带 ⓘ
+              this.分组头部({
+                标题: this.取本地化文本($r('app.string.settings_experimental_group')),
+                已展开: this.实验性分组展开,
+                切换回调: (): void => {
+                  this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => {
+                    this.实验性分组展开 = !this.实验性分组展开;
+                  });
+                }
               })
 
               if (this.实验性分组展开) {
@@ -1187,34 +1159,6 @@ export struct 设置面板 {
                   }
                   .width('100%')
                   .height(48)
-
-                  // 卡片手写白板：浮动工具栏加「手写」按钮
-                  Row() {
-                    Text(this.取本地化文本($r('app.string.settings_study_whiteboard_label')))
-                      .fontSize(15)
-                      .fontColor(设置面板色板_取(this.是否深色).主文字)
-                    Button($r('app.string.field_help_button'))
-                      .type(ButtonType.Normal)
-                      .backgroundColor(Color.Transparent)
-                      .fontSize(14)
-                      .fontColor(设置面板色板_取(this.是否深色).三级文字)
-                      .width(28)
-                      .height(28)
-                      .padding(0)
-                      .margin({ left: 6 })
-                      .onClick(() => {
-                        this.说明标题 = $r('app.string.settings_study_whiteboard_label');
-                        this.说明正文 = $r('app.string.settings_study_whiteboard_hint');
-                        this.显示说明浮层 = true;
-                      })
-                    Blank()
-                    Toggle({ type: ToggleType.Switch, isOn: this.手写白板开关 })
-                      .onChange((开启: boolean): void => {
-                        保存手写白板开关(开启);
-                      })
-                  }
-                  .width('100%')
-                  .height(48)
                 }
                 .width('100%')
               }
@@ -1229,7 +1173,7 @@ export struct 设置面板 {
         }
         .layoutWeight(1)
         .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 16 })
+        .padding({ left: 16, right: 16, top: 8, bottom: 16 + this.导航条高度 })
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
         .alignListItem(ListItemAlign.Center)

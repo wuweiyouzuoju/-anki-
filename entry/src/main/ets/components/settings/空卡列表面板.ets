@@ -159,6 +159,8 @@ export struct 空卡列表面板 {
     this.错误信息 = '';
     try {
       await this.卡片服务实例.删除卡片(选中卡片IDs);
+      // 通知首页刷新牌组计数（本面板挂在设置页内，无 onPop 可依赖）
+      AppStorage.setOrCreate<number>('需要刷新主页', Date.now());
       await this.执行检查();
     } catch (error) {
       this.错误信息 = error instanceof Error ? error.message : `${error}`;

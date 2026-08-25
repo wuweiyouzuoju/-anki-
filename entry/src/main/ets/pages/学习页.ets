@@ -8,6 +8,7 @@
 
 import { common } from '@kit.AbilityKit';
 import { webview } from '@kit.ArkWeb';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { 后端会话 } from '../backend/后端会话';
 import { 调度器服务 } from '../backend/调度器服务';
 import { 卡片渲染服务 } from '../backend/卡片渲染服务';
@@ -45,9 +46,10 @@ import { 学习手写白板层 } from '../components/学习手写白板层';
 import { 学习阶段 } from '../utils/吸附计算器';
 import { 加载学习布局模式, 学习布局模式 } from '../model/学习布局存储';
 import { 简洁模式AppStorage键, 加载简洁模式 } from '../model/简洁模式存储';
-import { TapZones开关AppStorage键, 加载TapZones开关, 手写白板开关AppStorage键, 加载手写白板开关 } from '../model/实验性功能存储';
+import { TapZones开关AppStorage键, 加载TapZones开关 } from '../model/实验性功能存储';
 import { 加载主题模式 } from '../model/主题存储';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
+import { 刷新桌面卡片数据 } from '../model/FSRS控制器';
 import { 颜色键 } from '../model/颜色主题';
 import { CustomTransition } from '../utils/自定义转场';
 // KeyCode 枚举：用于 onKeyPreIme 键盘事件判断（API 12+）。物理键盘/蓝牙键盘/2in1 设备统一派发。
@@ -66,6 +68,21 @@ const SUSPEND_RATING_TAG: number = 101;
 export interface 学习页参数 {
   deckId?: string;
   deckName?: string;
+}
+
+// ========================================================
+// Tap Zones 的 JS→ArkTS 回调代理：卡片 Web 内 click 监听通过
+// window.ankiTapZone.onTap(nx, ny) 回传归一化点击坐标，
+// ArkTS 侧按当前阶段分发（question→翻面 / answer→四象限评分）。
+// registerJavaScriptProxy 要求 class 实例方法，箭头函数成员保 this 捕获。
+// ========================================================
+class TapZone代理 {
+  处理: (nx: number, ny: number) => void = (nx: number, ny: number): void => {
+  };
+
+  onTap(nx: number, ny: number): void {
+    this.处理(nx, ny);
+  }
 }
 
 @Component
@@ -117,9 +134,7 @@ export struct 学习页 {
   @StorageLink(简洁模式AppStorage键) private 简洁模式: boolean = true;
   /** Tap Zones 开关：answer 阶段把屏幕划成 2×2 象限直接评分；question 阶段不拦截 */
   @StorageLink(TapZones开关AppStorage键) private TapZones开关: boolean = false;
-  /** 手写白板开关：开启后「更多」菜单出现「手写」入口，进入后叠加 Canvas 笔迹层 */
-  @StorageLink(手写白板开关AppStorage键) private 手写白板开关: boolean = false;
-  /** 手写模式：用户点「手写」进入后置 true，关闭白板层后置 false */
+  /** 手写模式：用户点「更多」菜单「手写」进入后置 true，关闭白板层后置 false（常驻入口，无开关） */
   @State private 手写模式: boolean = false;
   @State private 主题模式值: 主题模式 = 'system';
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
@@ -131,6 +146,8 @@ export struct 学习页 {
   @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
   // 状态栏高度（沉浸式全屏下，顶部条需让出状态栏区域，避免按钮叠在状态栏上）
   @StorageProp('状态栏高度') private 状态栏高度: number = 0;
+  // 手势导航条高度（bottom 布局下答案条贴底，需抬高避让导航条）
+  @StorageProp('导航条高度') private 导航条高度: number = 0;
   @State private 显示答案按下: boolean = false;
   // 4 个评分按钮共用一个 pressed 状态：按下时记下对应 rating，松开恢复 -1。
   // 用单状态而非 4 个 boolean，避免 4 个 @State 字段爆炸；onTouch Up/Cancel 都恢复 -1 保证松手必复位。
@@ -186,12 +203,6 @@ export struct 学习页 {
     } catch (error) {
       // 加载失败保留默认值 false（关闭）
     }
-    try {
-      const 手写白板持久化值: boolean = await 加载手写白板开关();
-      AppStorage.setOrCreate<boolean>(手写白板开关AppStorage键, 手写白板持久化值);
-    } catch (error) {
-      // 加载失败保留默认值 false（关闭）
-    }
     this.加载兜底文案();
     this.启动会话();
   }
@@ -207,6 +218,16 @@ export struct 学习页 {
     this.TTS播放器实例.释放();
     // 注销自定义转场回调，避免内存泄漏与野回调
     CustomTransition.getInstance().注销NavParam('StudyPage');
+    // 评分已写入后端，pop 离开学习页时异步刷新桌面卡片数据（拉最新 Graphs + 牌组树 → 推送所有桌面卡片）。
+    // 不 await，不阻塞页面销毁；失败静默，不影响主流程。
+    // 解决：学习期间桌面卡片显示旧数据，必须进统计页才更新的问题。
+    // 不在每次评分时刷新：连续答题时避免频繁调后端 Graphs；只在离开学习页时刷新一次。
+    刷新桌面卡片数据().catch((错误: Object): void => {
+      hilog.error(0x4342, '学习页', `离开学习页刷新桌面卡片数据失败: ${错误}`);
+    });
+    // 通知首页刷新牌组计数/今日进度：onPop 在部分设备/API 版本偶发不触发（BUG-006 同类问题），
+    // 此广播作为双保险；加载主页数据 幂等，与 onPop 同时触发只是多跑一次，无副作用。
+    AppStorage.setOrCreate<number>('需要刷新主页', Date.now());
   }
 
   /** 评分按钮兜底文案（后端 DescribeNextStates 异常时可用），启动时从资源读一次 */
@@ -458,8 +479,8 @@ export struct 学习页 {
       { value: this.取文案($r('app.string.study_undo')), action: () => { this.撤销上次(); }, enabled: this.可撤销 },
       { value: this.取文案($r('app.string.study_delete_card')), action: () => { this.请求删除当前卡(); }, enabled: this.阶段 === 'question' || this.阶段 === 'answer' }
     ];
-    // 实验性功能「手写」入口：仅在手写白板开关 + 实验版 + question/answer 阶段时显示
-    if (this.手写白板开关 && !this.简洁模式 && (this.阶段 === 'question' || this.阶段 === 'answer')) {
+    // 「手写」入口：常驻显示（question/answer 阶段），无开关，进入后叠加 Canvas 笔迹层
+    if (this.阶段 === 'question' || this.阶段 === 'answer') {
       菜单.push({
         value: this.取文案($r('app.string.study_handwrite')),
         action: () => { this.手写模式 = true; },
@@ -715,6 +736,39 @@ export struct 学习页 {
       return injected;
     } catch (error) {
       return 剥除拼写标记(answerHtml);
+    }
+  }
+
+  // ========================================================
+  // @名称 处理TapZone点击
+  //
+  // @作用
+  // Tap Zones 回调入口：卡片 Web 内 click 监听（已排除链接/按钮等交互标签）
+  // 回传归一化坐标。question 阶段任意点击=显示答案；
+  // answer 阶段按 2×2 象限评分：左上=重来 右上=困难 左下=良好 右下=简单。
+  //
+  // @输入
+  // nx / ny: 归一化点击坐标 [0,1]
+  //
+  // @业务规则
+  // 仅 TapZones 开关开启且非简洁模式时生效；loading/error/done 阶段忽略。
+  // ========================================================
+  private 处理TapZone点击(nx: number, ny: number): void {
+    if (!this.TapZones开关 || this.简洁模式) {
+      return;
+    }
+    if (this.阶段 === 'question') {
+      this.显示答案();
+      return;
+    }
+    if (this.阶段 === 'answer') {
+      let rating: number;
+      if (ny < 0.5) {
+        rating = nx < 0.5 ? RATING_AGAIN : RATING_HARD;
+      } else {
+        rating = nx < 0.5 ? RATING_GOOD : RATING_EASY;
+      }
+      this.评分(rating);
     }
   }
 
@@ -1040,6 +1094,14 @@ export struct 学习页 {
         // focusable(false)：Web 不抢键盘焦点，让根 Stack 的 onKeyPreIme 稳定接管所有物理键盘事件。
         // 卡片 HTML 的触摸/点击交互不受影响（ArkWeb 内部走 onTouch，不依赖组件焦点）。
         .focusable(false)
+        // Tap Zones：controller attach 后注册 JS 回调代理（页面侧 window.ankiTapZone.onTap(nx, ny)）
+        .onControllerAttached(() => {
+          const 代理: TapZone代理 = new TapZone代理();
+          代理.处理 = (nx: number, ny: number): void => {
+            this.处理TapZone点击(nx, ny);
+          };
+          this.网页控制器.registerJavaScriptProxy(代理, 'ankiTapZone', ['onTap']);
+        })
         .onInterceptRequest((event: OnInterceptRequestEvent): WebResourceResponse | null => {
           return this.拦截媒体(event);
         })
@@ -1049,6 +1111,19 @@ export struct 学习页 {
         // 对 Basic/Cloze 卡片零影响。
         .onPageEnd((event: OnPageEndEvent) => {
           this.网页控制器.runJavaScript('anki.imageOcclusion.setup()');
+          // Tap Zones：注入 click 监听（幂等）。判定在 Web 内部完成——
+          // 点击目标上溯命中 A/BUTTON/INPUT/TEXTAREA/SELECT/CANVAS/AUDIO/VIDEO/IFRAME
+          // 任一交互标签则忽略（链接照常跳转、挖空遮罩照常点），否则回传归一化坐标。
+          this.网页控制器.runJavaScript(
+            '(function(){ if(window.__tapZonesInstalled){return;} window.__tapZonesInstalled=true;'
+            + 'document.addEventListener("click",function(e){'
+            + 'var el=e.target; while(el&&el!==document.body){'
+            + 'var t=el.tagName;'
+            + 'if(t==="A"||t==="BUTTON"||t==="INPUT"||t==="TEXTAREA"||t==="SELECT"||t==="CANVAS"||t==="AUDIO"||t==="VIDEO"||t==="IFRAME"){return;}'
+            + 'el=el.parentElement;}'
+            + 'if(window.ankiTapZone){window.ankiTapZone.onTap(e.clientX/window.innerWidth, e.clientY/window.innerHeight);}'
+            + '},true); })();'
+          );
           // 翻面后自动滚动到答案区（<hr id=answer> 或底部），避免用户手动下滑（2026-07-28 加）。
           // setTimeout 100ms 等图片加载完，避免 scrollIntoView 位置算错。
           if (this.阶段 === 'answer') {
@@ -1060,44 +1135,11 @@ export struct 学习页 {
         .width('100%')
         .height('100%')
 
-      // Tap Zones：实验性功能，仅「实验版」模式下且开关开启时生效。
-      // 仅 answer 阶段铺满卡片区域，2×2 象限映射 Again/Hard/Good/Easy；
-      // question 阶段不加拦截层，保留 Web 触摸（选中文本、点击图片查看大图等）。
-      // 浮动工具栏在外层 Stack 上层，其按钮始终可点不被本层覆盖。
-      if (this.阶段 === 'answer' && this.TapZones开关 && !this.简洁模式) {
-        Column() {
-          Row() {
-            Column()
-              .width('50%')
-              .height('100%')
-              .onClick(() => { this.评分(RATING_AGAIN); })
-            Column()
-              .width('50%')
-              .height('100%')
-              .onClick(() => { this.评分(RATING_HARD); })
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .hitTestBehavior(HitTestMode.Block)
-
-          Row() {
-            Column()
-              .width('50%')
-              .height('100%')
-              .onClick(() => { this.评分(RATING_GOOD); })
-            Column()
-              .width('50%')
-              .height('100%')
-              .onClick(() => { this.评分(RATING_EASY); })
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .hitTestBehavior(HitTestMode.Block)
-        }
-        .width('100%')
-        .height('100%')
-        .hitTestBehavior(HitTestMode.Block)
-      }
+      // Tap Zones（实验性功能，仅「实验版」模式下且开关开启时生效）：
+      // 点击判定在卡片 Web 内部完成（onPageEnd 注入的 click 监听 + javaScriptProxy 回调），
+      // 不再用 ArkUI 覆盖层——覆盖层无法区分"点卡片内容"与"点卡片内链接/交互元素"，
+      // 且会与 Web 的触摸/滚动互相干扰。Web 内判定天然排除 A/INPUT/CANVAS 等交互标签，
+      // 顶部条（返回/更多）与答案条/浮动工具栏（埋藏/暂停/评分按钮）在 ArkUI 层，不受影响。
 
       if (this.有音频) {
         Button($r('app.string.study_replay_sound'))
@@ -1385,7 +1427,8 @@ export struct 学习页 {
       left: 应用尺寸.页面内边距_水平,
       right: 应用尺寸.页面内边距_水平,
       top: 应用尺寸.间距_8,
-      bottom: 应用尺寸.页面内边距_水平
+      // 抬高避让手势导航条（AppGallery 导航栏适配要求）
+      bottom: 应用尺寸.页面内边距_水平 + this.导航条高度
     })
     .backgroundColor($r('app.color.surface_card'))
   }

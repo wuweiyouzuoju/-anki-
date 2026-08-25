@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { 牌组汇总, 主页快照 } from '../model/主页模型';
+import { 牌组汇总, 主页快照, 牌组显示名 } from '../model/主页模型';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 开始学习按钮 } from './开始学习按钮';
 import { 颜色键 } from '../model/颜色主题';
@@ -104,7 +104,7 @@ export struct 牌组详情面板 {
         // 直接用 deck.totalCards 等渲染，不经过 @State 中转。
         ForEach(this.主页快照数据.decks, (deck: 牌组汇总) => {
           if (deck.id === this.选中牌组Id) {
-            Text(deck.displayName !== '' ? deck.displayName : deck.name)
+            Text(牌组显示名(deck))
               .fontSize(应用尺寸.字号_牌组标题)
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))

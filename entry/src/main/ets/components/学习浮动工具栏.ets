@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// 复习页浮动工具栏：可拖动到屏幕侧边，松手竖向吸附到最近一边。
+// 复习页浮动工具栏：可拖动，松手吸附到最近侧边（竖版贴左/右）。
+// 工具栏只有竖版一种形态（按钮纵向排列），拖动与吸附过程不切换布局，
+// 避免形态跳变（曾实现拖动中横版/吸附后竖版双形态，已砍掉）。
 // 主工具栏（main）：question 阶段显示「显示答案」；answer 阶段显示 4 个评分按钮。
 // 辅助工具栏（aux）：question/answer 阶段都显示「埋藏 + 暂停」。
-// 拖动时为横版布局（按钮横向排列，方便手指扫过预览）；
-// 松手吸附后切换为竖版布局（按钮纵向排列，像侧边栏贴在屏幕边缘）。
 // 位置以 vp 为单位持久化（StudyLayoutStore），未持久化时使用默认位置（main 右侧居中、aux 左侧居中）。
 // 监听 display.on('change') 自动适配屏幕尺寸变化与横竖屏切换。
 
@@ -24,8 +24,6 @@ import {
 } from '../proto/messages/SchedulerMessages';
 import {
   边缘留白,
-  顶部预留,
-  底部预留,
   工具栏宽度,
   工具栏高度,
   工具栏标识,
@@ -51,7 +49,7 @@ const 暂停标签: number = 102;
 // @名称 学习浮动工具栏组件声明与状态字段
 //
 // @作用
-// 复习页可拖动浮动工具栏组件主体。维护工具栏位置（vp）、吸附态、当前吸附侧、
+// 复习页可拖动浮动工具栏组件主体。维护工具栏位置（vp）、当前吸附侧、
 // 按下的评分 等响应式状态；持有屏幕宽高与拖动起点等非响应式内部状态。
 // 主工具栏（main）按 学习阶段 切换「显示答案」与 4 个评分按钮；
 // 辅助工具栏（aux）始终显示「埋藏 + 暂停」。
@@ -61,10 +59,10 @@ const 暂停标签: number = 102;
 // 评分按钮文案 / 兜底文案 / 是否深色 / 显示答案回调 / 埋藏回调 / 暂停回调 / 评分回调。
 //
 // @输出
-// 一个可拖动的浮动浮卡（Stack 容器，position 绝对定位），按吸附态切换横/竖版布局。
+// 一个可拖动的浮动浮卡（Stack 容器，position 绝对定位），竖版布局。
 //
 // @业务规则
-// 字符串值 'main' / 'aux' / 'left' / 'right' / 'top' / 'bottom' /
+// 字符串值 'main' / 'aux' / 'left' / 'right' /
 // 'loading' / 'question' / 'answer' / 'done' / 'error' 保留英文
 // （作为持久化与跨模块约定值）。
 // @StorageProp 绑定 颜色键.* 全局主题色键，跟随用户选择的主题即时刷新。
@@ -80,8 +78,9 @@ const 暂停标签: number = 102;
 export struct 学习浮动工具栏 {
   /** 工具栏标识：main=主操作；aux=辅助操作。决定默认位置和按钮内容。 */
   @Prop 工具栏类型: 学习工具栏标识 = 'main';
-  /** 复习阶段：决定主工具栏显示「显示答案」还是 4 个评分按钮。 */
-  @Prop 当前阶段: 学习阶段 = 'question';
+  /** 复习阶段：决定主工具栏显示「显示答案」还是 4 个评分按钮。
+   *  高度按阶段区分（question 80 / answer 360），阶段切换后位置需重夹紧防溢出。 */
+  @Prop @Watch('阶段变化') 当前阶段: 学习阶段 = 'question';
   /** 评分按钮文案（DescribeNextStates 返回）；为空时用兜底文案。 */
   @Prop 评分按钮文案: string[] = [];
   /** 评分按钮兜底文案（兜底文案 同长度 4）。 */
@@ -100,9 +99,7 @@ export struct 学习浮动工具栏 {
   @State private 位置Y: number = 0;
   /** 位置是否已从 preferences 加载完毕；未加载完不渲染，避免位置闪一下默认值。 */
   @State private 位置已加载: boolean = false;
-  /** 当前是否为吸附态（竖版布局）。拖动中为 false（横版），松手后为 true（竖版）。 */
-  @State private 是否吸附: boolean = true;
-  /** 吸附在哪一侧。是否吸附=true 时有效。 */
+  /** 吸附在哪一侧（left/right）。 */
   @State private 当前吸附侧: 吸附侧 = 'right';
 
   /** 屏幕宽高（vp），用于松手吸附和边界夹紧。 */
@@ -149,7 +146,7 @@ export struct 学习浮动工具栏 {
   //
   // @输入
   // 读取屏幕尺寸：无；注册监听：无；注销监听：无（读 this.屏幕变化回调）。
-  // 监听回调内读 this.屏幕宽vp / this.屏幕高vp / this.当前吸附侧 / this.工具栏类型 / this.是否吸附 / this.当前阶段 / this.位置X / this.位置Y。
+  // 监听回调内读 this.屏幕宽vp / this.屏幕高vp / this.当前吸附侧 / this.工具栏类型 / this.当前阶段 / this.位置Y。
   //
   // @输出
   // 更新 this.屏幕宽vp / this.屏幕高vp / this.位置X / this.位置Y / this.屏幕变化回调。
@@ -157,7 +154,7 @@ export struct 学习浮动工具栏 {
   // @业务规则
   // 取不到屏幕尺寸时用保守值 360×720，避免除零。
   // 屏幕尺寸未变化时不处理（避免无谓重夹紧）。
-  // 按 当前吸附侧 重新贴到对应边：left/right 用 边缘留白；top 用 顶部预留；bottom 用 底部预留。
+  // 按 当前吸附侧 重新贴到对应边：left/right 用 边缘留白，Y 经 夹紧Y方向。
   //
   // @副作用
   // display.on('change') / display.off('change')；写入响应式 位置X/位置Y 触发重 build。
@@ -190,21 +187,13 @@ export struct 学习浮动工具栏 {
         return;
       }
       // 按 当前吸附侧 重新贴到对应边
-      const 最终宽: number = 工具栏宽度(this.工具栏类型, this.是否吸附);
-      const 最终高: number = 工具栏高度(this.工具栏类型, this.是否吸附, this.当前阶段);
+      const 宽: number = 工具栏宽度(this.工具栏类型);
       if (this.当前吸附侧 === 'left') {
         this.位置X = 边缘留白;
-        this.位置Y = 夹紧Y方向(this.位置Y, this.屏幕高vp, this.工具栏类型, this.是否吸附, this.当前阶段);
-      } else if (this.当前吸附侧 === 'right') {
-        this.位置X = Math.max(边缘留白, this.屏幕宽vp - 最终宽 - 边缘留白);
-        this.位置Y = 夹紧Y方向(this.位置Y, this.屏幕高vp, this.工具栏类型, this.是否吸附, this.当前阶段);
-      } else if (this.当前吸附侧 === 'top') {
-        this.位置X = 夹紧X方向(this.位置X, this.屏幕宽vp, this.工具栏类型, this.是否吸附);
-        this.位置Y = 顶部预留;
-      } else {  // bottom
-        this.位置X = 夹紧X方向(this.位置X, this.屏幕宽vp, this.工具栏类型, this.是否吸附);
-        this.位置Y = Math.max(顶部预留, this.屏幕高vp - 最终高 - 底部预留);
+      } else {
+        this.位置X = Math.max(边缘留白, this.屏幕宽vp - 宽 - 边缘留白);
       }
+      this.位置Y = 夹紧Y方向(this.位置Y, this.屏幕高vp, this.工具栏类型, this.当前阶段);
     };
     try {
       display.on('change', 屏幕变化回调函数);
@@ -233,7 +222,7 @@ export struct 学习浮动工具栏 {
   //
   // @作用
   // 加载已保存的工具栏位置（preferences），无保存时用默认位置（main 右侧居中、aux 左侧居中）；
-  // 推断吸附侧时综合考虑到四边的距离，最近边作为吸附侧。提供持久化当前位置的辅助方法。
+  // 推断吸附侧时按中心点 X 判断贴左还是贴右。提供持久化当前位置的辅助方法。
   //
   // @输入
   // 加载初始位置：无（读 this.工具栏类型 / this.当前阶段 / this.屏幕宽vp / this.屏幕高vp）；
@@ -241,13 +230,12 @@ export struct 学习浮动工具栏 {
   // 持久化位置：无（读 this.工具栏类型 / this.位置X / this.位置Y）。
   //
   // @输出
-  // 加载初始位置：写 this.是否吸附 / this.当前吸附侧 / this.位置X / this.位置Y / this.位置已加载。
+  // 加载初始位置：写 this.当前吸附侧 / this.位置X / this.位置Y / this.位置已加载。
   // 默认位置：返回 工具栏位置。
   // 持久化位置：写 preferences。
   //
   // @业务规则
-  // 推断时按竖版尺寸算（与默认吸附态一致）。
-  // 默认位置即吸附态（竖版）：main 贴右侧垂直居中；aux 贴左侧垂直居中。
+  // 默认位置即吸附态：main 贴右侧垂直居中；aux 贴左侧垂直居中。
   // 持久化为 fire-and-forget。
   //
   // @副作用
@@ -255,45 +243,41 @@ export struct 学习浮动工具栏 {
   // ========================================================
 
   /** 加载已保存位置；没有则用默认位置（main 右侧居中、aux 左侧居中）。
-   *  推断 当前吸附侧 时综合考虑到四边的距离，最近边作为吸附侧。 */
+   *  推断 当前吸附侧 时按中心点 X 判断贴左还是贴右。 */
   private async 加载初始位置(): Promise<void> {
     const 已保存位置: 工具栏位置 | null = await 加载工具栏位置(this.工具栏类型);
     if (已保存位置 !== null) {
-      // 推断时按竖版尺寸算（与默认吸附态一致）
       const 推断结果 = 推断吸附侧(
         已保存位置.x, 已保存位置.y,
         this.屏幕宽vp, this.屏幕高vp,
         this.工具栏类型, this.当前阶段
       );
-      this.是否吸附 = 推断结果.是否吸附;
       this.当前吸附侧 = 推断结果.吸附侧;
-      this.位置X = 夹紧X方向(已保存位置.x, this.屏幕宽vp, this.工具栏类型, this.是否吸附);
-      this.位置Y = 夹紧Y方向(已保存位置.y, this.屏幕高vp, this.工具栏类型, this.是否吸附, this.当前阶段);
+      this.位置X = 夹紧X方向(已保存位置.x, this.屏幕宽vp, this.工具栏类型);
+      this.位置Y = 夹紧Y方向(已保存位置.y, this.屏幕高vp, this.工具栏类型, this.当前阶段);
     } else {
       const 默认位置值: 工具栏位置 = this.默认位置();
       this.位置X = 默认位置值.x;
       this.位置Y = 默认位置值.y;
       this.当前吸附侧 = this.工具栏类型 === 'main' ? 'right' : 'left';
-      this.是否吸附 = true;
     }
     this.位置已加载 = true;
   }
 
   /** 默认位置：main 贴右侧垂直居中、aux 贴左侧垂直居中。 */
   private 默认位置(): 工具栏位置 {
-    // 默认就是吸附态（竖版）
-    const 宽: number = 工具栏宽度(this.工具栏类型, true);
-    const 高: number = 工具栏高度(this.工具栏类型, true, this.当前阶段);
+    const 宽: number = 工具栏宽度(this.工具栏类型);
+    const 高: number = 工具栏高度(this.工具栏类型, this.当前阶段);
     if (this.工具栏类型 === 'main') {
       const 位置: 工具栏位置 = {
-        x: 夹紧X方向(this.屏幕宽vp - 宽 - 边缘留白, this.屏幕宽vp, this.工具栏类型, true),
-        y: 夹紧Y方向((this.屏幕高vp - 高) / 2, this.屏幕高vp, this.工具栏类型, true, this.当前阶段)
+        x: 夹紧X方向(this.屏幕宽vp - 宽 - 边缘留白, this.屏幕宽vp, this.工具栏类型),
+        y: 夹紧Y方向((this.屏幕高vp - 高) / 2, this.屏幕高vp, this.工具栏类型, this.当前阶段)
       };
       return 位置;
     }
     const 位置: 工具栏位置 = {
-      x: 夹紧X方向(边缘留白, this.屏幕宽vp, this.工具栏类型, true),
-      y: 夹紧Y方向((this.屏幕高vp - 高) / 2, this.屏幕高vp, this.工具栏类型, true, this.当前阶段)
+      x: 夹紧X方向(边缘留白, this.屏幕宽vp, this.工具栏类型),
+      y: 夹紧Y方向((this.屏幕高vp - 高) / 2, this.屏幕高vp, this.工具栏类型, this.当前阶段)
     };
     return 位置;
   }
@@ -309,26 +293,26 @@ export struct 学习浮动工具栏 {
   //
   // @作用
   // PanGesture 三阶段处理：
-  // - 拖动开始：保持当前布局（不切换），记录手指落点和工具栏起点；
+  // - 拖动开始：记录手指落点和工具栏起点；
   // - 拖动更新：按手指偏移量增量更新工具栏位置，并夹紧到屏幕边界内；
-  // - 拖动结束：调 吸附到侧边 切换到最近侧边（左/右竖版、顶/底横版）并持久化。
+  // - 拖动结束：调 吸附到侧边 贴到最近的左/右侧边并持久化。
   //
   // @输入
   // 拖动开始/更新：GestureEvent；拖动结束：无。
   //
   // @输出
-  // 更新 this.位置X / this.位置Y / this.当前吸附侧 / this.是否吸附 / this.拖动起点*。
+  // 更新 this.位置X / this.位置Y / this.当前吸附侧 / this.拖动起点*。
   //
   // @业务规则
-  // 拖动中保持原布局，松手时根据最终位置决定切换到竖版（贴左/右）或横版（贴顶/底）。
+  // 拖动中保持竖版布局不切换；松手时按中心点 X 贴到左/右较近一侧。
   // 位置更新时立即夹紧，避免拖出可见区域。
   //
   // @副作用
   // 拖动结束调 持久化位置 写 preferences；写响应式字段触发重 build。
   // ========================================================
 
-  /** PanGesture 起点：保持当前布局（不切换），仅记录手指落点和工具栏起点。
-   *  松手时根据最终位置决定切换到竖版（贴左/右）或横版（贴顶/底）。 */
+  /** PanGesture 起点：记录手指落点和工具栏起点。
+   *  松手时按中心点 X 贴到左/右较近一侧。 */
   private 拖动开始(event: GestureEvent): void {
     this.拖动起点手指X = event.fingerList[0].localX;
     this.拖动起点手指Y = event.fingerList[0].localY;
@@ -342,11 +326,11 @@ export struct 学习浮动工具栏 {
     const 手指Y_vp: number = event.fingerList[0].localY;
     const 增量X: number = 手指X_vp - this.拖动起点手指X;
     const 增量Y: number = 手指Y_vp - this.拖动起点手指Y;
-    this.位置X = 夹紧X方向(this.拖动起点位置X + 增量X, this.屏幕宽vp, this.工具栏类型, this.是否吸附);
-    this.位置Y = 夹紧Y方向(this.拖动起点位置Y + 增量Y, this.屏幕高vp, this.工具栏类型, this.是否吸附, this.当前阶段);
+    this.位置X = 夹紧X方向(this.拖动起点位置X + 增量X, this.屏幕宽vp, this.工具栏类型);
+    this.位置Y = 夹紧Y方向(this.拖动起点位置Y + 增量Y, this.屏幕高vp, this.工具栏类型, this.当前阶段);
   }
 
-  /** PanGesture 结束：吸附到最近侧边（竖版）并持久化。 */
+  /** PanGesture 结束：吸附到最近侧边（左/右）并持久化。 */
   private 拖动结束(): void {
     const 吸附结果值: 吸附结果 = 吸附到侧边(
       this.位置X, this.位置Y,
@@ -356,8 +340,18 @@ export struct 学习浮动工具栏 {
     this.位置X = 吸附结果值.x;
     this.位置Y = 吸附结果值.y;
     this.当前吸附侧 = 吸附结果值.吸附侧;
-    this.是否吸附 = 吸附结果值.是否吸附;
     this.持久化位置();
+  }
+
+  /** 阶段切换回调（@Watch 当前阶段）：main 工具栏高度随阶段变化
+   *  （question 80 / answer 360），原位置可能超出屏幕，重新夹紧。
+   *  两个方向都夹紧——夹紧函数对未越界的值是恒等操作，无副作用。 */
+  private 阶段变化(): void {
+    if (!this.位置已加载) {
+      return;
+    }
+    this.位置X = 夹紧X方向(this.位置X, this.屏幕宽vp, this.工具栏类型);
+    this.位置Y = 夹紧Y方向(this.位置Y, this.屏幕高vp, this.工具栏类型, this.当前阶段);
   }
 
   // ========================================================
@@ -406,125 +400,10 @@ export struct 学习浮动工具栏 {
 
   // ========================================================
   // @块ID COMP-STUDY-TOOLBAR-006
-  // @名称 横版布局构建器集合
-  //
-  // @作用
-  // 拖动中（非吸附态）的横版布局 4 个 @Builder：
-  // - 横版显示答案按钮：main 在 question 阶段显示「显示答案」；
-  // - 横版评分按钮 / 横版评分按钮行：main 在 answer 阶段显示 4 个评分按钮横向排列；
-  // - 横版辅助按钮：aux 始终显示「埋藏 + 暂停」横向排列。
-  //
-  // @输入
-  // 横版评分按钮：评分（number）/ 文字色（ResourceColor）。
-  //
-  // @输出
-  // 渲染 Button / Row 横版组合，layoutWeight 平均分配宽度。
-  //
-  // @业务规则
-  // 按下态：背景切到 主色容器/主色按钮按下（评分用 主色容器；显示答案用 主色按钮按下）；
-  // GOOD 评分按下时边框高亮 动作主色。
-  // 触摸事件：Down 记 按下的评分；Up/Cancel 恢复 -1。
-  //
-  // @副作用
-  // 无（仅渲染；点击通过 显示答案回调 / 评分回调 / 埋藏回调 / 暂停回调 上抛）。
-  // ========================================================
-
-  @Builder
-  private 横版显示答案按钮() {
-    Button($r('app.string.study_show_answer'))
-      .width('100%')
-      .height(应用尺寸.行动按钮高度)
-      .fontSize(应用尺寸.字号_标题)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(Color.White)
-      .backgroundColor(this.按下的评分 === 显示答案标签 ? this.主色按钮按下 : this.主色按钮背景)
-      .borderRadius(应用尺寸.圆角_面板)
-      .animation({ duration: 80, curve: Curve.EaseOut })
-      .onTouch((event: TouchEvent): void => {
-        if (event.type === TouchType.Down) { this.按下的评分 = 显示答案标签; }
-        else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下的评分 = -1; }
-      })
-      .onClick(() => {
-        this.显示答案回调();
-      })
-  }
-
-  @Builder
-  private 横版评分按钮(评分: number, 文字色: ResourceColor) {
-    Button(this.取评分按钮文案(评分))
-      .layoutWeight(1)
-      .height(应用尺寸.行动按钮高度)
-      .fontSize(应用尺寸.字号_按钮)
-      .fontColor(文字色)
-      .backgroundColor(this.按下的评分 === 评分 ? this.主色容器 : $r('app.color.surface_card'))
-      .border({ width: 应用尺寸.卡片边框, color: 评分 === RATING_GOOD && this.按下的评分 === 评分 ? this.动作主色 : $r('app.color.border_subtle') })
-      .borderRadius(应用尺寸.圆角_面板)
-      .animation({ duration: 80, curve: Curve.EaseOut })
-      .onTouch((event: TouchEvent): void => {
-        if (event.type === TouchType.Down) { this.按下的评分 = 评分; }
-        else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下的评分 = -1; }
-      })
-      .onClick(() => {
-        this.评分回调(评分);
-      })
-  }
-
-  @Builder
-  private 横版评分按钮行() {
-    Row({ space: 应用尺寸.间距_8 }) {
-      this.横版评分按钮(RATING_AGAIN, $r('app.color.error_text'))
-      this.横版评分按钮(RATING_HARD, $r('app.color.text_primary'))
-      this.横版评分按钮(RATING_GOOD, this.动作主色)
-      this.横版评分按钮(RATING_EASY, $r('app.color.text_primary'))
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 横版辅助按钮() {
-    Row({ space: 应用尺寸.间距_8 }) {
-      Button($r('app.string.study_bury'))
-        .layoutWeight(1)
-        .height(应用尺寸.按钮高度)
-        .fontSize(应用尺寸.字号_正文_中)
-        .fontColor($r('app.color.text_secondary'))
-        .backgroundColor(this.按下的评分 === 埋藏标签 ? this.主色容器 : $r('app.color.surface_card'))
-        .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-        .borderRadius(应用尺寸.圆角_面板)
-        .animation({ duration: 80, curve: Curve.EaseOut })
-        .onTouch((event: TouchEvent): void => {
-          if (event.type === TouchType.Down) { this.按下的评分 = 埋藏标签; }
-          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下的评分 = -1; }
-        })
-        .onClick(() => {
-          this.埋藏回调();
-        })
-      Button($r('app.string.study_suspend'))
-        .layoutWeight(1)
-        .height(应用尺寸.按钮高度)
-        .fontSize(应用尺寸.字号_正文_中)
-        .fontColor($r('app.color.text_secondary'))
-        .backgroundColor(this.按下的评分 === 暂停标签 ? this.主色容器 : $r('app.color.surface_card'))
-        .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-        .borderRadius(应用尺寸.圆角_面板)
-        .animation({ duration: 80, curve: Curve.EaseOut })
-        .onTouch((event: TouchEvent): void => {
-          if (event.type === TouchType.Down) { this.按下的评分 = 暂停标签; }
-          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下的评分 = -1; }
-        })
-        .onClick(() => {
-          this.暂停回调();
-        })
-    }
-    .width('100%')
-  }
-
-  // ========================================================
-  // @块ID COMP-STUDY-TOOLBAR-007
   // @名称 竖版布局构建器集合
   //
   // @作用
-  // 吸附态（竖版）的 4 个 @Builder：
+  // 竖版布局的 4 个 @Builder：
   // - 竖版显示答案按钮：main 在 question 阶段，文字允许 maxLines=2 跨行；
   // - 竖版评分按钮 / 竖版评分按钮列：main 在 answer 阶段，4 个评分按钮纵向排列；
   // - 竖版辅助按钮：aux 始终显示「埋藏 + 暂停」纵向排列。
@@ -536,8 +415,10 @@ export struct 学习浮动工具栏 {
   // 渲染 Button / Column 竖版组合，layoutWeight 平均分配高度。
   //
   // @业务规则
-  // 按下态背景与边框规则同横版（COMP-STUDY-TOOLBAR-006）。
-  // 竖版按钮内 Text 用 maxLines=2 + Ellipsis，允许跨行展示完整文案。
+  // 按下态：背景切到 主色容器/主色按钮按下（评分用 主色容器；显示答案用 主色按钮按下）；
+  // GOOD 评分按下时边框高亮 动作主色。
+  // 触摸事件：Down 记 按下的评分；Up/Cancel 恢复 -1。
+  // 按钮内 Text 用 maxLines=2 + Ellipsis，允许跨行展示完整文案。
   //
   // @副作用
   // 无（仅渲染；点击通过 显示答案回调 / 评分回调 / 埋藏回调 / 暂停回调 上抛）。
@@ -657,19 +538,19 @@ export struct 学习浮动工具栏 {
   }
 
   // ========================================================
-  // @块ID COMP-STUDY-TOOLBAR-008
+  // @块ID COMP-STUDY-TOOLBAR-007
   // @名称 主构建方法
   //
   // @作用
   // 主 build：位置未加载完前不渲染（避免位置闪一下默认值）；
-  // 加载完后按 是否吸附 切换竖版/横版布局，外层 Stack 用 position 绝对定位到 位置X/位置Y。
+  // 加载完后渲染竖版布局，外层 Stack 用 position 绝对定位到 位置X/位置Y。
   //
   // @输入
-  // 读 this.位置已加载 / this.是否吸附 / this.工具栏类型 / this.当前阶段 / this.位置X / this.位置Y。
+  // 读 this.位置已加载 / this.工具栏类型 / this.当前阶段 / this.位置X / this.位置Y。
   //
   // @输出
   // 渲染一个 Stack（width/height 由 工具栏宽度 / 工具栏高度 计算），position 绝对定位；
-  // 内层 Column 按 是否吸附 切换竖版/横版布局，padding/背景/圆角/边框/阴影统一。
+  // 内层 Column 竖版布局，padding/背景/圆角/边框/阴影统一。
   //
   // @业务规则
   // Stack 仅作占位容器不影响布局；PanGesture 三阶段分别调 拖动开始/拖动更新/拖动结束。
@@ -687,55 +568,31 @@ export struct 学习浮动工具栏 {
       .height(0)
     } else {
       Stack() {
-        if (this.是否吸附) {
-          // 竖版布局（吸附态）：按钮纵向排列
-          Column() {
-            if (this.工具栏类型 === 'main') {
-              if (this.当前阶段 === 'question') {
-                this.竖版显示答案按钮()
-              } else if (this.当前阶段 === 'answer') {
-                this.竖版评分按钮列()
-              }
-            } else {
-              if (this.当前阶段 === 'question' || this.当前阶段 === 'answer') {
-                this.竖版辅助按钮()
-              }
+        // 竖版布局：按钮纵向排列（唯一形态，拖动与吸附不切换）
+        Column() {
+          if (this.工具栏类型 === 'main') {
+            if (this.当前阶段 === 'question') {
+              this.竖版显示答案按钮()
+            } else if (this.当前阶段 === 'answer') {
+              this.竖版评分按钮列()
+            }
+          } else {
+            if (this.当前阶段 === 'question' || this.当前阶段 === 'answer') {
+              this.竖版辅助按钮()
             }
           }
-          .width('100%')
-          .height('100%')
-          .padding(应用尺寸.间距_8)
-          .backgroundColor(this.浮卡底色())
-          .borderRadius(应用尺寸.圆角_面板)
-          .border({ width: 应用尺寸.卡片边框, color: this.主色边框 })
-          .shadow(this.阴影样式())
-        } else {
-          // 横版布局（拖动中）：按钮横向排列
-          Column({ space: 应用尺寸.间距_8 }) {
-            if (this.工具栏类型 === 'main') {
-              if (this.当前阶段 === 'question') {
-                this.横版显示答案按钮()
-              } else if (this.当前阶段 === 'answer') {
-                this.横版评分按钮行()
-              }
-            } else {
-              if (this.当前阶段 === 'question' || this.当前阶段 === 'answer') {
-                this.横版辅助按钮()
-              }
-            }
-          }
-          .width('100%')
-          .height('100%')
-          .padding(应用尺寸.间距_8)
-          .backgroundColor(this.浮卡底色())
-          .borderRadius(应用尺寸.圆角_面板)
-          .border({ width: 应用尺寸.卡片边框, color: this.主色边框 })
-          .shadow(this.阴影样式())
         }
+        .width('100%')
+        .height('100%')
+        .padding(应用尺寸.间距_8)
+        .backgroundColor(this.浮卡底色())
+        .borderRadius(应用尺寸.圆角_面板)
+        .border({ width: 应用尺寸.卡片边框, color: this.主色边框 })
+        .shadow(this.阴影样式())
       }
       // position 是绝对定位（相对父容器左上角），Stack 作占位容器不影响布局
-      .width(工具栏宽度(this.工具栏类型, this.是否吸附))
-      .height(工具栏高度(this.工具栏类型, this.是否吸附, this.当前阶段))
+      .width(工具栏宽度(this.工具栏类型))
+      .height(工具栏高度(this.工具栏类型, this.当前阶段))
       .position({ x: this.位置X, y: this.位置Y })
       .gesture(
         PanGesture()

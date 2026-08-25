@@ -30,7 +30,7 @@ test('English resources are translated and contain no Chinese copy', () => {
   assert.equal(existsSync(join(root, english)), true, 'English resources must exist');
   const zhItems = new Map(JSON.parse(read('entry/src/main/resources/base/element/string.json')).string
     .map((item) => [item.name, item.value]));
-  const allowedIdenticalValues = new Set(['working_name', 'entry_ability_desc', 'feedback_email', 'app_about_copyright', 'field_help_button', 'image_occlusion_c_label', 'stats_retention_rate', 'reminder_help_icon', 'reminder_edit_time_colon']);
+  const allowedIdenticalValues = new Set(['working_name', 'entry_ability_desc', 'feedback_email', 'app_about_copyright', 'field_help_button', 'image_occlusion_c_label', 'stats_retention_rate', 'reminder_edit_time_colon', 'stats_range_p50', 'stats_range_p95', 'stats_range_p100', 'stats_retrievability_average_value']);
   for (const item of JSON.parse(read(english)).string) {
     assert.doesNotMatch(item.value, /[\u4e00-\u9fff]/, `${item.name} must be English`);
     if (!allowedIdenticalValues.has(item.name)) {

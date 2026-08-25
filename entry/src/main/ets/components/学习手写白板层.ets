@@ -19,6 +19,8 @@ export struct 学习手写白板层 {
   @Prop 是否深色: boolean = false;
   onClose: () => void = (): void => {};
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
+  // 状态栏高度：学习页沉浸式全屏，白板层铺满根 Stack，工具栏需下移避让状态栏
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
   private 上下文: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
   private 画布宽: number = 0;
   private 画布高: number = 0;
@@ -56,7 +58,8 @@ export struct 学习手写白板层 {
   }
 
   build() {
-    Stack() {
+    // alignContent 必须显式设为 Top：Stack 默认 Center，会把工具栏摆到页面中间
+    Stack({ alignContent: Alignment.Top }) {
       // 半透明背景：让用户能看到下层卡片，同时区分白板模式
       Column()
         .width('100%')
@@ -170,6 +173,7 @@ export struct 学习手写白板层 {
       }
       .width('100%')
       .height(应用尺寸.工具栏高度)
+      .margin({ top: this.状态栏高度 })
       .padding({
         left: 应用尺寸.页面内边距_水平,
         right: 应用尺寸.页面内边距_水平,

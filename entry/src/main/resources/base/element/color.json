@@ -26,11 +26,11 @@
     },
     {
       "name": "text_secondary",
-      "value": "#667085"
+      "value": "#5D6878"
     },
     {
       "name": "text_tertiary",
-      "value": "#5A6478"
+      "value": "#525C70"
     },
     {
       "name": "action_primary",
@@ -54,11 +54,11 @@
     },
     {
       "name": "status_ready",
-      "value": "#238463"
+      "value": "#1C7354"
     },
     {
       "name": "error_text",
-      "value": "#D92D20"
+      "value": "#C0241C"
     },
     {
       "name": "warning_text",
@@ -66,11 +66,11 @@
     },
     {
       "name": "count_new",
-      "value": "#366ECE"
+      "value": "#2E63BC"
     },
     {
       "name": "count_learning",
-      "value": "#A05D1C"
+      "value": "#94541A"
     },
     {
       "name": "count_review",

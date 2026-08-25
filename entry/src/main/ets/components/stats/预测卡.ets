@@ -1,92 +1,184 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// 预测卡：渲染 GraphsView.futureDue 为可水平拖动的垂直柱状图。
-// 30 根柱子固定宽度（36vp），超出屏幕宽度，支持拖动 + snap 对齐到最近柱子居中。
-// 当前对齐柱子全不透明，其他柱子半透明（0.5），突出当前焦点。
-// 显示积压=true 时也展示负键（积压天数），用灰色区分。
-// 底部信息行对齐 Anki 桌面端 Future Due 表格：总计 / 平均 / 日均 / 明日到期。
+// 预测卡：渲染 GraphsView.futureDue 为绿色渐变柱状图（对齐 Anki FutureDue）。
+// 色带 Greens t∈[0.3,0.7]：积压/最近深绿 → 最远浅绿；范围切换 1月/3月/1年/全部；
+// haveBacklog 时图内显示"积压"复选框（切换即写偏好，与 Anki autoSavingPrefs 一致）。
+// 底部统计表：总计 / 平均 / 明日到期 / 日均负载。
+// Invariants: build 单根 Column；负键 = 积压天数，仅在 显示积压 时参与渲染与总计。
 
 import type { FutureDue } from '../../proto/messages/StatsMessages';
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 颜色键 } from '../../model/颜色主题';
+import { 取预测柱色 } from '../../model/统计色板';
+import { 取轴域 } from '../../model/统计分箱';
+import type { 轴域 } from '../../model/统计分箱';
+import { 范围切换条 } from './范围切换条';
+import { 纵轴刻度, 横轴日期条, 纵轴宽 } from './图表轴';
 
-interface 预测项 {
-  天数: number;
+/** 单柱：位置（0=最左/最深积压）+ 数量 */
+interface 预测柱 {
   数量: number;
+  是否积压: boolean;
 }
 
 @Component
 export struct 预测卡 {
   @Prop @Watch('更新缓存') 预测数据: FutureDue | null = null;
   @Prop @Watch('更新缓存') 显示积压: boolean = false;
-  @StorageProp(颜色键.动作主色) private 主色: string = '#2F5FD0';
-  @StorageProp(颜色键.主色容器) private 容器色: string = '#E8EEFC';
-  @State 偏移X: number = 0;
-  @State 当前索引: number = 0;
-  @State 起始偏移: number = 0;
-  @State 容器宽度: number = 0;
-  private readonly 图表高度: number = 120;
-  private readonly 柱子区高度: number = 108;
-  private readonly 数字标签高度: number = 12;
-  private readonly 显示天数: number = 30;
-  private readonly 柱子宽度: number = 36; // vp，含间距，足够容纳 3 位数字
-  private 条目缓存: 预测项[] = [];
+  @Prop 是否显示全部: boolean = false;
+  /** 积压复选框切换回调：父组件负责写 GraphPreferences（Anki 保存即生效） */
+  on积压变更: (值: boolean) => void = (): void => {};
+  @State private 范围索引: number = 0;
+  @State private 柱缓存: 预测柱[] = [];
+  private readonly 柱区高度: number = 108;
+  private readonly 范围标签: Resource[] = [
+    $r('app.string.stats_hours_range_1m'),
+    $r('app.string.stats_hours_range_3m'),
+    $r('app.string.stats_hours_range_1y'),
+    $r('app.string.stats_hours_range_all')
+  ];
+  @StorageProp(颜色键.主色按钮背景) private 主色按钮背景: string = '#2F5FD0';
 
-  aboutToAppear() {
-    this.条目缓存 = this.取条目();
+  aboutToAppear(): void {
+    this.更新缓存();
   }
 
-  更新缓存() {
-    this.条目缓存 = this.取条目();
-    this.当前索引 = 0;
-    this.偏移X = this.取对齐偏移(0);
-  }
-
-  private 取条目(): 预测项[] {
+  /** 范围 → 前瞻天数（0=1月 1=3月 2=1年 3=全部取数据最大键） */
+  private 取范围天数(): number {
     if (this.预测数据 === null || this.预测数据.futureDue === null) {
-      return [];
+      return 31;
     }
-    const 项列表: 预测项[] = [];
-    this.预测数据.futureDue.forEach((值: number, 键: number) => {
-      if (键 >= 0 || this.显示积压) {
-        const 项: 预测项 = { 天数: 键, 数量: 值 };
-        项列表.push(项);
+    switch (this.范围索引) {
+      case 0: return 31;
+      case 1: return 90;
+      case 2: return 365;
+      default: {
+        let 最大: number = 0;
+        this.预测数据.futureDue.forEach((量: number, 键: number) => {
+          if (量 > 0 && 键 > 最大) {
+            最大 = 键;
+          }
+        });
+        return Math.max(1, 最大);
+      }
+    }
+  }
+
+  /** 分箱步长：1月=1 天/柱，3月=2，1年=5，全部=ceil(天数/70)（Anki 70 柱上限） */
+  private 取步长(): number {
+    const 天数: number = this.取范围天数();
+    if (this.范围索引 === 0) {
+      return 1;
+    }
+    if (this.范围索引 === 1) {
+      return 2;
+    }
+    if (this.范围索引 === 2) {
+      return 5;
+    }
+    return Math.max(1, Math.ceil((天数 + 1) / 70));
+  }
+
+  更新缓存(): void {
+    const 柱: 预测柱[] = [];
+    if (this.预测数据 !== null && this.预测数据.futureDue !== null) {
+      const 步长: number = this.取步长();
+      const 前瞻天数: number = this.取范围天数();
+      // 积压（负键）：仅在 显示积压 时分箱，排在最前
+      if (this.显示积压) {
+        let 最深积压: number = 0;
+        this.预测数据.futureDue.forEach((量: number, 键: number) => {
+          if (量 > 0 && 键 < 最深积压) {
+            最深积压 = 键;
+          }
+        });
+        const 积压柱数: number = Math.floor(Math.abs(最深积压) / 步长) + (最深积压 < 0 ? 1 : 0);
+        for (let i = 0; i < 积压柱数; i++) {
+          柱.push({ 数量: 0, 是否积压: true });
+        }
+        this.预测数据.futureDue.forEach((量: number, 键: number) => {
+          if (键 < 0 && 量 > 0) {
+            const 索引: number = Math.floor((-键 - 1) / 步长);
+            if (索引 >= 0 && 索引 < 积压柱数) {
+              柱[索引].数量 += 量;
+            }
+          }
+        });
+      }
+      // 未来（0~前瞻天数）
+      const 未来柱数: number = Math.floor(前瞻天数 / 步长) + 1;
+      const 起始: number = 柱.length;
+      for (let i = 0; i < 未来柱数; i++) {
+        柱.push({ 数量: 0, 是否积压: false });
+      }
+      this.预测数据.futureDue.forEach((量: number, 键: number) => {
+        if (键 >= 0 && 键 <= 前瞻天数) {
+          const 索引: number = 起始 + Math.floor(键 / 步长);
+          if (索引 >= 0 && 索引 < 柱.length) {
+            柱[索引].数量 += 量;
+          }
+        }
+      });
+    }
+    this.柱缓存 = 柱;
+  }
+
+  /** Y 轴域（上限与刻度绑定产出，柱高归一化用 域.上限） */
+  private 取轴(): 轴域 {
+    let 峰值: number = 0;
+    for (let i = 0; i < this.柱缓存.length; i++) {
+      if (this.柱缓存[i].数量 > 峰值) {
+        峰值 = this.柱缓存[i].数量;
+      }
+    }
+    return 取轴域(峰值, 4);
+  }
+
+  /** 积压跨度（天）：显示积压时的最深负键绝对值 */
+  private 取积压跨度(): number {
+    if (this.预测数据 === null || this.预测数据.futureDue === null || !this.显示积压) {
+      return 0;
+    }
+    let 最深: number = 0;
+    this.预测数据.futureDue.forEach((量: number, 键: number) => {
+      if (量 > 0 && 键 < 最深) {
+        最深 = 键;
       }
     });
-    项列表.sort((a: 预测项, b: 预测项) => a.天数 - b.天数);
-    return 项列表.slice(0, 30);
+    return Math.abs(最深);
   }
 
-  private 取最大值(条目: 预测项[]): number {
-    let 最大: number = 0;
-    for (let i = 0; i < 条目.length; i++) {
-      if (条目[i].数量 > 最大) {
-        最大 = 条目[i].数量;
-      }
-    }
-    return 最大 === 0 ? 1 : 最大;
-  }
-
-  // 总计：仅统计显示范围内的卡片数（含积压则算入负键，否则只算 >= 0）。
+  /** 总计：显示范围内卡数（含积压则算入负键，Anki Total 语义） */
   private 取总计(): number {
     if (this.预测数据 === null || this.预测数据.futureDue === null) {
       return 0;
     }
+    const 上限: number = this.取范围天数();
     let 总计: number = 0;
-    this.预测数据.futureDue.forEach((值: number, 键: number) => {
-      if (键 >= 0 || this.显示积压) {
-        总计 += 值;
+    this.预测数据.futureDue.forEach((量: number, 键: number) => {
+      if ((键 >= 0 && 键 <= 上限) || (键 < 0 && this.显示积压)) {
+        总计 += 量;
       }
     });
     return 总计;
   }
 
-  // 平均：与 Anki 桌面端算法一致——Total / 显示天数（含空天），反映「未来 N 天日均」。
-  private 取平均(): number {
-    return this.取总计() / this.显示天数;
+  /** 期间天数 = 前瞻天数 + 积压跨度（Anki periodDays = xMax - xMin） */
+  private 取期间天数(): number {
+    let 天数: number = this.取范围天数() + 1;
+    if (this.预测数据 !== null && this.预测数据.futureDue !== null && this.显示积压) {
+      let 最深: number = 0;
+      this.预测数据.futureDue.forEach((量: number, 键: number) => {
+        if (量 > 0 && 键 < 最深) {
+          最深 = 键;
+        }
+      });
+      天数 += Math.abs(最深);
+    }
+    return 天数;
   }
 
-  // 明日到期：取 future_due[1]，无该键则 0。
+  /** 明日到期：future_due[1] */
   private 取明日到期(): number {
     if (this.预测数据 === null || this.预测数据.futureDue === null) {
       return 0;
@@ -96,25 +188,40 @@ export struct 预测卡 {
   }
 
   private 数据为空(): boolean {
-    if (this.预测数据 === null) return true;
-    return this.条目缓存.length === 0;
-  }
-
-  // snap 对齐偏移：让第 N 根柱子居中于容器
-  private 取对齐偏移(索引: number): number {
-    if (this.容器宽度 === 0) return 0;
-    return (this.容器宽度 - this.柱子宽度) / 2 - 索引 * this.柱子宽度;
-  }
-
-  // 从当前偏移反推最近柱子索引
-  private 取最近索引(偏移: number): number {
-    if (this.条目缓存.length === 0 || this.容器宽度 === 0) return 0;
-    const 索引 = Math.round((this.容器宽度 / 2 - this.柱子宽度 / 2 - 偏移) / this.柱子宽度);
-    return Math.max(0, Math.min(索引, this.条目缓存.length - 1));
+    if (this.预测数据 === null || this.预测数据.futureDue === null) {
+      return true;
+    }
+    return this.取总计() === 0;
   }
 
   build() {
-    Column() {
+    Column({ space: 应用尺寸.间距_8 }) {
+      范围切换条({
+        当前索引: this.范围索引,
+        标签集: this.是否显示全部 ? this.范围标签 : this.范围标签.slice(0, 3),
+        onRangeChange: (): void => {
+          this.更新缓存();
+        }
+      })
+
+      // 积压复选框：仅存在积压时显示（Anki Backlog checkbox）
+      if (this.预测数据 !== null && this.预测数据.haveBacklog) {
+        Row({ space: 应用尺寸.间距_7 }) {
+          Checkbox()
+            .select(this.显示积压)
+            .selectedColor(this.主色按钮背景)
+            .onChange((值: boolean): void => {
+              this.on积压变更(值);
+            })
+          Text($r('app.string.stats_forecast_backlog'))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .alignItems(VerticalAlign.Center)
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+      }
+
       if (this.数据为空()) {
         Text($r('app.string.stats_empty_section'))
           .fontSize(应用尺寸.字号_正文)
@@ -123,108 +230,75 @@ export struct 预测卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染预测(this.条目缓存, this.取最大值(this.条目缓存), this.预测数据 as FutureDue)
+        this.渲染预测柱(this.取轴())
+        this.渲染统计表()
       }
     }
     .width('100%')
   }
 
   @Builder
-  private 渲染预测(条目: 预测项[], 最大值: number, d: FutureDue) {
-    Column({ space: 应用尺寸.间距_8 }) {
-      // 可拖动柱状图：固定柱子宽度，超出屏幕宽度，拖动 snap 对齐到最近柱子居中
-      // Stack alignment=Start 让 Row 从左边缘开始，translate 偏移才与取对齐偏移公式一致
-      Stack({ alignContent: Alignment.Start }) {
-        Row() {
-          ForEach(条目, (项: 预测项, 索引: number) => {
-            Column() {
-              // 数字标签：始终显示该日具体数量
-              Text(项.数量 > 0 ? `${项.数量}` : '')
-                .fontSize(9)
-                .fontColor($r('app.color.text_secondary'))
-                .height(this.数字标签高度)
-                .width('100%')
-                .textAlign(TextAlign.Center)
-              // 柱子区
-              Stack({ alignContent: Alignment.Bottom }) {
-                Column()
-                  .width('100%')
-                  .height(应用尺寸.进度条高度)
-                  .backgroundColor(this.容器色)
-                  .borderRadius(应用尺寸.圆角_进度条)
-                Column()
-                  .width('100%')
-                  .height((项.数量 / 最大值) * this.柱子区高度)
-                  .backgroundColor(项.天数 < 0 ? '#999999' : this.主色)
-                  .borderRadius(应用尺寸.圆角_进度条)
-              }
-              .width('100%')
-              .height(this.柱子区高度)
+  private 渲染预测柱(域: 轴域) {
+    Column({ space: 应用尺寸.间距_2 }) {
+      Row() {
+        纵轴刻度({
+          刻度: 域.刻度,
+          高度: this.柱区高度
+        })
+        Row({ space: 1 }) {
+          ForEach(this.柱缓存, (柱: 预测柱, 索引: number) => {
+            Stack({ alignContent: Alignment.Bottom }) {
+              Column()
+                .width('70%')
+                .height(`${Math.max(柱.数量 / 域.上限 * 100, 柱.数量 > 0 ? 4 : 0)}%`)
+                .backgroundColor(取预测柱色(索引 / Math.max(1, this.柱缓存.length - 1)))
+                .borderRadius(1)
             }
-            .width(this.柱子宽度)
-            .height(this.图表高度)
-            .justifyContent(FlexAlign.End)
-          }, (项: 预测项) => `${项.天数}`)
+            .width('100%')
+            .height('100%')
+            .layoutWeight(1)
+          }, (柱: 预测柱, 索引: number) => `${索引}`)
         }
-        .width(条目.length * this.柱子宽度)
-        .height(this.图表高度)
-        .translate({ x: this.偏移X })
+        .layoutWeight(1)
+        .height(this.柱区高度)
       }
       .width('100%')
-      .height(this.图表高度)
-      .clip(true)
-      .onAreaChange((oldValue: Area, newValue: Area) => {
-        const w = newValue.width as number
-        if (w > 0 && this.容器宽度 !== w) {
-          this.容器宽度 = w
-          // 容器尺寸变化时重新对齐到当前索引
-          this.偏移X = this.取对齐偏移(this.当前索引)
-        }
+
+      // 横轴日期：左端 = 积压起点（无积压则今天），右端 = 前瞻末日
+      横轴日期条({
+        左端偏移天: -this.取积压跨度(),
+        右端偏移天: this.取范围天数(),
+        轴左宽: 纵轴宽
       })
-      .gesture(
-        PanGesture()
-          .onActionStart(() => {
-            this.起始偏移 = this.偏移X
-          })
-          .onActionUpdate((event: GestureEvent) => {
-            this.偏移X = this.起始偏移 + event.offsetX
-          })
-          .onActionEnd(() => {
-            const 索引 = this.取最近索引(this.偏移X)
-            animateTo({ duration: 200, curve: Curve.EaseOut }, () => {
-              this.偏移X = this.取对齐偏移(索引)
-              this.当前索引 = 索引
-            })
-          })
-      )
+    }
+    .width('100%')
+  }
 
-      // 摘要信息行：对齐 Anki 桌面 Future Due 表格 4 项数值（窄屏自动换行）
-      Flex({ wrap: FlexWrap.Wrap }) {
-        Text($r('app.string.stats_forecast_total', this.取总计()))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
-          .margin({ right: 应用尺寸.间距_8, bottom: 应用尺寸.间距_4 })
-        Text($r('app.string.stats_forecast_average', this.取平均().toFixed(1)))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
-          .margin({ right: 应用尺寸.间距_8, bottom: 应用尺寸.间距_4 })
-        Text($r('app.string.stats_forecast_due_tomorrow', this.取明日到期()))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
-          .margin({ right: 应用尺寸.间距_8, bottom: 应用尺寸.间距_4 })
-        Text($r('app.string.stats_forecast_daily_load', d.dailyLoad))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
-      }
-      .width('100%')
+  @Builder
+  private 渲染统计表() {
+    Column({ space: 应用尺寸.间距_4 }) {
+      this.统计行($r('app.string.stats_total_label'),
+        $r('app.string.stats_forecast_total', this.取总计()))
+      this.统计行($r('app.string.stats_average_label'),
+        $r('app.string.stats_forecast_average', `${Math.round(this.取总计() / this.取期间天数())}`))
+      this.统计行($r('app.string.stats_forecast_due_tomorrow_label'),
+        $r('app.string.stats_forecast_due_tomorrow', this.取明日到期()))
+      this.统计行($r('app.string.stats_forecast_daily_load_label'),
+        $r('app.string.stats_forecast_daily_load_value', this.预测数据 !== null ? this.预测数据.dailyLoad : 0))
+    }
+    .width('100%')
+  }
 
-      // 积压提示
-      if (d.haveBacklog) {
-        Text($r('app.string.stats_forecast_has_backlog'))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-      }
+  @Builder
+  private 统计行(标签: Resource, 值: Resource) {
+    Row() {
+      Text(标签)
+        .fontSize(应用尺寸.字号_正文_小)
+        .fontColor($r('app.color.text_secondary'))
+      Blank()
+      Text(值)
+        .fontSize(应用尺寸.字号_正文_小)
+        .fontColor($r('app.color.text_primary'))
     }
     .width('100%')
   }

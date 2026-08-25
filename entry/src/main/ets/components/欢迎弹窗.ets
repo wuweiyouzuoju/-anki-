@@ -29,6 +29,12 @@ import { 应用尺寸 } from '../utils/应用尺寸';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { 颜色键 } from '../model/颜色主题';
 
+// 更新日志条目：【新增】/【优化】/【修复】前缀 + 正文
+interface 更新条目 {
+  前缀: string;
+  正文: string;
+}
+
 @Component
 export struct 欢迎弹窗 {
   onClose: () => void = () => {};
@@ -44,6 +50,17 @@ export struct 欢迎弹窗 {
   private static readonly 网址_获取牌组: string = 'https://ankiweb.net/shared/decks/';
   // 官方 QQ 群号（方式 2 获取牌组渠道，长按可选中复制）
   private static readonly QQ群号: string = '726837065';
+
+  // 中部滚动区上限（vp）：屏高×88% 减去固定区（标题栏/分割线/底部按钮行，约 150vp）。
+  // 必须是数字——constraintSize({ maxHeight: 数字 }) 才有"内容少随内容、超限封顶滚动"语义
+  // （华为官方 FAQ 弹窗动态高度方案）。此前用 layoutWeight(1)+maxHeight'88%'，弹窗永远撑满
+  // 88% 屏高不随文案长度收缩（v1.9.0 文案变短后下方大片空白）。
+  @State private 滚动上限: number = 400;
+
+  /** 全屏 Stack onAreaChange：按实际屏高（vp）重算滚动上限，横竖屏切换自动适配 */
+  private 重算滚动上限(屏高vp: number): void {
+    this.滚动上限 = Math.max(200, 屏高vp * 0.88 - 150);
+  }
 
   build() {
     Stack() {
@@ -80,17 +97,28 @@ export struct 欢迎弹窗 {
 
         Divider().color($r('app.color.surface_card')).strokeWidth(1)
 
-        // Section 1：此次更新改动
-        Column({ space: 4 }) {
+        // 中间三段：高度随文案长度自适应；文案多到超过上限（屏高 88% - 固定区）时封顶，
+        // 在本 Scroll 内上下滚动查看，底部按钮始终固定在卡片内
+        Scroll() {
+          Column() {
+            // Section 1：此次更新改动（【新增】/【优化】/【修复】前缀加粗）
+            Column({ space: 4 }) {
           Text($r('app.string.welcome_section1_title'))
             .fontSize(应用尺寸.字号_按钮)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
             .width('100%')
-          Text($r('app.string.welcome_section1_body'))
-            .fontSize(应用尺寸.字号_正文_中)
-            .fontColor($r('app.color.text_secondary'))
-            .width('100%')
+          Text() {
+            ForEach(this.解析更新条目(), (条目: 更新条目) => {
+              Span(条目.前缀)
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+              Span(条目.正文 + '\n')
+            })
+          }
+          .fontSize(应用尺寸.字号_正文_中)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
@@ -165,6 +193,14 @@ export struct 欢迎弹窗 {
         .width('100%')
         .alignItems(HorizontalAlign.Start)
         .padding({ left: 20, right: 20, top: 14, bottom: 18 })
+          }
+          .width('100%')
+        }
+        .scrollable(ScrollDirection.Vertical)
+        .constraintSize({ maxHeight: this.滚动上限 })
+        .width('100%')
+        .align(Alignment.Top)
+        .edgeEffect(EdgeEffect.Spring)
 
         // 底部「开始体验」按钮
         Row() {
@@ -179,10 +215,12 @@ export struct 欢迎弹窗 {
             .onClick(() => this.onClose())
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 4, bottom: 20 })
+        .padding({ left: 20, right: 20, top: 4, bottom: 32 })
       }
       .width('88%')
-      .constraintSize({ maxWidth: 480, maxHeight: '88%' })
+      // 高度完全自适应：Scroll 已按数字上限封顶（88% 屏高 - 固定区），卡片不再设
+      // maxHeight 百分比（layoutWeight(1)+'88%' 组合会让弹窗永远撑满屏高 88% 不收缩）
+      .constraintSize({ maxWidth: 480 })
       .backgroundColor($r('app.color.surface_page'))
       .borderRadius(应用尺寸.圆角_卡片)
       .transition(TransitionEffect.asymmetric(
@@ -196,6 +234,46 @@ export struct 欢迎弹窗 {
     .width('100%')
     .height('100%')
     .alignContent(Alignment.Center)
+    .onAreaChange((_旧区域: Area, 新区域: Area): void => {
+      // Area 尺寸单位为 vp，类型为 Length，按项目惯例转 number 后重算滚动上限
+      const 屏高vp: number = typeof 新区域.height === 'number'
+        ? 新区域.height : parseInt(新区域.height as string, 10);
+      if (!Number.isNaN(屏高vp)) {
+        this.重算滚动上限(屏高vp);
+      }
+    })
+  }
+
+  // 解析更新日志资源文本为条目数组：中文行按「【..】」、英文行按「[..]」切分前缀与正文
+  // 资源文本用 \n 分行（string.json 转义）；无匹配前缀的行整体作为前缀、正文留空
+  private 解析更新条目(): 更新条目[] {
+    const 资源管理器 = getContext(this).resourceManager;
+    let 文本: string = '';
+    try {
+      文本 = 资源管理器.getStringSync($r('app.string.welcome_section1_body').id);
+    } catch (_错误) {
+      return [];
+    }
+    const 结果: 更新条目[] = [];
+    const 行数组: string[] = 文本.split('\n');
+    for (let i: number = 0; i < 行数组.length; i++) {
+      const 行: string = 行数组[i];
+      if (行 === '') {
+        continue;
+      }
+      const 全角收尾: number = 行.indexOf('】');
+      if (行.startsWith('【') && 全角收尾 > 0) {
+        结果.push({ 前缀: 行.substring(0, 全角收尾 + 1), 正文: 行.substring(全角收尾 + 1) });
+        continue;
+      }
+      const 半角收尾: number = 行.indexOf(']');
+      if (行.startsWith('[') && 半角收尾 > 0) {
+        结果.push({ 前缀: 行.substring(0, 半角收尾 + 1), 正文: 行.substring(半角收尾 + 1) });
+        continue;
+      }
+      结果.push({ 前缀: 行, 正文: '' });
+    }
+    return 结果;
   }
 
   // 跳转应用市场详情页：用 store:// scheme 隐式拉起应用市场；失败静默忽略

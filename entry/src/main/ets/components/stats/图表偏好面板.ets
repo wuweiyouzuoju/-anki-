@@ -350,7 +350,8 @@ export struct 图表偏好面板 {
             .fontSize(应用尺寸.字号_按钮)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.action_on_primary'))
-            .backgroundColor(this.主色)
+            // 主色背景+白字需 ≥4.5:1，用已搜索达标的 主色按钮背景 档
+            .backgroundColor(this.主色按钮背景)
             .borderRadius(应用尺寸.圆角_胶囊)
             .enabled(!this.保存中)
             .onClick(() => {

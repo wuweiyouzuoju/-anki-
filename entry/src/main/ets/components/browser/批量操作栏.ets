@@ -52,6 +52,8 @@ export struct 批量操作栏 {
 
   // 按钮按下态背景色（走主题系统，与 首页/学习页 主色容器同源）
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
+  // 手势导航条高度（沉浸式全屏下底部固定控件需抬高避让，EntryAbility 动态写入）
+  @StorageProp('导航条高度') private 导航条高度: number = 0;
   @State private 已按下: number = -1;
 
   /** 生成按钮按下态背景色（按下时用主色容器，否则用 surface_card）。 */
@@ -208,7 +210,8 @@ export struct 批量操作栏 {
       left: 应用尺寸.间距_16,
       right: 应用尺寸.间距_16,
       top: 应用尺寸.间距_8,
-      bottom: 应用尺寸.间距_8
+      // 抬高避让手势导航条（AppGallery 导航栏适配要求）
+      bottom: 应用尺寸.间距_8 + this.导航条高度
     })
     .backgroundColor($r('app.color.surface_page'))
     .border({ width: 0.5, color: $r('app.color.divider') })

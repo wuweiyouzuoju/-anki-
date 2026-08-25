@@ -18,7 +18,6 @@ import { 同步面板 } from '../components/同步面板';
 import { 主页顶部工具栏 } from '../components/home/主页顶部工具栏';
 import { 主页更多面板 } from '../components/home/主页更多面板';
 import { 学习提醒页 } from './学习提醒页';
-import { 学习提醒编辑页, 学习提醒编辑参数 } from './学习提醒编辑页';
 import { 设置页 } from './设置页';
 import { 主页摘要分页 } from '../components/home/主页摘要分页';
 import { 主页牌组列表 } from '../components/home/主页牌组列表';
@@ -64,17 +63,15 @@ import { 加载全部牌组顺序, 保存牌组顺序 } from '../model/牌组顺
 import { 加载已隐藏牌组ID列表, 隐藏牌组, 取消隐藏全部牌组 } from '../model/隐藏牌组存储';
 import { 加载上次牌组ID, 保存上次牌组ID, 清除上次牌组ID } from '../model/上次牌组存储';
 import { 确保FSRS已开启一次, 加载FSRS开启状态, 设置FSRS开启状态, 刷新桌面卡片数据 } from '../model/FSRS控制器';
-import { 是否已弹升级好评, 标记已弹升级好评 } from '../model/欢迎弹窗存储';
-import { 打开应用内好评 } from '../utils/好评引导';
 import { 加载显示今日进度卡, 主页今日进度卡AppStorage键 } from '../model/主页偏好';
-import { 提取卡片数据, 保存卡片数据, 桌面卡片数据 } from '../model/桌面卡片数据存储';
+import { 提取卡片数据, 保存卡片数据, 加载小时分布窗口, 桌面卡片数据 } from '../model/桌面卡片数据存储';
 import { 应用主题 } from '../utils/主题控制器';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 选取数据文件 } from '../utils/文件导入助手';
 import { 可见牌组行, 平铺牌组树 } from '../model/牌组层级';
 import { 检查节流标记, 获取节流奖励 } from '../utils/操作节流';
 import { 欢迎弹窗 } from '../components/欢迎弹窗';
-import { 是否已展示欢迎弹窗, 标记已展示欢迎弹窗, 是否为升级用户 } from '../model/欢迎弹窗存储';
+import { 是否已展示欢迎弹窗, 标记已展示欢迎弹窗 } from '../model/欢迎弹窗存储';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { CustomTransition } from '../utils/自定义转场';
 
@@ -189,9 +186,6 @@ struct 首页 {
   private 上次牌组已恢复: boolean = false;
   // 首次启动欢迎弹窗：介绍基础操作/个性设置/作者的话，由 aboutToAppear → 显示欢迎弹窗一次 触发
   @State private 显示欢迎弹窗: boolean = false;
-  // 升级用户关闭欢迎弹窗后直接拉起系统应用内好评弹窗（仅升级用户 + 未展示过好评引导时置 true）
-  // 频率由 upgrade_rate_shown 控制为「每版本只弹一次」
-  @State private 升级后弹好评引导: boolean = false;
   @State private 显示节流奖励: boolean = false;
   @State private 节流奖励文案: string = '';
   // 窄屏详情显隐（方案 C 2026-07-25）：点牌组后 true，根 Stack 内 牌组详情面板 盖住列表，替代推栈 NavDestination
@@ -212,32 +206,23 @@ struct 首页 {
   //
   // @作用
   // 首次启动展示欢迎弹窗（介绍此次更新改动/获取牌组/作者的话）；已展示过则跳过。
-  // 若为旧版本升级用户且未弹过当前版本的升级好评引导，则关闭欢迎弹窗后接着弹好评引导。
   //
   // @输入
   // 无（读取 preferences 标记）
   //
   // @输出
   // 设置 显示欢迎弹窗 状态为 true 触发弹窗渲染
-  // 若为升级用户且未弹过当前版本升级好评，设置 升级后弹好评引导 = true
   //
   // @业务规则
   // 先标记再弹窗：即使弹窗 UI 未显示，也保证「只弹一次」语义；最坏情况是用户没看到。
-  // 升级好评引导用独立版本号标记 upgrade_rate_shown，每个版本只弹一次，与学习完成触发解耦。
   //
   // @副作用
-  // 写 preferences 持久化 welcome_shown 和 upgrade_rate_shown
+  // 写 preferences 持久化 welcome_shown
   // ========================================================
   private async 显示欢迎弹窗一次(): Promise<void> {
     const 已展示: boolean = await 是否已展示欢迎弹窗();
     if (已展示) {
       return;
-    }
-    // 升级用户 + 未弹过当前版本升级好评 → 关闭欢迎弹窗后接着弹好评引导
-    const 是升级用户: boolean = await 是否为升级用户();
-    if (是升级用户 && !(await 是否已弹升级好评())) {
-      await 标记已弹升级好评();
-      this.升级后弹好评引导 = true;
     }
     await 标记已展示欢迎弹窗();
     this.显示欢迎弹窗 = true;
@@ -332,8 +317,23 @@ struct 首页 {
   //
   // @副作用
   // 调后端服务、读写 preferences、刷新多个 @State 字段
+  //
+  // @Invariants
+  // 所有触发严格串行（链式追加，不允许并发）：
+  // 学习页退出时「需要刷新主页 广播 + onPop」双触发、用户连续两次学习会话退出等场景下，
+  // 并发加载会竞态覆盖——先发起的慢请求后完成，用旧 graphs 覆盖新快照，
+  // 主页摘要卡片停留旧数据且无新触发器纠正（用户报告的“内部卡片高延迟”根因之一）。
   // ========================================================
-  private async 加载主页数据(): Promise<void> {
+  private 加载链尾: Promise<void> = Promise.resolve();
+
+  private 加载主页数据(): Promise<void> {
+    const 执行 = (): Promise<void> => this.执行加载主页数据();
+    const 本轮: Promise<void> = this.加载链尾.then(执行, 执行);
+    this.加载链尾 = 本轮;
+    return 本轮;
+  }
+
+  private async 执行加载主页数据(): Promise<void> {
     this.加载状态 = 'loading';
     const context: common.UIAbilityContext | null = this.取能力上下文();
     if (context === null) {
@@ -357,11 +357,20 @@ struct 首页 {
           总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
         }
         const 牌组总数: number = 平铺牌组树(tree).length;
-        const 卡片数据: 桌面卡片数据 = 提取卡片数据(graphs, 总待学, 牌组总数);
+        const 卡片数据: 桌面卡片数据 = 提取卡片数据(graphs, 总待学, 牌组总数, await 加载小时分布窗口());
         this.图表快照 = 卡片数据;
-        保存卡片数据(卡片数据).catch((e: Object): void => {
+        // 诊断日志：数值本身写进日志，用户报“数据旧”时抓 hilog 即可分辨
+        // 是后端返回旧 graphs（RPC/缓存问题）还是前端没刷新（渲染问题）。
+        hilog.info(0x4342, 'jidecards',
+          `首页: 图表快照更新 今日完成=${卡片数据.今日完成数} 今日答题=${卡片数据.今日答题数} 待学=${卡片数据.待学数}`);
+        // 必须 await：fire-and-forget 在用户立即按 Home 切桌面时会被系统冻结，
+        // 桌面卡片延迟到下次 30 分钟系统刷新才更新。App 在前台时同步等数据写入
+        // filesDir + formProvider.updateForm 推送完成，确保卡片立即反映最新统计。
+        try {
+          await 保存卡片数据(卡片数据);
+        } catch (e) {
           hilog.error(0x4342, 'jidecards', `首页: 保存卡片数据失败 ${e}`);
-        });
+        }
       }
       const allDecks: 牌组汇总[] = 平铺牌组树(tree);
       const deckIds: string[] = allDecks.map((deck: 牌组汇总): string => deck.id);
@@ -383,6 +392,15 @@ struct 首页 {
       const snapshot: 主页快照 =
         构建主页快照(tree, graphs, new Date(), toneOverrides, displayNameOverrides,
           orderOverrides, backgroundImageOverrides);
+      // 默认牌组（id=1）名跟随系统语言：数据库里存的是 "Default"，
+      // 中文环境下显示"默认牌组"，英文环境显示"Default"。用户自定义别名优先。
+      const 默认牌组本地化名: string = this.getUIContext().getHostContext()!.resourceManager
+        .getStringSync($r('app.string.default_deck_name').id);
+      for (const deck of snapshot.decks) {
+        if (deck.id === '1' && deck.displayName === '') {
+          deck.name = 默认牌组本地化名;
+        }
+      }
       this.主页快照数据 = snapshot;
       // 首次加载时默认展开所有含子节点的父牌组；用 已初始化 标记而非 size 判断，避免用户全折叠后被刷新重置
       if (!this.牌组展开已初始化) {
@@ -483,7 +501,9 @@ struct 首页 {
   // ========================================================
   private async 静默加载图表(): Promise<GraphsView | null> {
     try {
-      return await this.统计服务实例.获取图表统计(new Date().getDate());
+      // days 必须与统计页一致（365）：后端 hours 四档窗口都从 days 限定的 revlog 里统计，
+      // 传错会导致首页摘要/桌面卡片与统计页数据不一致（曾误传 new Date().getDate()）
+      return await this.统计服务实例.获取图表统计(365);
     } catch (error) {
       return null;
     }
@@ -757,12 +777,15 @@ struct 首页 {
     });
   }
 
-  /** 打开浏览页（全库浏览，不限定牌组）。 */
+  /** 打开浏览页（全库浏览，不限定牌组）。浏览页可改卡/删卡/改到期，pop 回主页必须刷新。 */
   private 打开浏览页(): void {
     const params: 浏览页参数 = {};
     this.页面栈.pushPath({
       name: 'BrowserPage',
-      param: params
+      param: params,
+      onPop: (): void => {
+        this.加载主页数据();
+      }
     });
   }
 
@@ -771,7 +794,10 @@ struct 首页 {
     const params: 浏览页参数 = { initialSearch: 搜索串 };
     this.页面栈.pushPath({
       name: 'BrowserPage',
-      param: params
+      param: params,
+      onPop: (): void => {
+        this.加载主页数据();
+      }
     });
   }
 
@@ -780,7 +806,12 @@ struct 首页 {
     const params: 统计页参数 = {};
     this.页面栈.pushPath({
       name: 'StatsPage',
-      param: params
+      param: params,
+      // Navigation push/pop 不触发 @Entry 的 onPageShow，不挂 onPop 的话
+      // 从统计页返回主页永远不刷新（用户报告的“打开统计不能主动刷新”根因）。
+      onPop: (): void => {
+        this.加载主页数据();
+      }
     });
   }
 
@@ -1660,12 +1691,6 @@ struct 首页 {
       学习提醒页({
         pathStack: this.页面栈
       })
-    } else if (name === 'ReminderEditPage') {
-      学习提醒编辑页({
-        pathStack: this.页面栈,
-        项: (param as 学习提醒编辑参数).项,
-        是否新建: (param as 学习提醒编辑参数).是否新建
-      })
     } else if (name === 'SettingsPage') {
       设置页({
         pathStack: this.页面栈
@@ -2020,20 +2045,11 @@ struct 首页 {
         // 首次启动欢迎弹窗：放最顶层，确保覆盖所有浮层
         //   关闭时调 标记已展示欢迎弹窗 持久化（已在 显示欢迎弹窗一次 中提前标记，
         //   这里仅关闭状态；即使弹窗未显示也已标记，保证「只弹一次」语义）
-        //   若为升级用户且未弹过当前版本好评，关闭后直接拉起系统应用内好评弹窗
-        //   （commentManager.showCommentDialog，失败回退应用市场详情页 DeepLink）
         if (this.显示欢迎弹窗) {
           欢迎弹窗({
             是否深色: this.是否深色(),
             onClose: (): void => {
               this.显示欢迎弹窗 = false;
-              if (this.升级后弹好评引导) {
-                this.升级后弹好评引导 = false;
-                const context = this.取能力上下文();
-                if (context !== null) {
-                  打开应用内好评(context, 'com.jide.kapian');
-                }
-              }
             }
           })
         }
@@ -2076,7 +2092,8 @@ struct 首页 {
                   .height(应用尺寸.按钮高度)
                   .fontSize(应用尺寸.字号_按钮)
                   .fontWeight(FontWeight.Medium)
-                  .backgroundColor(this.动作主色)
+                  // 主色背景+白字需 ≥4.5:1，用已搜索达标的 主色按钮背景 档（高明度主题下 动作主色 配白字不达标）
+                  .backgroundColor(this.主色按钮背景色)
                   .fontColor('#FFFFFF')
                   .onClick(() => { this.显示节流奖励 = false; })
               }

@@ -32,6 +32,7 @@ import { preferences } from '@kit.ArkData';
 const 存储名: string = 'jidecards_settings';
 const 提醒项列表键: string = 'study_reminder_items';
 const 提醒ID列表键: string = 'study_reminder_ids';
+const 通知设置已引导键: string = 'reminder_notification_guided';
 const 上下文键: string = 'abilityContext';
 
 // 跨组件广播键名
@@ -158,5 +159,38 @@ export async function 加载提醒ID列表(): Promise<number[]> {
     return [];
   } catch (错误) {
     return [];
+  }
+}
+
+// ========================================================
+// @名称 是否已引导通知设置
+// @作用 首次成功保存提醒后自动拉起系统通知设置页（引导开横幅通知），
+//       本标记记录是否已引导过，之后不再重复拉起。
+// ========================================================
+export async function 是否已引导通知设置(): Promise<boolean> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return true;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
+    const 值: preferences.ValueType = await 存储.get(通知设置已引导键, false);
+    return 值 === true;
+  } catch (错误) {
+    return true;
+  }
+}
+
+export async function 标记已引导通知设置(): Promise<void> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 存储名);
+    await 存储.put(通知设置已引导键, true);
+    await 存储.flush();
+  } catch (错误) {
+    // 持久化失败可接受
   }
 }

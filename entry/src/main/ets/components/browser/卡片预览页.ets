@@ -77,6 +77,8 @@ export struct 卡片预览页 {
 
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景: string = '#2F5FD0';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
+  // 状态栏高度（沉浸式全屏下，预览层全屏铺开，顶部条需让出状态栏区域，与主页顶栏同一水平面）
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
   @State private 已按下编辑: boolean = false;
 
   aboutToAppear(): void {
@@ -323,9 +325,9 @@ export struct 卡片预览页 {
         .onClick((): void => { this.onClose(); })
     }
     .width('100%')
-    .height(应用尺寸.工具栏高度)
+    .height(应用尺寸.工具栏高度 + this.状态栏高度)
     .padding({ left: 应用尺寸.页面内边距_水平, right: 应用尺寸.页面内边距_水平,
-      top: 应用尺寸.间距_8, bottom: 应用尺寸.间距_8 })
+      top: this.状态栏高度 + 应用尺寸.间距_8, bottom: 应用尺寸.间距_8 })
     .alignItems(VerticalAlign.Center)
   }
 

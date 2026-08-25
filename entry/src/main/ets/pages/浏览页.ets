@@ -300,6 +300,9 @@ export struct 浏览页 {
 
   aboutToDisappear(): void {
     CustomTransition.getInstance().注销NavParam('BrowserPage');
+    // 通知首页刷新牌组计数：页内删除/改牌组/挂起/重置到期等写操作分散在多个方法，
+    // 统一在离页时广播（幂等，纯浏览未改数据时多刷一次无副作用）；onPop 偶发不触发时仍能刷新。
+    AppStorage.setOrCreate<number>('需要刷新主页', Date.now());
   }
 
   /**

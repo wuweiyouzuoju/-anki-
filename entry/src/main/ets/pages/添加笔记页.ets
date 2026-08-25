@@ -130,6 +130,10 @@ export struct 添加笔记页 {
   @StorageProp(颜色键.主色按钮按下) private 主色按钮按下色: string = '#1E4FB8';
   // ⓘ 圆形按钮背景色（淡蓝容器色，配 动作主色 深蓝字符）
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
+  // 手势导航条高度（底部固定按钮排需抬高避让导航条）
+  @StorageProp('导航条高度') private 导航条高度: number = 0;
+  // 状态栏高度（沉浸式全屏下，顶部条需让出状态栏区域，避免返回按钮叠在状态栏上）
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
   /** NavDestination 透明度（由 customNavContentTransition 回调控制，实现淡入淡出转场）。 */
   @State private 转场透明度: number = 1;
 
@@ -947,10 +951,12 @@ export struct 添加笔记页 {
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .height(应用尺寸.工具栏高度)
+    .height(应用尺寸.工具栏高度 + this.状态栏高度)
     .padding({
       left: 应用尺寸.页面内边距_水平,
-      right: 应用尺寸.页面内边距_水平
+      right: 应用尺寸.页面内边距_水平,
+      top: this.状态栏高度 + 应用尺寸.间距_8,
+      bottom: 应用尺寸.间距_8
     })
     .backgroundColor($r('app.color.surface_page'))
   }
@@ -1223,7 +1229,8 @@ export struct 添加笔记页 {
           left: 应用尺寸.卡片内边距,
           right: 应用尺寸.卡片内边距,
           top: 应用尺寸.间距_8,
-          bottom: 应用尺寸.间距_8
+          // 抬高避让手势导航条（AppGallery 导航栏适配要求）
+          bottom: 应用尺寸.间距_8 + this.导航条高度
         })
       }
       .width('100%')
@@ -1262,8 +1269,8 @@ export struct 添加笔记页 {
         .padding({
           left: 应用尺寸.页面内边距_水平,
           right: 应用尺寸.页面内边距_水平,
-          top: 应用尺寸.间距_8,
-          bottom: 应用尺寸.间距_8
+          top: this.状态栏高度 + 应用尺寸.间距_8,
+          bottom: 应用尺寸.间距_8 + this.导航条高度
         })
       }
     }

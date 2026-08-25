@@ -61,6 +61,8 @@ export struct 卡片表格 {
   onMultiSelectChange: (多选: boolean) => void = (): void => {};
   /** T8 批量操作栏：宿主完成批量操作后翻转此信号（+1），触发组件内部清空选中并退出多选 */
   @Prop @Watch('当退出多选信号变化') 退出多选信号: number = 0;
+  // 手势导航条高度（列表滚到底时最后一行需完整滚出导航条区域）
+  @StorageProp('导航条高度') private 导航条高度: number = 0;
 
   @State private 多选模式: boolean = false;
   @State private 选中ID集合: Set<number> = new Set<number>();
@@ -272,6 +274,8 @@ export struct 卡片表格 {
         .width('100%')
         .layoutWeight(1)
         .edgeEffect(EdgeEffect.Spring)
+        // 内容末尾偏移导航条高度：滚到底时最后一行完整可见、可点（AppGallery 导航栏适配要求）
+        .contentEndOffset(this.导航条高度)
         .divider({
           strokeWidth: 0.5,
           color: $r('app.color.divider'),

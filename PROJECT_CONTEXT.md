@@ -60,8 +60,8 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | Rust FFI | `native/rsharmony/` | panic 在 FFI 内 catch_unwind，绝不跨语言边界；返回 STATUS_NATIVE_FATAL |
 | 设置面板 | `entry/src/main/ets/components/设置面板.ets` | 各分组（外观/布局/数据/术语/调度器/同步）独立私有方法；aboutGroup 内含"给我好评" |
 | 颜色主题展示名 | `entry/src/main/ets/components/settings/外观分组.ets` | **走 i18n** `getStringByNameSync('theme_color_' + 主题)`，不再硬编码 |
-| 统计页 | `entry/src/main/ets/pages/统计页.ets` + `entry/src/main/ets/components/stats/` | NavDestination；阶段状态机 loading→data/error；9 个图表分区（@BuilderParam slot）；偏好面板可弹层；Scroll 布局 |
-| 统计图表组件 | `entry/src/main/ets/components/stats/*.ets` | 纯展示层；@Prop 数据 + @StorageProp 主题色；**build 方法必须单根 Column**（if/else 分支 + @Builder 渲染内容）；@Builder 内不能写 const/let，数据通过参数传入 |
+| 统计页 | `entry/src/main/ets/pages/统计页.ets` + `entry/src/main/ets/components/stats/` | NavDestination；阶段状态机 loading→data/error（切换牌组重载时保留旧图表不闪空）；13 个图表分区对齐 Anki 14 图（难度/难度系数互斥合一，稳定度/记忆率仅 FSRS 显示）；顶部条内嵌牌组选择下拉（全库=空搜索串，选中牌组传 `deck:"全名"`）；桌面卡片快照仅全库口径刷新 |
+| 统计图表组件 | `entry/src/main/ets/components/stats/*.ets` | 纯展示层；@Prop 数据 + @StorageProp 主题色；**build 方法必须单根 Column**（if/else 分支 + @Builder 渲染内容）；@Builder 内不能写 const/let，数据通过参数传入；颜色/分箱走 `model/统计色板.ets`（d3 色带插值）与 `model/统计分箱.ets`（d3 ticks/nice/分位）纯函数 |
 | 媒体管理面板 | `entry/src/main/ets/components/settings/媒体管理面板.ets` | Stack 遮罩+面板；持有 媒体服务 实例直接调后端；检查中/处理中防重入；清空回收站需二次确认 |
 | 卡片预览页 | `entry/src/main/ets/components/browser/卡片预览页.ets` | Web 组件复用 卡片渲染服务；支持翻面 + 左右滑切上下张；底部"编辑字段"进浏览编辑区 |
 
@@ -87,7 +87,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 升级版本号 | `AppScope/app.json5` 的 versionCode + versionName | versionCode 递增；提交应用市场前需真机回归 + decisions.md 记录 |
 | 修改浏览页 | `pages/浏览页.ets` + `components/browser/{搜索框,卡片表格,浏览编辑区}.ets` + `backend/{搜索服务,笔记服务,笔记类型服务,卡片服务}.ts` | phase 状态机 loading→list→error；搜索串由后端构建搜索串生成（前端不拼字符串）；行数据懒加载（浏览器行按ID）；T7 行点击弹 浏览编辑区 编辑笔记字段/标签，Cards 模式经 卡片服务.获取卡片 拿 noteId 再查笔记；浏览编辑区纯展示层不直接调 Service，onSave 回调上抛由父级落盘 |
 | 新增浏览器列 | `proto/messages/SearchMessages.ts` 的 BrowserColumn 接口 + 后端 全部浏览器列 RPC 返回 | 列 key 来自 Anki 后端预定义；手机端默认显示 Question+Deck+Due 三列（长按表头配置） |
-| 修改统计页 | `pages/统计页.ets` + `components/stats/*.ets` + `backend/统计服务.ts` + `proto/messages/StatsMessages.ts` | 阶段状态机 loading→data/error；图表用 Text+Column+Row+Stack（不引第三方库）；偏好走 GraphPreferences RPC；**统计图表组件 build 方法必须单根 Column** |
+| 修改统计页 | `pages/统计页.ets` + `components/stats/*.ets` + `backend/统计服务.ts` + `proto/messages/StatsMessages.ts` + `model/{统计色板,统计分箱}.ets` | 阶段状态机 loading→data/error；图表用 Text+Column+Row+Stack（不引第三方库与 Canvas）；颜色/分箱复用 统计色板/统计分箱 纯函数（勿在组件内手写插值）；偏好走 GraphPreferences RPC；**统计图表组件 build 方法必须单根 Column**；新增图表参考 `日历卡.ets`（热力图）/`复习卡.ets`（堆叠柱）/`新增卡.ets`（直方图） |
 | 修改媒体管理 | `components/settings/媒体管理面板.ets` + `backend/媒体服务.ts` | Stack 遮罩+面板；检查中/处理中防重入；清空回收站需 showAlertDialog 二次确认；getStringSync 带参用展开运算符；**未使用列表分页**（`未使用列表` 限前 200 项渲染避免真机 OOM，`未使用全部` 保留完整列表用于批量操作）；"全部放入回收站"按钮迭代 `未使用全部` 完整列表 |
 | 修改卡片预览 | `components/browser/卡片预览页.ets` + `backend/卡片渲染服务.ts` | Web 组件复用 渲染既有卡片；翻面 + 左右滑切基于当前搜索结果列表；"编辑字段"进浏览编辑区 |
 | 修改标签管理 | `components/browser/浏览侧边栏.ets` + `backend/标签服务.ts` | 标签长按弹 showActionMenu（回调必须 (err, data) 双参数）；4 选项：追加搜索/重命名/删除/补全 |

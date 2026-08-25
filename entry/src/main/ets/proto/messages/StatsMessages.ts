@@ -6,7 +6,7 @@
 //
 // @意图
 // 编解码 anki.stats.proto 消息（Anki 26.05），覆盖统计页与首页所需全部字段：
-// - GraphsRequest：search 固定为空（全库统计，与 rslib graph_data_for_search 的 all 分支一致）
+// - GraphsRequest：search 空 = 全库统计；非空 = 按牌组统计（统计页牌组下拉）
 // - GraphsView：完整图表（今日/月历/预测/小时分布/牌组 breakdown/难度/间隔/记忆率/FSRS 标志/真实保留率）
 // - GraphPreferences：图表偏好（周首日 / 卡片计数分离 inactive / 浏览链接 / 预测显示 backlog）
 //
@@ -27,7 +27,8 @@
 // @业务规则
 // reviews.count 的键为「距今天数」，0=今天，1=昨天，与 rslib reviews.rs 分桶一致。
 // retrievability.average 为 0-100 百分制，仅当存在带 FSRS 记忆状态的卡片时非零。
-// ReviewCountsAndTimes 的 time 字段（field 2）首页不用，跳过（统计页也只用 count）。
+// ReviewCountsAndTimes 的 count（field 1）为每日复习次数，time（field 2）为每日答题用时毫秒
+// （复习图「时间」模式，对齐 Anki ReviewsGraph showTime 复选框）。
 // map<int32, Reviews> 的 key 是 int32 varint，负数按补码解释。
 // Hours.repeated Hour 是 24 元素向量（一天的 0-23 时），四个时间段分别对应 1月/3月/1年/全部。
 // Buttons.ButtonCounts.learning/young/mature 是 4 元素向量（对应评分按钮 1-4）。
@@ -55,6 +56,8 @@ export interface TodayCounts {
 }
 
 export interface RetrievabilitySummary {
+  /** map<uint32, uint32>：键为记忆率桶（百分制），值为卡片数（Anki 直方图用）。 */
+  buckets: Map<number, number> | null;
   average: number;
   sumByCard: number;
   sumByNote: number;
@@ -167,6 +170,8 @@ export interface GraphsView {
   retrievability: RetrievabilitySummary | null;
   /** 按日复习计数：键为距今天数（0=今天，1=昨天……），与 rslib reviews.rs 分桶一致。 */
   reviewCountsByDaysAgo: Map<number, ReviewKindCounts> | null;
+  /** 按日复习用时（毫秒）：复习图「时间」模式数据源（Anki ReviewsGraph showTime）。 */
+  reviewTimesByDaysAgo: Map<number, ReviewKindCounts> | null;
   fsrs: boolean;
   /** 按评分按钮统计（1-4）× 时间窗口。 */
   buttons: Buttons | null;
@@ -192,9 +197,13 @@ export interface GraphsView {
   trueRetention: TrueRetentionStats | null;
 }
 
-/** GraphsRequest：search 固定为空（全库统计，与 rslib graph_data_for_search 的 all 分支一致）。 */
-export function encodeGraphsRequest(days: number): Uint8Array {
+/** GraphsRequest：搜索串为空 = 全库统计（rslib graph_data_for_search 的 all 分支）；
+ *  传 deck 搜索串时仅统计对应牌组（统计页牌组下拉）。 */
+export function encodeGraphsRequest(days: number, search: string = ''): Uint8Array {
   const w = new 协议写入器();
+  if (search !== '') {
+    w.写入字符串(1, search);
+  }
   if (days > 0) {
     w.写入变长整数(2, days);
   }
@@ -262,13 +271,17 @@ function decodeToday(bytes: Uint8Array): TodayCounts {
 
 function decodeRetrievability(bytes: Uint8Array): RetrievabilitySummary {
   const r = new 协议读取器(bytes);
-  const out: RetrievabilitySummary = { average: 0, sumByCard: 0, sumByNote: 0 };
+  const out: RetrievabilitySummary = { buckets: null, average: 0, sumByCard: 0, sumByNote: 0 };
   let tag;
   while ((tag = r.读取标签()) !== null) {
     switch (tag.字段号) {
-      case 1:
-        r.跳过字段(tag.线类型);
+      case 1: {
+        if (out.buckets === null) {
+          out.buckets = new Map<number, number>();
+        }
+        decodeUint32Uint32Entry(r.读取字节(), out.buckets);
         break;
+      }
       case 2:
         out.average = r.读取浮点();
         break;
@@ -336,17 +349,30 @@ function decodeReviewCountEntry(bytes: Uint8Array, out: Map<number, ReviewKindCo
   }
 }
 
-function decodeReviewCountsAndTimes(bytes: Uint8Array): Map<number, ReviewKindCounts> {
+/** GraphsResponse.reviews：count（每日次数）+ time（每日用时毫秒，复习图「时间」模式）。 */
+interface ReviewCountsAndTimes {
+  count: Map<number, ReviewKindCounts>;
+  time: Map<number, ReviewKindCounts>;
+}
+
+function decodeReviewCountsAndTimes(bytes: Uint8Array): ReviewCountsAndTimes {
   const r = new 协议读取器(bytes);
-  const out: Map<number, ReviewKindCounts> = new Map<number, ReviewKindCounts>();
+  const out: ReviewCountsAndTimes = {
+    count: new Map<number, ReviewKindCounts>(),
+    time: new Map<number, ReviewKindCounts>()
+  };
   let tag;
   while ((tag = r.读取标签()) !== null) {
     switch (tag.字段号) {
       case 1:
-        decodeReviewCountEntry(r.读取字节(), out);
+        decodeReviewCountEntry(r.读取字节(), out.count);
+        break;
+      case 2:
+        // 每日答题用时（毫秒）：Anki ReviewsGraph showTime 复选框的数据源
+        decodeReviewCountEntry(r.读取字节(), out.time);
         break;
       default:
-        r.跳过字段(tag.线类型); // field2 time 图首页不用，跳过
+        r.跳过字段(tag.线类型);
     }
   }
   return out;
@@ -764,6 +790,7 @@ export function decodeGraphsResponse(bytes: Uint8Array): GraphsView {
     today: null,
     retrievability: null,
     reviewCountsByDaysAgo: null,
+    reviewTimesByDaysAgo: null,
     fsrs: false,
     buttons: null,
     cardCounts: null,
@@ -807,9 +834,12 @@ export function decodeGraphsResponse(bytes: Uint8Array): GraphsView {
         case 8:
           out.added = decodeAdded(r.读取字节());
           break;
-        case 9:
-          out.reviewCountsByDaysAgo = decodeReviewCountsAndTimes(r.读取字节());
+        case 9: {
+          const reviews: ReviewCountsAndTimes = decodeReviewCountsAndTimes(r.读取字节());
+          out.reviewCountsByDaysAgo = reviews.count;
+          out.reviewTimesByDaysAgo = reviews.time;
           break;
+        }
         case 10:
           out.rolloverHour = r.读取变长整数();
           break;

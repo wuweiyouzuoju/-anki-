@@ -28,8 +28,11 @@
 //
 // @业务规则
 // - 数据流方向：主进程写 → 卡片进程读（单向，跨进程通过 filesDir 共享文件）
-// - 用文件系统而非 preferences：preferences 跨 Ability 共享行为不稳定，
-//   filesDir 路径 /data/storage/el2/database/<bundleName>/base/files 跨 Ability 确定共享
+// - 用文件系统而非 preferences：preferences 跨 Ability 共享行为不稳定
+// - 必须用 applicationContext.filesDir：UIAbility 的 context.filesDir 是 /data/storage/el2/base/haps/entry/files，
+//   FormExtensionAbility 的 context.filesDir 是 /data/storage/el2/base/haps/<formModule>/files，
+//   两者路径不同互相读不到。applicationContext.filesDir 是 /data/storage/el2/base/files，跨所有 Ability 共享。
+//   详见 https://developer.huawei.com/consumer/cn/doc/harmonyos-faqs/faqs-local-file-manager-42
 // - Map 字段统一转为 [键, 值][] 数组（卡片沙箱无法直接 JSON.parse Map）
 // - 未来到期只存未来 7 天（含今天），减少数据量
 // - 持久化失败记录 hilog，卡片显示上次数据或空态
@@ -43,13 +46,17 @@ import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { util } from '@kit.ArkTS';
-import { formBindingData, formProvider } from '@kit.FormKit';
-import type { GraphsView, TodayCounts, Eases } from '../proto/messages/StatsMessages';
+import { preferences } from '@kit.ArkData';
+import { formBindingData, formProvider, formInfo } from '@kit.FormKit';
+import type { GraphsView, TodayCounts, Eases, Hours, Intervals } from '../proto/messages/StatsMessages';
 
 const 日志域: string = 'WidgetData';
 const 数据文件名: string = 'widget_stats.json';
 const formId文件名: string = 'widget_form_ids.json';
 const 上下文键: string = 'abilityContext';
+// preferences 持久化协议字段，禁止修改（统计页切换小时分布窗口 → 卡片跟随）
+const 偏好存储名: string = 'jidecards_settings';
+const 小时分布窗口键: string = 'stats_hours_range';
 
 // ========================================================
 // @块ID MODEL-WIDGET-DATA-002
@@ -64,7 +71,7 @@ const 上下文键: string = 'abilityContext';
 // 今日计数：直接透传 TodayCounts 的子集
 // 卡片状态：7 个分桶计数（newCards/learn/relearn/young/mature/suspended/buried）
 // 小时分布：24 个 [总数, 正确数] 二元组（hours.allTime）
-// 难度分布：[难度桶, 卡片数][] + 平均值（per mill，需 / 10 显示为百分比）
+// 难度分布：[难度桶, 卡片数][] + 平均值（后端已是百分比，直接显示）
 // 间隔分布：[间隔桶天, 卡片数][]
 // 未来到期：[距今天数, 到期数][] 未来 7 天
 // 更新时间：毫秒时间戳，卡片显示"更新于 HH:mm"
@@ -101,9 +108,11 @@ export interface 桌面卡片数据 {
   今日重学数: number;
   // 页4：卡片状态 —— 7 个分桶（excludingInactive）
   卡片状态: 卡片状态数据;
-  // 页5：小时分布 —— 24 个 [总数, 正确数][]
+  // 页5：小时分布 —— 24 个 [总数, 正确数][]（按 小时分布窗口 取对应时间段）
   小时分布: [number, number][];
-  // 页6：难度分布 —— [难度桶 per mill, 卡片数][] + 平均值
+  // 小时分布窗口：0=近1月 1=近3月 2=近1年 3=全部（与统计页小时分布卡切换档一致）
+  小时分布窗口: number;
+  // 页6：难度分布 —— [难度桶百分比, 卡片数][] + 平均值（已是百分比）
   难度分布: 难度分布数据;
   // 页7：间隔分布 —— [间隔桶天, 卡片数][]
   间隔分布: [number, number][];
@@ -111,6 +120,8 @@ export interface 桌面卡片数据 {
   未来到期: [number, number][];
   // 元信息
   更新时间: number;         // 毫秒时间戳
+  // 系统语言（卡片沙箱不支持 i18n API，主进程注入）：'zh' 或 'en'
+  语言: string;
   // 主题色（卡片沙箱无法访问 AppStorage，主进程序列化传入）
   主题色: 主题色载体;
 }
@@ -138,6 +149,35 @@ function 取上下文(): common.UIAbilityContext | null {
 }
 
 // ========================================================
+// @名称 聚合分布桶
+// @作用 等宽分箱合并分布桶到上限数量，控制卡片 JSON 体积。
+//       卡片/首页摘要的柱状图只用计数值（键不显示），合并对 UI 透明。
+// @输入 桶数组: 已按键升序排序的 [键, 计数][]；上限: 最大桶数
+// ========================================================
+function 聚合分布桶(桶数组: [number, number][], 上限: number): [number, number][] {
+  if (桶数组.length <= 上限) {
+    return 桶数组;
+  }
+  const 最小键: number = 桶数组[0][0];
+  const 最大键: number = 桶数组[桶数组.length - 1][0];
+  const 桶宽: number = Math.max(1, Math.ceil((最大键 - 最小键 + 1) / 上限));
+  const 结果: [number, number][] = [];
+  let 当前箱序号: number = -1;
+  for (let i: number = 0; i < 桶数组.length; i++) {
+    const 键: number = 桶数组[i][0];
+    const 计数: number = 桶数组[i][1];
+    const 箱序号: number = Math.floor((键 - 最小键) / 桶宽);
+    if (箱序号 === 当前箱序号 && 结果.length > 0) {
+      结果[结果.length - 1][1] += 计数;
+    } else {
+      结果.push([键, 计数]);
+      当前箱序号 = 箱序号;
+    }
+  }
+  return 结果;
+}
+
+// ========================================================
 // @块ID MODEL-WIDGET-DATA-003
 // @名称 从 GraphsView 提取卡片数据
 //
@@ -151,7 +191,7 @@ function 取上下文(): common.UIAbilityContext | null {
 // @输出
 // 桌面卡片数据（已剥离 Map/Resource 等不可序列化类型）
 // ========================================================
-export function 提取卡片数据(图表数据: GraphsView, 待学数: number = 0, 牌组数: number = 0): 桌面卡片数据 {
+export function 提取卡片数据(图表数据: GraphsView, 待学数: number = 0, 牌组数: number = 0, 小时窗口: number = 0): 桌面卡片数据 {
   const 主题色: 主题色载体 = 读取主题色();
   const 当前时刻: Date = new Date();
 
@@ -185,11 +225,17 @@ export function 提取卡片数据(图表数据: GraphsView, 待学数: number =
     埋藏: 卡片状态源 !== null ? 卡片状态源.buried : 0
   };
 
-  // 页5：小时分布 —— hours.allTime（24 元素），取 [total, correct]
+  // 页5：小时分布 —— 按窗口取对应时间段（0=1月 1=3月 2=1年 3=全部，与统计页切换档一致）
+  const 小时源: Hours | null = 图表数据.hours;
+  let 桶列表 = 小时源 === null ? [] :
+    (小时窗口 === 1 ? 小时源.threeMonths
+      : 小时窗口 === 2 ? 小时源.oneYear
+        : 小时窗口 === 3 ? 小时源.allTime
+          : 小时源.oneMonth);
   const 小时分布: [number, number][] = [];
-  if (图表数据.hours !== null && 图表数据.hours.allTime.length > 0) {
-    for (let i: number = 0; i < 图表数据.hours.allTime.length; i++) {
-      const 桶 = 图表数据.hours.allTime[i];
+  if (桶列表.length > 0) {
+    for (let i: number = 0; i < 桶列表.length; i++) {
+      const 桶 = 桶列表[i];
       小时分布.push([桶.total, 桶.correct]);
     }
   } else {
@@ -219,31 +265,36 @@ export function 提取卡片数据(图表数据: GraphsView, 待学数: number =
     });
   }
   难度桶数组.sort((a, b) => a[0] - b[0]);
+  // 聚合分箱控制在 20 桶内：卡片 UI 只按计数画柱（键不显示），
+  // SM-2 键域 130~390 可达上百桶，直接透传会撑爆 FormBindingData 的 2KB 跨进程上限
   const 难度分布: 难度分布数据 = {
-    桶: 难度桶数组,
+    桶: 聚合分布桶(难度桶数组, 20),
     平均: 难度源 !== null ? 难度源.average : 0
   };
 
-  // 页7：间隔分布 —— intervals.intervals map → [桶, 计数][]
-  const 间隔分布: [number, number][] = [];
-  if (图表数据.intervals !== null && 图表数据.intervals.intervals !== null) {
-    图表数据.intervals.intervals.forEach((计数: number, 桶: number) => {
-      间隔分布.push([桶, 计数]);
+  // 页7：间隔分布 —— 对齐 Anki 官方 Review Intervals：始终显示复习间隔天数，与 FSRS 无关
+  const 间隔源: Intervals | null = 图表数据.intervals;
+  const 间隔桶数组: [number, number][] = [];
+  if (间隔源 !== null && 间隔源.intervals !== null) {
+    间隔源.intervals.forEach((计数: number, 桶: number) => {
+      间隔桶数组.push([桶, 计数]);
     });
   }
-  间隔分布.sort((a, b) => a[0] - b[0]);
+  间隔桶数组.sort((a, b) => a[0] - b[0]);
+  // 截断前 20 桶（与统计页间隔分布卡同口径），控制 JSON 体积
+  const 间隔分布: [number, number][] = 间隔桶数组.slice(0, 20);
 
-  // 页8：未来到期预测 —— 取未来 7 天（0~6），过滤 backlog（负数）
+  // 页8：未来到期预测 —— 取未来 30 天（0~29，整月），过滤 backlog（负数）
   const 未来到期: [number, number][] = [];
   if (图表数据.futureDue !== null && 图表数据.futureDue.futureDue !== null) {
     图表数据.futureDue.futureDue.forEach((到期数: number, 天偏移: number) => {
-      if (天偏移 >= 0 && 天偏移 <= 6) {
+      if (天偏移 >= 0 && 天偏移 <= 29) {
         未来到期.push([天偏移, 到期数]);
       }
     });
   }
-  // 补齐 7 天（缺失的天补 0）
-  for (let i: number = 0; i <= 6; i++) {
+  // 补齐 30 天（缺失的天补 0），卡片侧细条整月渲染保持稳定
+  for (let i: number = 0; i <= 29; i++) {
     const 已存在: boolean = 未来到期.some((项) => 项[0] === i);
     if (!已存在) {
       未来到期.push([i, 0]);
@@ -265,12 +316,24 @@ export function 提取卡片数据(图表数据: GraphsView, 待学数: number =
     今日重学数,
     卡片状态,
     小时分布,
+    小时分布窗口: 小时窗口,
     难度分布,
     间隔分布,
     未来到期,
     更新时间: 当前时刻.getTime(),
+    语言: 读取系统语言(),
     主题色
   };
+}
+
+// ========================================================
+// @名称 读取系统语言
+// @作用 从 AppStorage 读取 EntryAbility 启动时存的系统语言，供卡片沙箱本地化
+// @兜底 AppStorage 无值时返回 'zh'
+// ========================================================
+function 读取系统语言(): string {
+  const 语言: string | undefined = AppStorage.get<string>('系统语言');
+  return 语言 === undefined ? 'zh-Hans' : 语言;
 }
 
 // ========================================================
@@ -332,7 +395,7 @@ export async function 保存卡片数据(数据: 桌面卡片数据): Promise<vo
     return;
   }
   try {
-    const 路径: string = `${上下文.filesDir}/${数据文件名}`;
+    const 路径: string = `${上下文.getApplicationContext().filesDir}/${数据文件名}`;
     const 文件: fileIo.File = fileIo.openSync(路径, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
     const JSON串: string = JSON.stringify(数据);
     fileIo.writeSync(文件.fd, JSON串);
@@ -343,6 +406,46 @@ export async function 保存卡片数据(数据: 桌面卡片数据): Promise<vo
     await 推送到所有卡片(数据);
   } catch (错误) {
     hilog.error(0x0000, 日志域, `保存卡片数据异常: ${错误}`);
+  }
+}
+
+// ========================================================
+// @块ID MODEL-WIDGET-DATA-006
+// @名称 小时分布窗口偏好
+//
+// @作用
+// 统计页/首页卡片/桌面卡片共用的小时分布时间段选择（0=近1月 1=近3月 2=近1年 3=全部）。
+// 统计页切换档位时保存；提取卡片数据前加载，实现三处口径一致。
+//
+// @副作用
+// 读写 preferences（jidecards_settings / stats_hours_range）。
+// ========================================================
+export async function 加载小时分布窗口(): Promise<number> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return 2;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 偏好存储名);
+    const 值: preferences.ValueType = await 存储.get(小时分布窗口键, 2);
+    const 窗口: number = typeof 值 === 'number' ? 值 : 2;
+    return 窗口 >= 0 && 窗口 <= 3 ? 窗口 : 2;
+  } catch (_错误) {
+    return 2;
+  }
+}
+
+export async function 保存小时分布窗口(窗口: number): Promise<void> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 偏好存储名);
+    await 存储.put(小时分布窗口键, 窗口);
+    await 存储.flush();
+  } catch (_错误) {
+    // 偏好写入失败静默跳过，不影响统计页展示
   }
 }
 
@@ -364,7 +467,7 @@ export async function 保存卡片数据(数据: 桌面卡片数据): Promise<vo
 // ========================================================
 export async function 加载卡片数据(上下文: common.Context): Promise<桌面卡片数据 | null> {
   try {
-    const 路径: string = `${上下文.filesDir}/${数据文件名}`;
+    const 路径: string = `${上下文.getApplicationContext().filesDir}/${数据文件名}`;
     if (!fileIo.accessSync(路径)) {
       hilog.info(0x0000, 日志域, `加载卡片数据: 文件不存在 ${路径}`);
       return null;
@@ -430,7 +533,7 @@ export async function 保存formId带上下文(上下文: common.Context, formId
 
 async function 写formId文件(上下文: common.Context, formId: string): Promise<void> {
   try {
-    const 路径: string = `${上下文.filesDir}/${formId文件名}`;
+    const 路径: string = `${上下文.getApplicationContext().filesDir}/${formId文件名}`;
     // 读取现有列表
     let ids: string[] = [];
     if (fileIo.accessSync(路径)) {
@@ -463,7 +566,7 @@ async function 写formId文件(上下文: common.Context, formId: string): Promi
 
 async function 读formId列表(上下文: common.Context): Promise<string[]> {
   try {
-    const 路径: string = `${上下文.filesDir}/${formId文件名}`;
+    const 路径: string = `${上下文.getApplicationContext().filesDir}/${formId文件名}`;
     if (!fileIo.accessSync(路径)) {
       return [];
     }
@@ -508,12 +611,20 @@ async function 推送到所有卡片(数据: 桌面卡片数据): Promise<void> 
   if (上下文 === null) {
     return;
   }
-  const ids: string[] = await 读formId列表(上下文);
+  let ids: string[] = await 读formId列表(上下文);
+  if (ids.length === 0) {
+    // formId 文件缺失（旧版本添加的卡片未注册过 formId）时，
+    // 用系统 API 兜底拉取本应用全部卡片并写回文件自愈，后续推送不再走兜底
+    ids = await 从系统拉取formId(上下文);
+  }
   if (ids.length === 0) {
     hilog.info(0x0000, 日志域, '推送到所有卡片: 无已注册 formId，跳过');
     return;
   }
-  const 绑定数据: 卡片绑定载体 = { 'statsCardData': JSON.stringify(数据) };
+  const JSON串: string = JSON.stringify(数据);
+  // FormBindingData 跨进程传输有 2KB 上限，超限 updateForm 会失败导致卡片冻结在旧数据
+  hilog.info(0x0000, 日志域, `推送卡片 JSON 大小: ${JSON串.length} 字节, 目标 ${ids.length} 张卡片`);
+  const 绑定数据: 卡片绑定载体 = { 'statsCardData': JSON串 };
   for (const id of ids) {
     try {
       await formProvider.updateForm(id, formBindingData.createFormBindingData(绑定数据));
@@ -522,5 +633,42 @@ async function 推送到所有卡片(数据: 桌面卡片数据): Promise<void> 
       hilog.error(0x0000, 日志域, `推送卡片失败: ${id}, ${错误}`);
       // 卡片可能已被移除，formId 失效；后续可考虑清理失效 formId
     }
+  }
+}
+
+// ========================================================
+// @名称 从系统拉取formId
+// @作用 formId 文件缺失/为空时的兜底：getPublishedRunningFormInfos 查询
+//       本应用当前所有已发布卡片（FormInfo 无 formId 字段，需用 RunningFormInfo），
+//       把 formId 写回文件自愈。
+// ========================================================
+async function 从系统拉取formId(上下文: common.UIAbilityContext): Promise<string[]> {
+  try {
+    const 信息列表: formInfo.RunningFormInfo[] = await formProvider.getPublishedRunningFormInfos();
+    const ids: string[] = [];
+    for (let i: number = 0; i < 信息列表.length; i++) {
+      ids.push(信息列表[i].formId);
+    }
+    hilog.info(0x0000, 日志域, `从系统拉取formId: ${ids.length} 张卡片`);
+    if (ids.length > 0) {
+      await 覆盖写formId文件(上下文, ids);
+    }
+    return ids;
+  } catch (错误) {
+    hilog.error(0x0000, 日志域, `从系统拉取formId失败: ${错误}`);
+    return [];
+  }
+}
+
+async function 覆盖写formId文件(上下文: common.Context, ids: string[]): Promise<void> {
+  try {
+    const 路径: string = `${上下文.getApplicationContext().filesDir}/${formId文件名}`;
+    const 写入载体: formId载体 = { ids };
+    const 写文件: fileIo.File = fileIo.openSync(路径, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.TRUNC);
+    fileIo.writeSync(写文件.fd, JSON.stringify(写入载体));
+    fileIo.fsyncSync(写文件.fd);
+    fileIo.closeSync(写文件);
+  } catch (错误) {
+    hilog.error(0x0000, 日志域, `覆盖写formId文件失败: ${错误}`);
   }
 }

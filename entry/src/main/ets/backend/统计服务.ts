@@ -11,7 +11,7 @@
 //
 // @Invariants
 // - 一次 Graphs 调用同时取回按日复习计数与平均可提取率
-// - search 固定空串（全库统计，graph_data_for_search 的 all 分支）
+// - 搜索串为空 = 全库统计（graph_data_for_search 的 all 分支）；统计页牌组下拉传 deck 搜索串
 // - GraphPreferences 与 prost 一致：默认值省略不写
 //
 // @ExtensionPoints
@@ -45,11 +45,12 @@ export class 统计服务 {
   private readonly 会话: 后端会话 = 后端会话.获取实例();
 
   /**
-   * 拉取全库图表统计。天数 为回看天数（0=全部历史），首页传当月已过去的天数即可。
+   * 拉取图表统计。天数 为回看天数（0=全部历史）。
+   * 搜索串 为空 = 全库统计；传 deck:"牌组名" 时仅统计该牌组（统计页牌组下拉）。
    * 返回值中 reviewCountsByDaysAgo / retrievability 可能为 null（响应缺省字段）。
    */
-  async 获取图表统计(天数: number): Promise<GraphsView> {
-    const 请求字节: Uint8Array = encodeGraphsRequest(天数);
+  async 获取图表统计(天数: number, 搜索串: string = ''): Promise<GraphsView> {
+    const 请求字节: Uint8Array = encodeGraphsRequest(天数, 搜索串);
     const 响应字节: Uint8Array = await this.会话.调用(
       服务号.后端统计, 统计方法.图表, 请求字节);
     return decodeGraphsResponse(响应字节);

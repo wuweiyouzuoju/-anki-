@@ -29,10 +29,10 @@ test('service ids pin backend stats service 43 and graphs method 2', () => {
 
 test('stats service wraps the graphs call through the shared session', () => {
   const service = read(STATS_SERVICE);
-  assert.match(service, /async 获取图表统计\(天数: number\): Promise<GraphsView>/);
+  assert.match(service, /async 获取图表统计\(天数: number, 搜索串: string = ''\): Promise<GraphsView>/);
   assert.match(service, /服务号\.后端统计/);
   assert.match(service, /统计方法\.图表/);
-  assert.match(service, /encodeGraphsRequest\(天数\)/);
+  assert.match(service, /encodeGraphsRequest\(天数, 搜索串\)/);
   assert.match(service, /decodeGraphsResponse\(响应字节\)/);
   assert.doesNotMatch(service, /new 后端客户端/, 'must go through 后端会话');
 });
@@ -67,8 +67,8 @@ test('home wires graphs into the snapshot and degrades quietly', () => {
 
   const method = index.match(/private async 静默加载图表[\s\S]*?\n  \}/);
   assert.notEqual(method, null);
-  assert.match(method[0], /统计服务实例\.获取图表统计\(new Date\(\)\.getDate\(\)\)/,
-    'lookback window covers the current month only');
+  assert.match(method[0], /统计服务实例\.获取图表统计\(365\)/,
+    'lookback window must match the stats page (365 days), not a date-derived value');
   assert.match(method[0], /catch \(error\)[\s\S]*?return null/,
     'stats failure must degrade to the empty state without blocking home');
 });

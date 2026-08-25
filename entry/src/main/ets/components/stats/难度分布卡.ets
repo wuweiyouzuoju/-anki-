@@ -1,24 +1,48 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// 难度分布卡：渲染 GraphsView.eases（SM-2）或 difficulty（FSRS）为水平条形图。
-// 是否FSRS=true 时展示 difficulty，否则展示 eases。显示平均值。
+// 难度分布卡：渲染 eases（SM-2 难度系数）或 difficulty（FSRS 难度）为直方图
+// （对齐 Anki EaseGraph / DifficultyGraph）。
+// 色带 RdYlGn：FSRS 难度 100 红 → 0 绿（domain [100,0]）；
+// SM-2 难度系数 130 红 → 300 绿（domain [130,300]）。约 20 柱（Anki desiredBars=20）。
+// FSRS 模式带范围切换（Anki PercentageRange，默认全部）：全部 [0,100] / 100% / 95% / 50%（加权分位截断）。
+// 底部统计行：平均难度（后端 average 已是百分比口径）。
+// Invariants: build 单根 Column；FSRS 优先取 difficulty，SM-2 取 eases。
 
 import type { Eases } from '../../proto/messages/StatsMessages';
 import { 应用尺寸 } from '../../utils/应用尺寸';
-import { 颜色键 } from '../../model/颜色主题';
+import { 取难度柱色, 取红黄绿 } from '../../model/统计色板';
+import { 加权分位, 取轴域 } from '../../model/统计分箱';
+import type { 轴域 } from '../../model/统计分箱';
+import { 范围切换条 } from './范围切换条';
+import { 纵轴刻度, 纵轴宽 } from './图表轴';
 
-interface 分布项 {
-  标签: string;
-  数量: number;
+/** 单柱：区间右端（百分比口径）+ 卡数 */
+interface 难度柱 {
+  右端: number;
+  卡数: number;
 }
 
 @Component
 export struct 难度分布卡 {
-  @Prop 难度数据: Eases | null = null;
-  @Prop FSRS难度: Eases | null = null;
-  @Prop 是否FSRS: boolean = false;
-  @StorageProp(颜色键.动作主色) private 主色: string = '#2F5FD0';
-  @StorageProp(颜色键.主色容器) private 容器色: string = '#E8EEFC';
+  @Prop @Watch('更新缓存') 难度数据: Eases | null = null;
+  @Prop @Watch('更新缓存') FSRS难度: Eases | null = null;
+  @Prop @Watch('更新缓存') 是否FSRS: boolean = false;
+  @State private 范围索引: number = 0;
+  @State private 柱缓存: 难度柱[] = [];
+  @State private 域下限: number = 0;
+  @State private 域上限: number = 100;
+  private readonly 柱区高度: number = 108;
+  private readonly 柱数上限: number = 20;
+  private readonly 范围标签: Resource[] = [
+    $r('app.string.stats_hours_range_all'),
+    $r('app.string.stats_range_p100'),
+    $r('app.string.stats_range_p95'),
+    $r('app.string.stats_range_p50')
+  ];
+
+  aboutToAppear(): void {
+    this.更新缓存();
+  }
 
   private 取数据(): Eases | null {
     if (this.是否FSRS && this.FSRS难度 !== null) {
@@ -27,72 +51,119 @@ export struct 难度分布卡 {
     return this.难度数据;
   }
 
-  private 取条目(数据: Eases): 分布项[] {
-    if (数据.eases === null) {
-      return [];
+  /** 域：FSRS 难度按范围索引（全部 [0,100] / 100% / 95% / 50% 加权分位截断）；
+   *  SM-2 难度系数固定 [130, 最大键+1]（Anki EaseGraph 无范围切换） */
+  private 取域(): number[] {
+    const 数据: Eases | null = this.取数据();
+    if (数据 === null || 数据.eases === null || 数据.eases.size === 0) {
+      return this.是否FSRS ? [0, 100] : [130, 300];
     }
-    const 项列表: 分布项[] = [];
-    数据.eases.forEach((值: number, 键: number) => {
-      const 标签: string = this.是否FSRS ? `${(键 / 10).toFixed(0)}` : `${键}%`;
-      const 项: 分布项 = { 标签: 标签, 数量: 值 };
-      项列表.push(项);
-    });
-    项列表.sort((a: 分布项, b: 分布项) => {
-      const aNum: number = parseInt(a.标签, 10);
-      const bNum: number = parseInt(b.标签, 10);
-      return aNum - bNum;
-    });
-    return 项列表.slice(0, 20);
-  }
-
-  private 取最大值(条目: 分布项[]): number {
-    let 最大: number = 0;
-    for (let i = 0; i < 条目.length; i++) {
-      if (条目[i].数量 > 最大) {
-        最大 = 条目[i].数量;
+    if (this.是否FSRS) {
+      switch (this.范围索引) {
+        case 0:
+          return [0, 100];
+        case 1: {
+          let 最小: number = 100;
+          let 最大: number = 0;
+          数据.eases.forEach((卡数: number, 键: number) => {
+            if (卡数 > 0) {
+              if (键 < 最小) {
+                最小 = 键;
+              }
+              if (键 > 最大) {
+                最大 = 键;
+              }
+            }
+          });
+          return 最大 > 最小 ? [最小, 最大 + 1] : [0, 100];
+        }
+        case 2:
+          return [Math.floor(加权分位(数据.eases, 0.025)), Math.ceil(加权分位(数据.eases, 0.975))];
+        default:
+          return [Math.floor(加权分位(数据.eases, 0.25)), Math.ceil(加权分位(数据.eases, 0.75))];
       }
     }
-    return 最大 === 0 ? 1 : 最大;
+    let 最大: number = 130;
+    数据.eases.forEach((卡数: number, 键: number) => {
+      if (卡数 > 0 && 键 > 最大) {
+        最大 = 键;
+      }
+    });
+    return [130, 最大 + 1];
   }
 
-  @Builder
-  private 分布行(项: 分布项, 比例: number) {
-    Row({ space: 应用尺寸.间距_8 }) {
-      Text(项.标签)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_secondary'))
-        .width(50)
-      Stack({ alignContent: Alignment.Start }) {
-        Column()
-          .width('100%')
-          .height(应用尺寸.进度条高度)
-          .backgroundColor(this.容器色)
-          .borderRadius(应用尺寸.圆角_进度条)
-        Column()
-          .width(`${比例 * 100}%`)
-          .height(应用尺寸.进度条高度)
-          .backgroundColor(this.主色)
-          .borderRadius(应用尺寸.圆角_进度条)
-      }
-      .layoutWeight(1)
-      .height(应用尺寸.进度条高度)
-      Text(`${项.数量}`)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_primary'))
-        .width(40)
-        .textAlign(TextAlign.End)
+  /** 柱色：FSRS 按难度（右端/100，高=红）；SM-2 按难度系数（(值-130)/170，低=红高=绿） */
+  private 取柱色(柱: 难度柱): string {
+    if (this.是否FSRS) {
+      return 取难度柱色(柱.右端 / 100);
     }
-    .width('100%')
+    return 取红黄绿((柱.右端 - 130) / 170);
+  }
+
+  更新缓存(): void {
+    const 域: number[] = this.取域();
+    this.域下限 = 域[0];
+    this.域上限 = 域[1];
+    const 数据: Eases | null = this.取数据();
+    const 柱: 难度柱[] = [];
+    if (数据 !== null && 数据.eases !== null && 域[1] > 域[0]) {
+      const 步长: number = Math.max(1, Math.ceil((域[1] - 域[0]) / this.柱数上限));
+      const 柱数: number = Math.floor((域[1] - 域[0]) / 步长) + 1;
+      for (let i = 0; i < 柱数; i++) {
+        柱.push({ 右端: 域[0] + (i + 1) * 步长, 卡数: 0 });
+      }
+      数据.eases.forEach((卡数: number, 键: number) => {
+        if (键 < 域[0] || 键 > 域[1]) {
+          return;
+        }
+        const 索引: number = Math.floor((键 - 域[0]) / 步长);
+        if (索引 >= 0 && 索引 < 柱数) {
+          柱[索引].卡数 += 卡数;
+        }
+      });
+    }
+    this.柱缓存 = 柱;
+  }
+
+  /** Y 轴域（上限与刻度绑定产出，柱高归一化用 域.上限） */
+  private 取轴(): 轴域 {
+    let 峰值: number = 0;
+    for (let i = 0; i < this.柱缓存.length; i++) {
+      if (this.柱缓存[i].卡数 > 峰值) {
+        峰值 = this.柱缓存[i].卡数;
+      }
+    }
+    return 取轴域(峰值, 4);
+  }
+
+  private 取总计(): number {
+    let 总计: number = 0;
+    for (let i = 0; i < this.柱缓存.length; i++) {
+      总计 += this.柱缓存[i].卡数;
+    }
+    return 总计;
   }
 
   private 数据为空(): boolean {
-    const 数据: Eases | null = this.取数据();
-    if (数据 === null) return true;
-    return this.取条目(数据).length === 0;
+    if (this.取数据() === null) {
+      return true;
+    }
+    return this.柱缓存.length === 0 || this.取总计() === 0;
   }
 
   build() {
-    Column() {
+    Column({ space: 应用尺寸.间距_8 }) {
+      // FSRS 范围切换（Anki DifficultyGraph PercentageRange，默认全部）；SM-2 无范围切换
+      if (this.是否FSRS) {
+        范围切换条({
+          当前索引: this.范围索引,
+          标签集: this.范围标签,
+          onRangeChange: (): void => {
+            this.更新缓存();
+          }
+        })
+      }
+
       if (this.数据为空()) {
         Text($r('app.string.stats_empty_section'))
           .fontSize(应用尺寸.字号_正文)
@@ -101,26 +172,70 @@ export struct 难度分布卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染难度(this.取数据() as Eases, this.取条目(this.取数据() as Eases), this.取最大值(this.取条目(this.取数据() as Eases)))
+        this.渲染难度(this.取数据() as Eases, this.取轴())
       }
     }
     .width('100%')
   }
 
   @Builder
-  private 渲染难度(数据: Eases, 条目: 分布项[], 最大值: number) {
-    Column({ space: 应用尺寸.间距_3 }) {
-      if (数据.average > 0) {
-        Text($r('app.string.stats_ease_average', this.是否FSRS
-          ? `${(数据.average / 10).toFixed(1)}` : `${数据.average.toFixed(0)}`))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-          .padding({ bottom: 应用尺寸.间距_4 })
+  private 渲染难度(数据: Eases, 域: 轴域) {
+    Column({ space: 应用尺寸.间距_8 }) {
+      // 直方图（RdYlGn 渐变，约 20 柱）
+      Row() {
+        纵轴刻度({
+          刻度: 域.刻度,
+          高度: this.柱区高度
+        })
+        Row({ space: 1 }) {
+          ForEach(this.柱缓存, (柱: 难度柱, 索引: number) => {
+            Stack({ alignContent: Alignment.Bottom }) {
+              Column()
+                .width('70%')
+                .height(`${Math.max(柱.卡数 / 域.上限 * 100, 柱.卡数 > 0 ? 4 : 0)}%`)
+                .backgroundColor(this.取柱色(柱))
+                .borderRadius(1)
+            }
+            .width('100%')
+            .height('100%')
+            .layoutWeight(1)
+          }, (柱: 难度柱, 索引: number) => `${索引}`)
+        }
+        .layoutWeight(1)
+        .height(this.柱区高度)
       }
-      ForEach(条目, (项: 分布项) => {
-        this.分布行(项, 项.数量 / 最大值)
-      }, (项: 分布项) => `${项.标签}`)
+      .width('100%')
+
+      // 轴标签：域两端百分比
+      Row() {
+        Text(`${this.域下限}%`)
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.Start)
+        Text(`${this.域上限}%`)
+          .fontSize(应用尺寸.字号_说明_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+          .textAlign(TextAlign.End)
+      }
+      .width('100%')
+      .padding({ left: 纵轴宽 })
+
+      // 平均难度（Anki average 直出行；后端已换算为百分比口径）
+      if (数据.average > 0) {
+        Row() {
+          Text($r('app.string.stats_ease_average_label'))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor($r('app.color.text_secondary'))
+          Blank()
+          // % 放入参数而非资源模式，避免资源格式化歧义出现双 %%
+          Text($r('app.string.stats_ease_average', `${数据.average.toFixed(0)}%`))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor($r('app.color.text_primary'))
+        }
+        .width('100%')
+      }
     }
     .width('100%')
   }

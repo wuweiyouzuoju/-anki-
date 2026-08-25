@@ -49,7 +49,7 @@ import { 牌组配置服务 } from '../backend/牌组配置服务';
 import { 统计服务 } from '../backend/统计服务';
 import { 牌组服务 } from '../backend/牌组服务';
 import { 后端会话 } from '../backend/后端会话';
-import { 保存卡片数据, 提取卡片数据 } from './桌面卡片数据存储';
+import { 保存卡片数据, 提取卡片数据, 加载小时分布窗口 } from './桌面卡片数据存储';
 import { 平铺牌组树 } from './牌组层级';
 import type {
   DeckConfig,
@@ -203,7 +203,8 @@ export async function 刷新桌面卡片数据(): Promise<void> {
   try {
     await 后端会话.获取实例().确保已打开(上下文.filesDir);
     const 统计: 统计服务 = new 统计服务();
-    const graphs: GraphsView = await 统计.获取图表统计(new Date().getDate());
+    // days 必须与统计页/首页一致（365），否则桌面卡片与统计页数据不一致
+    const graphs: GraphsView = await 统计.获取图表统计(365);
     // 拉牌组树算待学数/牌组数，供桌面卡片今日进度页（失败时传0）
     let 总待学: number = 0;
     let 牌组总数: number = 0;
@@ -217,7 +218,7 @@ export async function 刷新桌面卡片数据(): Promise<void> {
     } catch (_牌组错误) {
       // 牌组树拉取失败不阻塞，桌面卡片显示0
     }
-    await 保存卡片数据(提取卡片数据(graphs, 总待学, 牌组总数));
+    await 保存卡片数据(提取卡片数据(graphs, 总待学, 牌组总数, await 加载小时分布窗口()));
   } catch (错误) {
     hilog.error(0x0000, 'FSRS控制器', `刷新桌面卡片数据异常: ${错误}`);
   }

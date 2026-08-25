@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// 今日计数卡：渲染 GraphsView.today 的统计指标网格。
-// 用 2 列 Grid 展示已答/正确/学习/复习/重学/提前/成熟卡正确率/用时。
+// 今日计数卡：渲染 GraphsView.today 为 4 行文字列表（对齐 Anki TodayStats）。
+// 行 1 今天学习了 N 张，用时 X（Y 秒/张）；行 2 重来次数 N (P%)；
+// 行 3 学习/复习/重学/过滤 计数；行 4 成熟卡正确率（无成熟卡时提示）。
+// Invariants: build 单根 Column；未答题时仅显示"今天还没有学习卡片"一行。
 
 import { common } from '@kit.AbilityKit';
 import type { TodayCounts } from '../../proto/messages/StatsMessages';
@@ -39,45 +41,83 @@ export struct 今日计数卡 {
     return `${小时}h${余分}m`;
   }
 
-  @Builder
-  private 指标格(标签: Resource, 数值: string) {
-    Column({ space: 应用尺寸.间距_2 }) {
-      Text(数值)
-        .fontSize(应用尺寸.字号_指标)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-      Text(标签)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_secondary'))
+  /** 每张卡平均用时（秒，1 位小数；Anki secsPerCard） */
+  private 取每卡秒(数据: TodayCounts): string {
+    if (数据.answerCount <= 0) {
+      return '0';
     }
-    .width('100%')
-    .padding({ top: 应用尺寸.间距_8, bottom: 应用尺寸.间距_8 })
+    return (数据.answerMillis / 1000 / 数据.answerCount).toFixed(1);
+  }
+
+  /** 重来次数 = 已答 - 正确（Anki againCount） */
+  private 取重来次数(数据: TodayCounts): number {
+    return Math.max(0, 数据.answerCount - 数据.correctCount);
+  }
+
+  private 取重来百分比(数据: TodayCounts): string {
+    if (数据.answerCount <= 0) {
+      return '0%';
+    }
+    return `${(this.取重来次数(数据) / 数据.answerCount * 100).toFixed(2)}%`;
+  }
+
+  private 取成熟正确率(数据: TodayCounts): string {
+    if (数据.matureCount <= 0) {
+      return '0%';
+    }
+    return `${(数据.matureCorrect / 数据.matureCount * 100).toFixed(2)}%`;
   }
 
   build() {
     Column() {
-      if (this.今日数据 === null) {
-        Text($r('app.string.stats_empty_section'))
+      if (this.今日数据 === null || this.今日数据.answerCount === 0) {
+        Text($r('app.string.stats_today_no_cards'))
           .fontSize(应用尺寸.字号_正文)
-          .fontColor($r('app.color.text_tertiary'))
+          .fontColor($r('app.color.text_secondary'))
           .width('100%')
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        Grid() {
-          GridItem() { this.指标格($r('app.string.stats_today_answered'), `${this.今日数据.answerCount}`) }
-          GridItem() { this.指标格($r('app.string.stats_today_correct'), `${this.今日数据.correctCount}`) }
-          GridItem() { this.指标格($r('app.string.stats_today_learn'), `${this.今日数据.learnCount}`) }
-          GridItem() { this.指标格($r('app.string.stats_today_review'), `${this.今日数据.reviewCount}`) }
-          GridItem() { this.指标格($r('app.string.stats_today_relearn'), `${this.今日数据.relearnCount}`) }
-          GridItem() { this.指标格($r('app.string.stats_today_early'), `${this.今日数据.earlyReviewCount}`) }
-          GridItem() { this.指标格($r('app.string.stats_today_mature_correct'), `${this.今日数据.matureCorrect}/${this.今日数据.matureCount}`) }
-          GridItem() { this.指标格($r('app.string.stats_today_time'), this.格式化用时(this.今日数据.answerMillis)) }
-        }
-        .columnsTemplate('1fr 1fr')
-        .width('100%')
+        this.渲染今日(this.今日数据 as TodayCounts)
       }
     }
     .width('100%')
+  }
+
+  @Builder
+  private 渲染今日(d: TodayCounts) {
+    Column({ space: 应用尺寸.间距_10 }) {
+      Text($r('app.string.stats_today_studied', d.answerCount,
+        this.格式化用时(d.answerMillis), this.取每卡秒(d)))
+        .fontSize(应用尺寸.字号_正文)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .textAlign(TextAlign.Center)
+      Text($r('app.string.stats_today_again', this.取重来次数(d), this.取重来百分比(d)))
+        .fontSize(应用尺寸.字号_正文)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .textAlign(TextAlign.Center)
+      Text($r('app.string.stats_today_types', d.learnCount, d.reviewCount, d.relearnCount, d.earlyReviewCount))
+        .fontSize(应用尺寸.字号_正文)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .textAlign(TextAlign.Center)
+      if (d.matureCount > 0) {
+        Text($r('app.string.stats_today_mature_line', d.matureCorrect, d.matureCount, this.取成熟正确率(d)))
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .textAlign(TextAlign.Center)
+      } else {
+        Text($r('app.string.stats_today_no_mature'))
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .textAlign(TextAlign.Center)
+      }
+    }
+    .width('100%')
+    .padding({ top: 应用尺寸.间距_8, bottom: 应用尺寸.间距_8 })
   }
 }
