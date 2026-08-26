@@ -48,15 +48,17 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { util } from '@kit.ArkTS';
 import { preferences } from '@kit.ArkData';
 import { formBindingData, formProvider, formInfo } from '@kit.FormKit';
-import type { GraphsView, TodayCounts, Eases, Hours, Intervals } from '../proto/messages/StatsMessages';
+import { 统计服务 } from '../backend/统计服务';
+import type { GraphsView, TodayCounts, Eases, Hours, Intervals, GraphPreferences } from '../proto/messages/StatsMessages';
 
 const 日志域: string = 'WidgetData';
 const 数据文件名: string = 'widget_stats.json';
 const formId文件名: string = 'widget_form_ids.json';
 const 上下文键: string = 'abilityContext';
-// preferences 持久化协议字段，禁止修改（统计页切换小时分布窗口 → 卡片跟随）
+// preferences 持久化协议字段，禁止修改（统计页切换小时分布窗口/统计天数 → 卡片跟随）
 const 偏好存储名: string = 'jidecards_settings';
 const 小时分布窗口键: string = 'stats_hours_range';
+const 统计天数键: string = 'stats_days_range';
 
 // ========================================================
 // @块ID MODEL-WIDGET-DATA-002
@@ -133,10 +135,6 @@ export interface 主题色载体 {
   主色文字: string;         // 标题
   文字主: string;           // 正文
   文字次: string;           // 次要文字
-  热力1: string;            // 月历热力图 4 档
-  热力2: string;
-  热力3: string;
-  热力4: string;
   页面底色: string;         // 卡片背景色（跟随主题页面底色）
   卡片底色: string;         // 卡片内部分区背景
   是否深色: boolean;
@@ -191,7 +189,7 @@ function 聚合分布桶(桶数组: [number, number][], 上限: number): [number
 // @输出
 // 桌面卡片数据（已剥离 Map/Resource 等不可序列化类型）
 // ========================================================
-export function 提取卡片数据(图表数据: GraphsView, 待学数: number = 0, 牌组数: number = 0, 小时窗口: number = 0): 桌面卡片数据 {
+export function 提取卡片数据(图表数据: GraphsView, 待学数: number = 0, 牌组数: number = 0, 小时窗口: number = 0, 分离暂停: boolean = false): 桌面卡片数据 {
   const 主题色: 主题色载体 = 读取主题色();
   const 当前时刻: Date = new Date();
 
@@ -211,9 +209,12 @@ export function 提取卡片数据(图表数据: GraphsView, 待学数: number =
   const 今日复习数: number = 今日 !== null ? 今日.reviewCount : 0;
   const 今日重学数: number = 今日 !== null ? 今日.relearnCount : 0;
 
-  // 页4：卡片状态 —— 优先 excludingInactive（区分暂停/埋藏），为 null 时回退 includingInactive
+  // 页4：卡片状态 —— 跟随统计页「分离暂停与搁置卡片」偏好（Anki CardCounts 口径）：
+  // 分离=true 用 excludingInactive（暂停/埋藏单独计数）；false 用 includingInactive；
+  // 所选口径为 null 时回退另一口径（后端只算出其中一份的场景）
   const 卡片状态源 = 图表数据.cardCounts !== null
-    ? (图表数据.cardCounts.excludingInactive ?? 图表数据.cardCounts.includingInactive)
+    ? ((分离暂停 ? 图表数据.cardCounts.excludingInactive : 图表数据.cardCounts.includingInactive)
+       ?? (分离暂停 ? 图表数据.cardCounts.includingInactive : 图表数据.cardCounts.excludingInactive))
     : null;
   const 卡片状态: 卡片状态数据 = {
     新卡: 卡片状态源 !== null ? 卡片状态源.newCards : 0,
@@ -281,8 +282,9 @@ export function 提取卡片数据(图表数据: GraphsView, 待学数: number =
     });
   }
   间隔桶数组.sort((a, b) => a[0] - b[0]);
-  // 截断前 20 桶（与统计页间隔分布卡同口径），控制 JSON 体积
-  const 间隔分布: [number, number][] = 间隔桶数组.slice(0, 20);
+  // 聚合分箱控制在 20 桶内（与难度分布同款）：截断会丢长间隔数据，
+  // 等宽合并后仍保留全键域；卡片 UI 只按计数画柱，合并对渲染透明
+  const 间隔分布: [number, number][] = 聚合分布桶(间隔桶数组, 20);
 
   // 页8：未来到期预测 —— 取未来 30 天（0~29，整月），过滤 backlog（负数）
   const 未来到期: [number, number][] = [];
@@ -356,10 +358,6 @@ function 读取主题色(): 主题色载体 {
     主色文字: 取串('theme_color_primary_text', '#2F5FD0'),
     文字主: 是否深色 ? '#E6E8EE' : '#182230',
     文字次: 是否深色 ? '#9AA4B2' : '#667085',
-    热力1: 取串('theme_color_heat_1', '#DCE8FF'),
-    热力2: 取串('theme_color_heat_2', '#B8CEFA'),
-    热力3: 取串('theme_color_heat_3', '#7EA3EE'),
-    热力4: 取串('theme_color_heat_4', '#2F5FD0'),
     页面底色: 取串('theme_color_surface_page_tint', 是否深色 ? '#1C1F26' : '#F5F7FA'),
     卡片底色: 是否深色 ? '#252830' : '#FFFFFF',
     是否深色
@@ -446,6 +444,63 @@ export async function 保存小时分布窗口(窗口: number): Promise<void> {
     await 存储.flush();
   } catch (_错误) {
     // 偏好写入失败静默跳过，不影响统计页展示
+  }
+}
+
+// ========================================================
+// @名称 统计天数偏好
+// @作用 统计页顶栏「近 1 年(365)/全部(0)」两档（Anki RangeBox）的本地持久化。
+//       统计页切换档位时保存；首页/FSRS控制器拉 GraphsView 前加载，
+//       实现摘要卡/桌面卡片与统计页同一数据口径（days 决定后端 revlog 范围）。
+//
+// @副作用 读写 preferences（jidecards_settings / stats_days_range）。
+// ========================================================
+export async function 加载统计天数(): Promise<number> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return 365;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 偏好存储名);
+    const 值: preferences.ValueType = await 存储.get(统计天数键, 365);
+    if (typeof 值 !== 'number') {
+      return 365;
+    }
+    // 仅两档合法：365=近 1 年，0=全部；越界回退默认
+    return 值 === 0 ? 0 : 365;
+  } catch (_错误) {
+    return 365;
+  }
+}
+
+export async function 保存统计天数(天数: number): Promise<void> {
+  const 上下文: common.UIAbilityContext | null = 取上下文();
+  if (上下文 === null) {
+    return;
+  }
+  try {
+    const 存储: preferences.Preferences = await preferences.getPreferences(上下文, 偏好存储名);
+    await 存储.put(统计天数键, 天数);
+    await 存储.flush();
+  } catch (_错误) {
+    // 偏好写入失败静默跳过，不影响统计页展示
+  }
+}
+
+// ========================================================
+// @名称 加载分离暂停偏好
+// @作用 首页/FSRS控制器提取卡片数据时调用：读后端 GraphPreferences 的
+//       cardCountsSeparateInactive（统计页图内复选框即时落库），
+//       保证摘要卡/桌面卡片的「卡片数量」口径与统计页一致。
+// @兜底 偏好读取失败返回 false（不分离，Anki 默认值）
+// ========================================================
+export async function 加载分离暂停偏好(): Promise<boolean> {
+  try {
+    const 统计: 统计服务 = new 统计服务();
+    const 偏好: GraphPreferences = await 统计.获取图表偏好();
+    return 偏好.cardCountsSeparateInactive;
+  } catch (_错误) {
+    return false;
   }
 }
 

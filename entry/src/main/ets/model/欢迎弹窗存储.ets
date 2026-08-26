@@ -34,7 +34,7 @@ const 存储名: string = 'jidecards_settings';
 const 欢迎已展示键: string = 'welcome_shown';
 const 上下文键: string = 'abilityContext';
 // 当前应用版本号：发版时同步修改此处与 welcome_title 的 vX.Y.Z
-const 当前版本: string = '1.9.1';
+const 当前版本: string = '2.0.0';
 // 静默版本：这些版本不弹欢迎弹窗（无更新日志内容的过渡版本，用户决策 2026-08-24）。
 // 直接视为已展示且不写 preferences——下个非静默版本对比旧存储值仍会正常弹。
 const 静默版本: string = '1.9.1';

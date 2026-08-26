@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { 应用尺寸 } from '../../utils/应用尺寸';
+import {
+  取小时柱色, 取难度柱色, 取间隔柱色, 取预测柱色,
+  色卡片_新卡, 色卡片_学习中, 色卡片_重学中, 色卡片_年轻,
+  色卡片_成熟, 色卡片_已暂停, 色卡片_已埋藏
+} from '../../model/统计色板';
 
 // ========================================================
 // @块ID UI-WIDGET-STATS-001
@@ -56,10 +61,6 @@ interface 主题色 {
   主色文字: string;
   文字主: string;
   文字次: string;
-  热力1: string;
-  热力2: string;
-  热力3: string;
-  热力4: string;
   页面底色: string;
   卡片底色: string;
   是否深色: boolean;
@@ -108,10 +109,6 @@ function 默认主题色(): 主题色 {
     主色文字: '#2F5FD0',
     文字主: '#182230',
     文字次: '#667085',
-    热力1: '#DCE8FF',
-    热力2: '#B8CEFA',
-    热力3: '#7EA3EE',
-    热力4: '#2F5FD0',
     页面底色: '#F5F7FA',
     卡片底色: '#FFFFFF',
     是否深色: false
@@ -506,18 +503,19 @@ struct 统计卡片 {
 
       if (this.数据.hasData) {
         Column({ space: 4 }) {
+          // 系列色对齐 Anki schemeBlues/Oranges/Reds/Greens（与统计页卡片数量图、首页摘要卡一致）
           Row({ space: 4 }) {
-            this.状态格(this.t('未学习', 'New'), this.数据.卡片状态.新卡, '#366ECE')
-            this.状态格(this.t('学习中', 'Learn'), this.数据.卡片状态.学习中, '#A05D1C')
-            this.状态格(this.t('重学中', 'Relearn'), this.数据.卡片状态.重学中, '#B34C00')
-            this.状态格(this.t('欠熟练', 'Young'), this.数据.卡片状态.年轻, this.数据.主题色.主色容器)
+            this.状态格(this.t('未学习', 'New'), this.数据.卡片状态.新卡, 色卡片_新卡)
+            this.状态格(this.t('学习中', 'Learn'), this.数据.卡片状态.学习中, 色卡片_学习中)
+            this.状态格(this.t('重学中', 'Relearn'), this.数据.卡片状态.重学中, 色卡片_重学中)
+            this.状态格(this.t('欠熟练', 'Young'), this.数据.卡片状态.年轻, 色卡片_年轻)
           }
           .width('100%')
 
           Row({ space: 4 }) {
-            this.状态格(this.t('已熟练', 'Mature'), this.数据.卡片状态.成熟, '#238463')
-            this.状态格(this.t('已暂停', 'Suspended'), this.数据.卡片状态.暂停, '#D92D20')
-            this.状态格(this.t('已搁置', 'Buried'), this.数据.卡片状态.埋藏, this.数据.主题色.文字次)
+            this.状态格(this.t('已熟练', 'Mature'), this.数据.卡片状态.成熟, 色卡片_成熟)
+            this.状态格(this.t('已暂停', 'Suspended'), this.数据.卡片状态.暂停, 色卡片_已暂停)
+            this.状态格(this.t('已搁置', 'Buried'), this.数据.卡片状态.埋藏, 色卡片_已埋藏)
           }
           .width('100%')
 
@@ -635,7 +633,7 @@ struct 统计卡片 {
             Column()
               .width('70%')
               .height(`${Math.max(项[0] / this.小时最大值() * 100, 项[0] > 0 ? 6 : 0)}%`)
-              .backgroundColor(this.数据.主题色.主色按钮背景)
+              .backgroundColor(取小时柱色(项[0] / this.小时最大值()))
               .borderRadius(1)
           }
           .width('100%')
@@ -801,7 +799,7 @@ struct 统计卡片 {
             Column()
               .width('70%')
               .height(`${Math.max(项[1] / this.难度最大值() * 100, 项[1] > 0 ? 6 : 0)}%`)
-              .backgroundColor(this.数据.主题色.主色按钮背景)
+              .backgroundColor(取难度柱色(项[0] / 100))
               .borderRadius(1)
           }
           .width('100%')
@@ -905,7 +903,7 @@ struct 统计卡片 {
             Column()
               .width('70%')
               .height(`${Math.max(项[1] / this.间隔最大值() * 100, 项[1] > 0 ? 6 : 0)}%`)
-              .backgroundColor(this.数据.主题色.主色按钮背景)
+              .backgroundColor(取间隔柱色((索引 + 1) / Math.max(1, this.数据.间隔分布.length)))
               .borderRadius(1)
           }
           .width('100%')
@@ -974,12 +972,12 @@ struct 统计卡片 {
     Column({ space: 2 }) {
       // 柱区独占固定高度一行（与小时分布同款细条布局，30 天整月一屏显示）
       Row({ space: 1 }) {
-        ForEach(this.数据.未来到期, (项: [number, number]) => {
+        ForEach(this.数据.未来到期, (项: [number, number], 索引: number) => {
           Stack({ alignContent: Alignment.Bottom }) {
             Column()
               .width('70%')
               .height(`${Math.max(项[1] / this.预测最大值() * 100, 项[1] > 0 ? 6 : 0)}%`)
-              .backgroundColor(this.数据.主题色.主色按钮背景)
+              .backgroundColor(取预测柱色(索引 / Math.max(1, this.数据.未来到期.length - 1)))
               .borderRadius(1)
           }
           .width('100%')

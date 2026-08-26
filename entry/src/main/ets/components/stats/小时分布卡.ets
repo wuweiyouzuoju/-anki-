@@ -3,6 +3,9 @@
 // 小时分布卡：渲染 GraphsView.hours 为 24 小时垂直柱状图。
 // 支持 4 个时间段切换（1月/3月/1年/全部）；窗口选择持久化并由统计页管理，
 // 首页卡片与桌面卡片跟随同一窗口，保证三处口径一致。
+// 【暂时隐藏 2026-08-26】Anki 官方的正确率灰色面积（CumulativeOverlay）与右轴百分比
+// 刻度按用户要求先不渲染（柱子小的时段"有面积没柱子"观感困惑），实现注释保留在
+// build 内，帮助文案同步移除；恢复时取消注释并还原 import/padding/文案。
 
 import type { Hours, HourBucket } from '../../proto/messages/StatsMessages';
 import { 应用尺寸 } from '../../utils/应用尺寸';
@@ -10,7 +13,11 @@ import { 颜色键 } from '../../model/颜色主题';
 import { 取小时柱色 } from '../../model/统计色板';
 import { 取轴域 } from '../../model/统计分箱';
 import type { 轴域 } from '../../model/统计分箱';
-import { 纵轴刻度, 右轴百分比, 纵轴宽, 右轴宽 } from './图表轴';
+// 【暂时隐藏 2026-08-26】正确率灰色面积（Anki CumulativeOverlay）及其右轴百分比刻度。
+// 用户裁定先隐藏：面积与柱子是两套比例（面积=正确率、柱=数量），柱子小的时段
+// 出现"有面积没柱子"，观感困惑。恢复时：import 加回 右轴百分比/右轴宽，
+// 并取消下方 右轴百分比 组件与 Path 面积块、底部刻度行 right: 右轴宽 的注释。
+import { 纵轴刻度, 纵轴宽 } from './图表轴';
 
 @Component
 export struct 小时分布卡 {
@@ -64,7 +71,8 @@ export struct 小时分布卡 {
   /** 正确率面积路径（对齐 Anki HourGraph 的 cumulative-overlay）。
    *  Anki 用 d3 area + curveBasis：从图底填充到正确率线（顶部=100%），
    *  .defined(total>0) 使无数据小时断开为多段。此处用直线段近似曲线，
-   *  每段连续有数据的小时生成一个「底部→各点→底部」闭合子路径。 */
+   *  每段连续有数据的小时生成一个「底部→各点→底部」闭合子路径。
+   *  【暂时隐藏 2026-08-26】当前无渲染调用点（见 build 内注释块），方法保留待恢复。 */
   private 取正确率面积路径(数据: HourBucket[]): string {
     let 路径: string = '';
     let 段起: number = -1;
@@ -140,11 +148,12 @@ export struct 小时分布卡 {
       }
       .width('100%')
 
-      // 柱状图 + 正确率面积叠加 + 右轴百分比（Anki HourGraph 三轴设计：
-      // 左轴=复习次数、右轴 y2=正确率百分比 [0,25,50,75,100]%、底轴=小时；
-      // 柱=复习数量，面积=correct/total 正确率对着右轴读数）。
-      // 柱色对齐 Anki：Blues(0.1+0.7×归一化计数)，无复习浅蓝、峰值深蓝；
-      // 面积样式对齐 Anki CumulativeOverlay：极淡填充+描边（浅色黑 0.03/0.08，深色白 0.08/黑 0.18）。
+      // 柱状图（Anki HourGraph 的柱部分）：
+      // 左轴=复习次数、底轴=小时；柱=复习数量；柱色对齐 Anki：Blues(0.1+0.7×归一化计数)，
+      // 无复习浅蓝、峰值深蓝。
+      // 【暂时隐藏 2026-08-26】正确率面积叠加 + 右轴百分比（官方三轴设计的另两轴：
+      // 面积=correct/total 正确率、右轴 y2=[0,25,50,75,100]%）按用户要求先隐藏，
+      // 实现整块注释保留在下方，恢复说明见文件头。
       Row() {
         纵轴刻度({
           刻度: 域.刻度,
@@ -167,17 +176,19 @@ export struct 小时分布卡 {
           .width('100%')
           .height(this.图表高度)
 
-          if (this.取正确率面积路径(数据) !== '') {
-            Path()
-              .commands(this.取正确率面积路径(数据))
-              .fill(this.是否深色 ? '#ffffff' : '#000000')
-              .fillOpacity(this.是否深色 ? 0.08 : 0.03)
-              .stroke('#000000')
-              .strokeOpacity(this.是否深色 ? 0.18 : 0.08)
-              .strokeWidth(1)
-              .width('100%')
-              .height(this.图表高度)
-          }
+          // 【暂时隐藏 2026-08-26】正确率灰色面积（对齐 Anki CumulativeOverlay 的
+          // 极淡 fill/stroke），随右轴百分比一起注释保留，恢复时取消注释即可：
+          // if (this.取正确率面积路径(数据) !== '') {
+          //   Path()
+          //     .commands(this.取正确率面积路径(数据))
+          //     .fill(this.是否深色 ? '#ffffff' : '#000000')
+          //     .fillOpacity(this.是否深色 ? 0.08 : 0.03)
+          //     .stroke('#000000')
+          //     .strokeOpacity(this.是否深色 ? 0.18 : 0.08)
+          //     .strokeWidth(1)
+          //     .width('100%')
+          //     .height(this.图表高度)
+          // }
         }
         .layoutWeight(1)
         .height(this.图表高度)
@@ -188,10 +199,11 @@ export struct 小时分布卡 {
           }
         })
 
-        // 右轴 y2：正确率百分比刻度（面积的读数轴，官方 axisRight(yArea)）
-        右轴百分比({
-          高度: this.图表高度
-        })
+        // 【暂时隐藏 2026-08-26】右轴 y2 正确率百分比刻度（面积的读数轴）。
+        // 面积隐藏后此轴无对应图形，一并注释保留，恢复时取消注释：
+        // 右轴百分比({
+        //   高度: this.图表高度
+        // })
       }
       .width('100%')
 
@@ -224,7 +236,8 @@ export struct 小时分布卡 {
           .textAlign(TextAlign.Center)
       }
       .width('100%')
-      .padding({ left: 纵轴宽, right: 右轴宽 })
+      // 【暂时隐藏 2026-08-26】右轴已注释，right 让位同步移除；恢复时加回 right: 右轴宽
+      .padding({ left: 纵轴宽 })
     }
     .width('100%')
   }

@@ -150,6 +150,7 @@ export struct 回答按钮卡 {
               .width('100%')
               .height(`${this.取按钮计数(组, 类别, 按钮) / 最大值 * 100}%`)
               .backgroundColor(取按钮色(按钮 + 1))
+              .opacity(0.8)
               .borderRadius(2)
           }
           .layoutWeight(1)

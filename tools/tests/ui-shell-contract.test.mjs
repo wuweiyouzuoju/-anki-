@@ -176,11 +176,11 @@ test('hour histogram range is shared by stats page, home card and widget', () =>
   assert.match(store, /小时分布窗口: 小时窗口/);
   // 统计页切换后立即推送卡片快照
   assert.match(stats, /刷新卡片快照\(\)/);
-  // 首页/FSRS 控制器提取时加载窗口偏好
+  // 首页/FSRS 控制器提取时加载窗口偏好 + 分离偏好（卡片数量口径与统计页一致）
   const home = read('entry/src/main/ets/pages/首页.ets');
   const fsrs = read('entry/src/main/ets/model/FSRS控制器.ets');
-  assert.match(home, /提取卡片数据\(graphs, 总待学, 牌组总数, await 加载小时分布窗口\(\)\)/);
-  assert.match(fsrs, /提取卡片数据\(graphs, 总待学, 牌组总数, await 加载小时分布窗口\(\)\)/);
+  assert.match(home, /提取卡片数据\(graphs, 总待学, 牌组总数, await 加载小时分布窗口\(\), await 加载分离暂停偏好\(\)\)/);
+  assert.match(fsrs, /提取卡片数据\(graphs, 总待学, 牌组总数, await 加载小时分布窗口\(\), await 加载分离暂停偏好\(\)\)/);
   // 两处卡片标题跟随窗口（不再固定"全部"）
   assert.doesNotMatch(summary, /小时分布（全部）'\)/);
   assert.doesNotMatch(widget, /小时分布（全部）'\)/);
@@ -219,17 +219,26 @@ test('difficulty percent values are used as-is, never divided by 10', () => {
   assert.doesNotMatch(enStrings, /stats_ease_average[^}]*%s%/);
 });
 
-test('graphs request days must be 365 everywhere, never derived from current date', () => {
+test('graphs request days follow the persisted stats range preference, never derived from current date', () => {
   // 后端 hours 四档（近1月/3月/1年/全部）都从 days 限定的 revlog 里统计，
   // 首页/FSRS控制器曾误传 new Date().getDate()（今天是几号），导致
-  // 首页摘要与桌面卡片的小时分布和统计页（365）完全不一致。
+  // 首页摘要与桌面卡片的小时分布和统计页完全不一致。
+  // 2026-08-26 起统计页顶栏「近 1 年(365)/全部(0)」本地持久化（stats_days_range），
+  // 首页/FSRS控制器加载同一偏好，不再写死 365。
   const home = read('entry/src/main/ets/pages/首页.ets');
   const fsrs = read('entry/src/main/ets/model/FSRS控制器.ets');
   const stats = read('entry/src/main/ets/pages/统计页.ets');
-  assert.match(home, /获取图表统计\(365\)/, '首页静默加载图表必须传 365');
-  assert.match(fsrs, /获取图表统计\(365\)/, 'FSRS控制器刷新桌面卡片必须传 365');
+  const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
+  assert.match(store, /export async function 加载统计天数/, '模型层须有统计天数加载');
+  assert.match(store, /export async function 保存统计天数/, '模型层须有统计天数保存');
+  assert.match(store, /stats_days_range/, '统计天数 preferences 键');
+  assert.match(stats, /this\.统计天数 = await 加载统计天数\(\)/, '统计页 aboutToAppear 恢复天数');
+  assert.match(stats, /保存统计天数\(天数\)/, '统计页切换天数须持久化');
+  assert.match(home, /获取图表统计\(await 加载统计天数\(\)\)/, '首页静默加载图表须跟随统计天数偏好');
+  assert.match(fsrs, /获取图表统计\(await 加载统计天数\(\)\)/, 'FSRS控制器刷新桌面卡片须跟随统计天数偏好');
   for (const [名称, 源] of [['首页', home], ['FSRS控制器', fsrs], ['统计页', stats]]) {
     assert.doesNotMatch(源, /获取图表统计\(new Date\(\)/, `${名称}禁止用日期函数派生统计天数`);
+    assert.doesNotMatch(源, /获取图表统计\(365\)/, `${名称}禁止写死 365 天`);
   }
 });
 
@@ -238,8 +247,67 @@ test('widget payload stays under the 2KB form transfer limit', () => {
   // 间隔桶不截断时 JSON 超限，updateForm 静默失败，桌面卡片冻结在旧数据。
   const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
   assert.match(store, /聚合分布桶\(难度桶数组, 20\)/, '难度桶必须聚合分箱到 ≤20 桶');
-  assert.match(store, /间隔桶数组\.slice\(0, 20\)/, '间隔分布必须截断到 ≤20 桶');
+  assert.match(store, /聚合分布桶\(间隔桶数组, 20\)/, '间隔分布必须聚合分箱到 ≤20 桶（截断会丢长间隔）');
+  assert.doesNotMatch(store, /间隔桶数组\.slice\(0, 20\)/, '间隔分布不得用截断');
   assert.match(store, /聚合分布桶[\s\S]*?桶宽/, '聚合分布桶函数必须存在且等宽分箱');
+});
+
+test('card counts caliber follows the separation preference across stats page, home card and widget', () => {
+  // 2026-08-26 用户裁定：桌面卡片与主页摘要卡的「卡片数量」页必须与统计页同口径——
+  // 跟随 GraphPreferences.cardCountsSeparateInactive（统计页图内复选框即时落库）。
+  const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
+  const stats = read('entry/src/main/ets/pages/统计页.ets');
+  const home = read('entry/src/main/ets/pages/首页.ets');
+  const fsrs = read('entry/src/main/ets/model/FSRS控制器.ets');
+
+  // 模型层：提取卡片数据 按偏好选口径（分离=excludingInactive，不分离=includingInactive）
+  assert.match(store, /分离暂停: boolean = false/, '提取卡片数据须有分离暂停参数');
+  assert.match(store, /分离暂停 \? 图表数据\.cardCounts\.excludingInactive : 图表数据\.cardCounts\.includingInactive/,
+    '分离偏好决定 CardCounts 口径');
+  assert.match(store, /export async function 加载分离暂停偏好/, '模型层须有分离偏好加载（读后端 GraphPreferences）');
+  // 统计页：切换分离复选框后立即重提卡片快照并传分离参数
+  assert.match(stats, /刷新卡片快照\(\)\.catch/, '切换分离偏好须立即刷新卡片快照');
+  assert.match(stats, /this\.图表偏好\.cardCountsSeparateInactive/, '刷新卡片快照须读取当前分离偏好');
+  // 首页/FSRS控制器：提取时加载分离偏好
+  assert.match(home, /加载分离暂停偏好\(\)/, '首页提取卡片数据须加载分离偏好');
+  assert.match(fsrs, /加载分离暂停偏好\(\)/, 'FSRS控制器提取卡片数据须加载分离偏好');
+});
+
+test('home summary card and widget use Anki official chart colors from 统计色板', () => {
+  // 2026-08-26 用户裁定：摘要卡/桌面卡片四张柱图与卡片状态格全部对齐 Anki 官方色板，
+  // 不再用主题色（主色按钮背景）画柱；月历热力键 热力1-4 已随月历页删除，widget 不得残留。
+  const summary = read('entry/src/main/ets/components/home/主页摘要分页.ets');
+  const widget = read('entry/src/main/ets/widget/pages/统计卡片.ets');
+  const palette = read('entry/src/main/ets/model/统计色板.ets');
+
+  // 色板锚点存在（Anki 26.05 colorbrewer）
+  assert.match(palette, /export function 取小时柱色/);
+  assert.match(palette, /export function 取难度柱色/);
+  assert.match(palette, /export function 取间隔柱色/);
+  assert.match(palette, /export function 取预测柱色/);
+  assert.match(palette, /export const 色卡片_新卡/);
+
+  // 首页摘要卡：四张柱图按色带取 Anki 色，柱状图组件不再引用主题色
+  assert.match(summary, /取小时柱色/, '摘要卡小时分布须用 Anki 蓝色带');
+  assert.match(summary, /取难度柱色/, '摘要卡难度分布须用 RdYlGn');
+  assert.match(summary, /取间隔柱色/, '摘要卡间隔分布须用 Anki 蓝色带');
+  assert.match(summary, /取预测柱色/, '摘要卡未来到期须用 Anki 绿色带');
+  const barComponent = summary.match(/struct 柱状图组件[\s\S]*?\n\}/)?.[0] ?? '';
+  assert.doesNotMatch(barComponent, /动作主色/, '柱状图组件不得再用主题色画柱');
+  // 卡片状态 7 项全显 + Anki 系列色（统计页卡片数量图恒显 7 项）
+  for (const 常量 of ['色卡片_新卡', '色卡片_学习中', '色卡片_重学中', '色卡片_年轻', '色卡片_成熟', '色卡片_已暂停', '色卡片_已埋藏']) {
+    assert.ok(summary.includes(常量), `摘要卡卡片状态须用 ${常量}`);
+    assert.ok(widget.includes(常量), `桌面卡片卡片状态须用 ${常量}`);
+  }
+  assert.match(summary, /已搁置/, '摘要卡卡片状态须含已搁置（7 项与统计页一致）');
+
+  // 桌面卡片：四张柱图用 Anki 色带，不再用主题色画柱，无热力死键
+  assert.match(widget, /取小时柱色/, '桌面卡片小时分布须用 Anki 蓝色带');
+  assert.match(widget, /取难度柱色/, '桌面卡片难度分布须用 RdYlGn');
+  assert.match(widget, /取间隔柱色/, '桌面卡片间隔分布须用 Anki 蓝色带');
+  assert.match(widget, /取预测柱色/, '桌面卡片未来到期须用 Anki 绿色带');
+  assert.doesNotMatch(widget, /backgroundColor\(this\.数据\.主题色\.主色按钮背景\)/, '柱图不得再用主题色');
+  assert.doesNotMatch(widget, /热力[1-4]/, 'widget 不得残留月历热力死键');
 });
 
 test('widget push falls back to running form infos when formId file is empty', () => {
@@ -266,6 +334,35 @@ test('interval graph always shows intervals; stability is a separate FSRS-only g
   assert.match(store, /间隔源: Intervals \| null = 图表数据\.intervals/, '卡片快照间隔分布只用 intervals');
 });
 
+test('graph preferences are in-chart controls without a modal (Anki autoSavingPrefs)', () => {
+  // 对齐 Anki：官方无图表偏好弹窗——偏好控件内嵌各图、改动即时落库
+  // （autoSavingPrefs）；统计天数是 RangeBox 顶栏 radio（1年/全部两档）。
+  // 曾用集中弹窗（图表偏好面板）+ 30/90/365/全部四档，2026-08-25 用户裁定完全复刻 Anki。
+  const statsPage = read('entry/src/main/ets/pages/统计页.ets');
+  const counts = read('entry/src/main/ets/components/stats/卡片状态分布.ets');
+  const calendar = read('entry/src/main/ets/components/stats/日历卡.ets');
+  assert.equal(
+    existsSync(projectUrl('entry/src/main/ets/components/stats/图表偏好面板.ets')),
+    false,
+    '图表偏好面板.ets 已删除（Anki 无偏好弹窗）'
+  );
+  assert.doesNotMatch(statsPage, /显示偏好面板|保存偏好|onBackPress/, '统计页不得残留偏好弹窗状态/方法');
+  // 顶栏天数两档：365/0，切换重新请求后端
+  assert.match(statsPage, /on天数切换\(天数: number\)/, '须有顶栏天数切换（Anki RangeBox）');
+  assert.match(statsPage, /on天数切换\(365\)/);
+  assert.match(statsPage, /on天数切换\(0\)/);
+  // 图内偏好控件：即时写偏好（更新偏好 + 设置图表偏好）
+  assert.match(statsPage, /更新偏好\(字段: \(旧: GraphPreferences\) => GraphPreferences\)/, '须有图内偏好即时落库辅助');
+  assert.match(statsPage, /on分离变更/, '卡片数量分离复选框回调');
+  assert.match(statsPage, /on首日变更/, '日历星期标签切周首日回调');
+  // 卡片数量图内复选框（Anki CardCounts InputBox checkbox）
+  assert.match(counts, /stats_counts_separate_inactive/);
+  assert.match(counts, /on分离变更/);
+  // 日历星期标签点击切换周首日（仅日/一/五/六，Anki calendar.ts filter 逻辑）
+  assert.match(calendar, /on首日变更/);
+  assert.match(calendar, /数字 !== 2 && 数字 !== 3 && 数字 !== 4/, '周二/三/四标签不可点');
+});
+
 test('forecast shows a full month of thin bars in stats page, home card and widget', () => {
   const store = read('entry/src/main/ets/model/桌面卡片数据存储.ets');
   const summary = read('entry/src/main/ets/components/home/主页摘要分页.ets');
@@ -289,6 +386,17 @@ test('forecast shows a full month of thin bars in stats page, home card and widg
   assert.match(card, /范围索引: number = 0/);
   assert.match(card, /取预测柱色/);
   assert.match(card, /on积压变更/);
+});
+
+test('retention card single-view rows rebuild when the young/mature view switches', () => {
+  // 真实保留率卡单列视图（欠熟练/已熟练）的行内容依赖 视图索引，但 ForEach key
+  // 只含周期时，同分支内切换视图 key 不变 → ArkUI 复用旧行不重算 → 两视图显示
+  // 同一批数字（先点的冻结）。key 必须包含视图索引；此前仅靠「周期」还曾因
+  // 数值 key 冲突吞行（见 decisions 2026-08-25），两者都要在 key 里。
+  const card = read('entry/src/main/ets/components/stats/真实保留率卡.ets');
+  const singleView = card.match(/private 渲染单列表[\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.match(singleView, /周期\}_\$\{this\.视图索引\}/, '单列视图 ForEach key 必须含视图索引');
+  assert.doesNotMatch(singleView, /\)\s*=>\s*`\$\{行\.周期\}`/, 'key 不得只有周期（同分支切换视图会冻结旧行）');
 });
 
 test('home UI uses shared dimension tokens instead of magic numbers', () => {

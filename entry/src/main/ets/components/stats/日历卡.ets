@@ -3,6 +3,8 @@
 // 日历卡：渲染 GraphsResponse.reviews.count 为年历热力图（对齐 Anki CalendarGraph）。
 // 52-53 列（周）× 7 行（星期）小方格；颜色 Blues 按当日复习数开方归一取色（浅色 t∈[0.2,1]），
 // 空日固定浅灰/深灰。年份导航 ◄/► 的下限由统计天数决定（与 Anki revlogRange 锁定逻辑一致）。
+// 左侧星期标签点击切换周首日（对齐 Anki calendar.ts：仅周日/周一/周五/周六四个标签可点，
+// 点击即设为一周首日并回写偏好；周二/三/四标签无响应）。
 // Invariants: build 单根 Column；日切小时（rolloverHour）参与日期换算，与后端分桶口径一致。
 
 import type { ReviewKindCounts } from '../../proto/messages/StatsMessages';
@@ -43,6 +45,8 @@ export struct 日历卡 {
   @Prop @Watch('重算格子') 复习计数: Map<number, ReviewKindCounts> | null = null;
   @Prop 日切小时: number = 0;
   @Prop @Watch('重算格子') 周首日: Weekday = Weekday.SUNDAY;
+  /** 星期标签点击回调：父组件负责写 GraphPreferences（Anki 点标签即存，autoSavingPrefs 行为） */
+  on首日变更: (首日: Weekday) => void = (_首日: Weekday): void => {};
   @Prop 统计天数: number = 365;
   @Prop 是否深色: boolean = false;
   @State private 目标年份: number = 1970;
@@ -179,12 +183,19 @@ export struct 日历卡 {
     Column({ space: 2 }) {
       ForEach([0, 1, 2, 3, 4, 5, 6], (行: number) => {
         Row({ space: 2 }) {
-          // 星期窄标签（按周首日排序）
+          // 星期窄标签（按周首日排序；文字色对齐 Anki calendar.ts：深色 #ddd / 浅色 black）。
+          // 点击切换周首日（对齐官方：仅周日/周一/周五/周六标签可点，其余无响应）
           Text(this.星期标签[(周首日转数字(this.周首日) + 行) % 7])
             .fontSize(应用尺寸.字号_说明_小)
-            .fontColor($r('app.color.text_tertiary'))
+            .fontColor(this.是否深色 ? '#dddddd' : '#000000')
             .width(10)
             .textAlign(TextAlign.End)
+            .onClick((): void => {
+              const 数字: number = (周首日转数字(this.周首日) + 行) % 7;
+              if (数字 !== 2 && 数字 !== 3 && 数字 !== 4) {
+                this.on首日变更(数字 as Weekday);
+              }
+            })
           ForEach([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
             21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
             41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52], (列: number) => {

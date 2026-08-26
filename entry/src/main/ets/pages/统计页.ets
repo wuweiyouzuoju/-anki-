@@ -7,7 +7,9 @@
 // @作用
 // 全库统计图表页（对标 Anki Stats）。展示今日计数、预测、卡片状态分布、
 // 小时分布、难度分布、间隔分布、真实保留率、记忆率等完整统计信息。
-// 手机端单栏布局：顶部条（返回 + ⚙ 偏好）+ 滚动统计内容。
+// 手机端单栏布局：顶部条（返回 + 牌组下拉 + 统计天数两档「近 1 年/全部」）+ 滚动统计内容。
+// 图表偏好无集中弹窗（对齐 Anki：偏好控件内嵌各图即时落库）——积压/分离复选框在图内、
+// 周首日点日历星期标签切换；Anki 官方 GraphsOverview 无偏好弹窗，autoSavingPrefs 即时保存。
 //
 // @输入
 // pathStack: Navigation 页面栈，用于返回主页
@@ -51,9 +53,9 @@ import { 真实保留率卡 } from '../components/stats/真实保留率卡';
 import { 记忆率卡 } from '../components/stats/记忆率卡';
 import { 回答按钮卡 } from '../components/stats/回答按钮卡';
 import { 新增卡 } from '../components/stats/新增卡';
-import { 图表偏好面板 } from '../components/stats/图表偏好面板';
+
 import { 字段帮助面板 } from '../components/字段帮助面板';
-import { 提取卡片数据, 保存卡片数据, 加载小时分布窗口, 保存小时分布窗口 } from '../model/桌面卡片数据存储';
+import { 提取卡片数据, 保存卡片数据, 加载小时分布窗口, 保存小时分布窗口, 加载统计天数, 保存统计天数 } from '../model/桌面卡片数据存储';
 import { 牌组服务 } from '../backend/牌组服务';
 import { 平铺牌组树 } from '../model/牌组层级';
 import type { 牌组汇总 } from '../model/主页模型';
@@ -91,7 +93,6 @@ export struct 统计页 {
   private 牌组名列表: string[] = [];
   // 小时分布时间段（0=近1月 1=近3月 2=近1年 3=全部）：与首页卡片/桌面卡片共用同一偏好
   @State private 小时分布窗口: number = 0;
-  @State private 显示偏好面板: boolean = false;
   // 分区帮助浮层：点击各分区 i 时由 onHelp 回调设置标题/正文，页面级 Stack 统一弹字段帮助面板
   @State private 显示分区帮助: boolean = false;
   @State private 分区帮助标题: Resource = $r('app.string.stats_no_data');
@@ -129,6 +130,8 @@ export struct 统计页 {
     this.主题模式值 = await 加载主题模式();
     // 恢复小时分布窗口选择（首页卡片/桌面卡片跟随同一偏好）
     this.小时分布窗口 = await 加载小时分布窗口();
+    // 恢复统计天数（近 1 年/全部两档，首页/FSRS控制器拉 GraphsView 前加载同一偏好）
+    this.统计天数 = await 加载统计天数();
     this.加载牌组列表();
     await this.加载统计数据();
   }
@@ -171,27 +174,62 @@ export struct 统计页 {
     this.加载统计数据();
   }
 
-  /** 预测卡积压复选框切换：即时写偏好并本地生效（Anki autoSavingPrefs 行为） */
-  private on积压变更(值: boolean): void {
-    const 新偏好: GraphPreferences = {
-      calendarFirstDayOfWeek: this.图表偏好.calendarFirstDayOfWeek,
-      cardCountsSeparateInactive: this.图表偏好.cardCountsSeparateInactive,
-      browserLinksSupported: this.图表偏好.browserLinksSupported,
-      futureDueShowBacklog: 值
-    };
+  /** 图内偏好变更：本地即时生效 + 异步写后端（对齐 Anki autoSavingPrefs 行为） */
+  private 更新偏好(字段: (旧: GraphPreferences) => GraphPreferences): void {
+    const 新偏好: GraphPreferences = 字段(this.图表偏好);
     this.图表偏好 = 新偏好;
     this.统计服务实例.设置图表偏好(新偏好).catch((_错误: Object): void => {
       // 写偏好失败不阻塞展示，下次打开回读旧值
     });
   }
 
-  /**
-   * 系统返回键 / 屏幕边缘滑动返回：偏好面板打开时优先关闭，否则走 NavPathStack 默认 pop。
-   * Invariants: 仅当 显示偏好面板=true 时消费返回手势关面板；否则 return false。
-   */
-  onBackPress(): boolean {
-    if (this.显示偏好面板) { this.显示偏好面板 = false; return true; }
-    return false;
+  /** 预测卡积压复选框切换（图内控件，即时落库） */
+  private on积压变更(值: boolean): void {
+    this.更新偏好((旧: GraphPreferences): GraphPreferences => {
+      return {
+        calendarFirstDayOfWeek: 旧.calendarFirstDayOfWeek,
+        cardCountsSeparateInactive: 旧.cardCountsSeparateInactive,
+        browserLinksSupported: 旧.browserLinksSupported,
+        futureDueShowBacklog: 值
+      };
+    });
+  }
+
+  /** 卡片数量图分离暂停复选框切换（图内控件，即时落库） */
+  private on分离变更(值: boolean): void {
+    this.更新偏好((旧: GraphPreferences): GraphPreferences => {
+      return {
+        calendarFirstDayOfWeek: 旧.calendarFirstDayOfWeek,
+        cardCountsSeparateInactive: 值,
+        browserLinksSupported: 旧.browserLinksSupported,
+        futureDueShowBacklog: 旧.futureDueShowBacklog
+      };
+    });
+    // 分离偏好改变卡片数量口径：立即重提卡片快照，首页摘要/桌面卡片跟随
+    this.刷新卡片快照().catch((): void => {});
+  }
+
+  /** 日历图星期标签点击切换周首日（图内控件，即时落库） */
+  private on首日变更(首日: Weekday): void {
+    this.更新偏好((旧: GraphPreferences): GraphPreferences => {
+      return {
+        calendarFirstDayOfWeek: 首日,
+        cardCountsSeparateInactive: 旧.cardCountsSeparateInactive,
+        browserLinksSupported: 旧.browserLinksSupported,
+        futureDueShowBacklog: 旧.futureDueShowBacklog
+      };
+    });
+  }
+
+  /** 顶栏统计天数切换（对齐 Anki RangeBox：1 年=365 / 全部=0 两档，切换重新请求后端） */
+  private on天数切换(天数: number): void {
+    if (天数 === this.统计天数) {
+      return;
+    }
+    this.统计天数 = 天数;
+    // 本地持久化：首页/FSRS控制器拉 GraphsView 前加载同一偏好，摘要卡/桌面卡片口径一致
+    保存统计天数(天数).catch((): void => {});
+    this.加载统计数据();
   }
 
   private 取能力上下文(): common.UIAbilityContext | null {
@@ -201,7 +239,7 @@ export struct 统计页 {
   }
 
   /**
-   * 用当前 图表数据 + 小时分布窗口 提取卡片数据并保存推送。
+   * 用当前 图表数据 + 小时分布窗口 + 分离偏好 提取卡片数据并保存推送。
    * 拉牌组树算待学数/牌组数，供桌面卡片今日进度页（失败时传0，桌面卡片显示"-"）。
    */
   private async 刷新卡片快照(): Promise<void> {
@@ -209,6 +247,7 @@ export struct 统计页 {
     if (图表 === null) {
       return;
     }
+    const 分离暂停: boolean = this.图表偏好.cardCountsSeparateInactive;
     try {
       const 牌组服务实例 = new 牌组服务();
       const tree: DeckTreeNode = await 牌组服务实例.获取牌组树();
@@ -217,11 +256,11 @@ export struct 统计页 {
         总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
       }
       const 牌组总数: number = 平铺牌组树(tree).length;
-      保存卡片数据(提取卡片数据(图表, 总待学, 牌组总数, this.小时分布窗口)).catch((e: Object): void => {
+      保存卡片数据(提取卡片数据(图表, 总待学, 牌组总数, this.小时分布窗口, 分离暂停)).catch((e: Object): void => {
         hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
       });
     } catch (_牌组错误) {
-      保存卡片数据(提取卡片数据(图表, 0, 0, this.小时分布窗口)).catch((e: Object): void => {
+      保存卡片数据(提取卡片数据(图表, 0, 0, this.小时分布窗口, 分离暂停)).catch((e: Object): void => {
         hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
       });
     }
@@ -260,32 +299,18 @@ export struct 统计页 {
     }
   }
 
-  /** 偏好面板保存回调：写后端 + 重新加载图表。 */
-  private async 保存偏好(偏好: GraphPreferences, 天数: number): Promise<void> {
-    try {
-      await this.统计服务实例.设置图表偏好(偏好);
-      this.图表偏好 = 偏好;
-      this.统计天数 = 天数;
-      this.显示偏好面板 = false;
-      await this.加载统计数据();
-    } catch (error) {
-      this.错误详情 = error instanceof Error ? error.message : `${error}`;
-      hilog.error(0xFFFE, '统计页', `保存偏好后加载失败: ${this.错误详情}`);
-    }
-  }
-
   /** 返回主页。 */
   private 返回(): void {
     this.pathStack.pop();
   }
 
   /**
-   * 分区/偏好面板帮助回调：统一由本页页面级 Stack 渲染字段帮助面板。
+   * 分区帮助回调：统一由本页页面级 Stack 渲染字段帮助面板。
    * Invariants:
    * - 字段帮助面板必须在本页 build() Stack 顶层渲染，避免嵌套层级导致遮罩
-   *   expandSafeArea 失效（曾出现：嵌套在图表偏好面板内时遮罩仅覆盖安全区内局部，
+   *   expandSafeArea 失效（曾出现：嵌套弹层时遮罩仅覆盖安全区内局部，
    *   浮层居中在遮罩中而非屏幕中央）
-   * - 任何子组件（统计图表分区 / 图表偏好面板）的 ⓘ 按钮均通过此回调上抛，
+   * - 任何子组件（统计图表分区）的 ⓘ 按钮均通过此回调上抛，
    *   不在子组件内部渲染字段帮助面板
    */
   private on分区帮助(标题: Resource, 正文: Resource): void {
@@ -296,7 +321,7 @@ export struct 统计页 {
 
   @Builder
   private 顶部条() {
-    // 与浏览页顶部条同款：左返回 + 右图表偏好 用按下态按钮（胶囊样式 + 淡色边框）。
+    // 与浏览页顶部条同款：左返回按钮（按下态胶囊样式 + 淡色边框）。
     // 中间为牌组选择下拉（对齐 Anki RangeBox 的牌组选择；索引 0=全部牌组）；
     // 牌组列表未加载完成 / 仅全库无牌组时回退显示「统计」标题。
     // Invariants:
@@ -322,12 +347,29 @@ export struct 统计页 {
 
         Blank()
 
-        按下态按钮({
-          文案: $r('app.string.stats_prefs_title'),
-          选中态背景: this.主色容器色,
-          字色: $r('app.color.text_primary'),
-          点击回调: (): void => { this.显示偏好面板 = true; }
-        })
+        // 统计天数两档（对齐 Anki RangeBox RevlogRange：1 年 / 全部），
+        // 胶囊样式与各图表内范围切换条一致；切换重新请求后端
+        Row({ space: 应用尺寸.间距_4 }) {
+          Text($r('app.string.stats_hours_range_1y'))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor(this.统计天数 !== 0 ? this.主色按钮背景色 : $r('app.color.text_secondary'))
+            .fontWeight(this.统计天数 !== 0 ? FontWeight.Bold : FontWeight.Normal)
+            .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8,
+              top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
+            .backgroundColor(this.统计天数 !== 0 ? this.主色容器色 : Color.Transparent)
+            .borderRadius(应用尺寸.圆角_进度条)
+            .onClick((): void => { this.on天数切换(365); })
+          Text($r('app.string.stats_hours_range_all'))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor(this.统计天数 === 0 ? this.主色按钮背景色 : $r('app.color.text_secondary'))
+            .fontWeight(this.统计天数 === 0 ? FontWeight.Bold : FontWeight.Normal)
+            .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8,
+              top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
+            .backgroundColor(this.统计天数 === 0 ? this.主色容器色 : Color.Transparent)
+            .borderRadius(应用尺寸.圆角_进度条)
+            .onClick((): void => { this.on天数切换(0); })
+        }
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .height('100%')
@@ -424,7 +466,10 @@ export struct 统计页 {
             日切小时: this.图表数据 !== null ? this.图表数据.rolloverHour : 0,
             周首日: this.图表偏好.calendarFirstDayOfWeek,
             统计天数: this.统计天数,
-            是否深色: this.是否深色()
+            是否深色: this.是否深色(),
+            on首日变更: (首日: Weekday): void => {
+              this.on首日变更(首日);
+            }
           })
         }
 
@@ -453,7 +498,10 @@ export struct 统计页 {
         }) {
           卡片状态分布({
             卡片计数: this.图表数据 !== null ? this.图表数据.cardCounts : null,
-            分离暂停: this.图表偏好.cardCountsSeparateInactive
+            分离暂停: this.图表偏好.cardCountsSeparateInactive,
+            on分离变更: (值: boolean): void => {
+              this.on分离变更(值);
+            }
           })
         }
 
@@ -629,21 +677,7 @@ export struct 统计页 {
         .height('100%')
         .backgroundColor(this.页面底色微染值)
 
-        // 偏好面板浮层
-        if (this.显示偏好面板) {
-          图表偏好面板({
-            偏好: this.图表偏好,
-            统计天数: this.统计天数,
-            是否深色: this.是否深色(),
-            onClose: (): void => { this.显示偏好面板 = false; },
-            onSaved: (偏好: GraphPreferences, 天数: number): void => {
-              this.保存偏好(偏好, 天数);
-            },
-            onHelp: this.on分区帮助.bind(this)
-          })
-        }
-
-        // 页面级字段帮助浮层：所有子组件（统计图表分区 / 图表偏好面板）的 ⓘ
+        // 页面级字段帮助浮层：所有子组件（统计图表分区）的 ⓘ
         // 按钮均通过 onHelp 回调上抛，由本页 Stack 顶层统一渲染。
         // Invariants: 必须在 NavDestination 直接子 Stack 顶层渲染，避免嵌套层级
         // 导致遮罩 expandSafeArea 失效（遮罩仅覆盖局部 + 浮层居中在遮罩中而非屏幕中央）。

@@ -67,8 +67,12 @@ test('home wires graphs into the snapshot and degrades quietly', () => {
 
   const method = index.match(/private async 静默加载图表[\s\S]*?\n  \}/);
   assert.notEqual(method, null);
-  assert.match(method[0], /统计服务实例\.获取图表统计\(365\)/,
-    'lookback window must match the stats page (365 days), not a date-derived value');
+  // 2026-08-26 起跟随统计页「近 1 年/全部」本地持久化偏好（加载统计天数），
+  // 不再写死 365；仍禁止用日期函数派生天数。
+  assert.match(method[0], /统计服务实例\.获取图表统计\(await 加载统计天数\(\)\)/,
+    'lookback window must follow the persisted stats range preference, not a date-derived value');
+  assert.doesNotMatch(method[0], /获取图表统计\(new Date\(\)/,
+    'days must never be derived from the current date');
   assert.match(method[0], /catch \(error\)[\s\S]*?return null/,
     'stats failure must degrade to the empty state without blocking home');
 });

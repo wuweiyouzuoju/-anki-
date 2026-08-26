@@ -5,10 +5,14 @@
 // 系列色与表格列（色块/标签/数量/百分比/总计）与 Anki 一致：
 // 新卡 #6baed6 / 学习中 #fd8d3c / 重学中 #fb6a4a / 年轻 #74c476 / 成熟 #31a354 /
 // 已暂停 #FFDC41 / 已埋藏 #808080。
+// 图内"分离暂停/搁置"复选框对齐 Anki CardCounts.svelte 的 InputBox checkbox
+// （bind:checked 即时保存，autoSavingPrefs 行为）：切换只换前端数据源
+// （includingInactive/excludingInactive 均在 GraphsResponse 中），无需重新请求。
 // Invariants: separateInactive=true 时用 excludingInactive（暂停/埋藏单独计数）。
 
 import type { CardCounts, CardCountsBreakdown } from '../../proto/messages/StatsMessages';
 import { 应用尺寸 } from '../../utils/应用尺寸';
+import { 颜色键 } from '../../model/颜色主题';
 import {
   色卡片_新卡, 色卡片_学习中, 色卡片_重学中,
   色卡片_年轻, 色卡片_成熟, 色卡片_已暂停, 色卡片_已埋藏
@@ -26,6 +30,9 @@ interface 卡片状态项 {
 export struct 卡片状态分布 {
   @Prop 卡片计数: CardCounts | null = null;
   @Prop 分离暂停: boolean = false;
+  /** 复选框切换回调：父组件负责即时写 GraphPreferences（Anki autoSavingPrefs 行为） */
+  on分离变更: (值: boolean) => void = (): void => {};
+  @StorageProp(颜色键.主色按钮背景) private 主色按钮背景: string = '#2F5FD0';
 
   private 取数据(): CardCountsBreakdown | null {
     if (this.卡片计数 === null) return null;
@@ -62,7 +69,23 @@ export struct 卡片状态分布 {
   }
 
   build() {
-    Column() {
+    Column({ space: 应用尺寸.间距_8 }) {
+      // 分离暂停/搁置复选框（对齐 Anki CardCounts InputBox，恒显、切换即时生效）
+      Row({ space: 应用尺寸.间距_7 }) {
+        Checkbox()
+          .select(this.分离暂停)
+          .selectedColor(this.主色按钮背景)
+          .onChange((值: boolean): void => {
+            this.on分离变更(值);
+          })
+        Text($r('app.string.stats_counts_separate_inactive'))
+          .fontSize(应用尺寸.字号_正文_小)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .alignItems(VerticalAlign.Center)
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+
       if (this.取数据() === null || this.取总数(this.取数据() as CardCountsBreakdown) === 0) {
         Text($r('app.string.stats_empty_section'))
           .fontSize(应用尺寸.字号_正文)

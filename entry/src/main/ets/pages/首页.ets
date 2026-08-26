@@ -64,7 +64,7 @@ import { 加载已隐藏牌组ID列表, 隐藏牌组, 取消隐藏全部牌组 }
 import { 加载上次牌组ID, 保存上次牌组ID, 清除上次牌组ID } from '../model/上次牌组存储';
 import { 确保FSRS已开启一次, 加载FSRS开启状态, 设置FSRS开启状态, 刷新桌面卡片数据 } from '../model/FSRS控制器';
 import { 加载显示今日进度卡, 主页今日进度卡AppStorage键 } from '../model/主页偏好';
-import { 提取卡片数据, 保存卡片数据, 加载小时分布窗口, 桌面卡片数据 } from '../model/桌面卡片数据存储';
+import { 提取卡片数据, 保存卡片数据, 加载小时分布窗口, 加载统计天数, 加载分离暂停偏好, 桌面卡片数据 } from '../model/桌面卡片数据存储';
 import { 应用主题 } from '../utils/主题控制器';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 选取数据文件 } from '../utils/文件导入助手';
@@ -357,7 +357,7 @@ struct 首页 {
           总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
         }
         const 牌组总数: number = 平铺牌组树(tree).length;
-        const 卡片数据: 桌面卡片数据 = 提取卡片数据(graphs, 总待学, 牌组总数, await 加载小时分布窗口());
+        const 卡片数据: 桌面卡片数据 = 提取卡片数据(graphs, 总待学, 牌组总数, await 加载小时分布窗口(), await 加载分离暂停偏好());
         this.图表快照 = 卡片数据;
         // 诊断日志：数值本身写进日志，用户报“数据旧”时抓 hilog 即可分辨
         // 是后端返回旧 graphs（RPC/缓存问题）还是前端没刷新（渲染问题）。
@@ -501,9 +501,9 @@ struct 首页 {
   // ========================================================
   private async 静默加载图表(): Promise<GraphsView | null> {
     try {
-      // days 必须与统计页一致（365）：后端 hours 四档窗口都从 days 限定的 revlog 里统计，
+      // days 跟随统计页「近 1 年/全部」偏好：后端 hours 四档窗口都从 days 限定的 revlog 里统计，
       // 传错会导致首页摘要/桌面卡片与统计页数据不一致（曾误传 new Date().getDate()）
-      return await this.统计服务实例.获取图表统计(365);
+      return await this.统计服务实例.获取图表统计(await 加载统计天数());
     } catch (error) {
       return null;
     }

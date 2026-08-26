@@ -27,6 +27,11 @@ import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 颜色键 } from '../../model/颜色主题';
 import { 桌面卡片数据 } from '../../model/桌面卡片数据存储';
 import { 主页快照 } from '../../model/主页模型';
+import {
+  取小时柱色, 取难度柱色, 取间隔柱色, 取预测柱色,
+  色卡片_新卡, 色卡片_学习中, 色卡片_重学中, 色卡片_年轻,
+  色卡片_成熟, 色卡片_已暂停, 色卡片_已埋藏
+} from '../../model/统计色板';
 
 // ========================================================
 // 计数格组件：独立 struct 而非 @Builder——@Builder 按值传参不响应状态变化
@@ -71,35 +76,61 @@ struct 计数格组件 {
 
 // ========================================================
 // 柱状图组件：同 计数格组件 原因抽成 struct（@Builder 数组按值传参不刷新）。
-// 主题色 @StorageProp 体内直读，主题切换跟随刷新。
+// 柱色跟随统计页同款 Anki 官方色带（取色口径与统计页各图一致）：
+//   hour=小时分布 Blues 按计数归一化 / difficulty=RdYlGn 按难度键归一化
+//   interval=间隔 Blues 按位置 / future=预测 Greens 按位置
 // ========================================================
 @Component
 struct 柱状图组件 {
-  @Prop 数据: number[] = [];
-  @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
+  /** 计数：柱高数据 */
+  @Prop 计数: number[] = [];
+  /** 键：难度取色用（难度桶百分比），其余色带可传空 */
+  @Prop 键: number[] = [];
+  /** 色带类型：hour / difficulty / interval / future */
+  @Prop 色带: string = 'hour';
 
-  /** 柱高：按最大值等比缩放，最小 2vp 保证可见 */
-  private 柱高(值: number): number {
+  /** 计数峰值：柱高与小时柱色归一化基准 */
+  private 峰值(): number {
     let 最大值: number = 1;
-    for (let i: number = 0; i < this.数据.length; i++) {
-      if (this.数据[i] > 最大值) {
-        最大值 = this.数据[i];
+    for (let i: number = 0; i < this.计数.length; i++) {
+      if (this.计数[i] > 最大值) {
+        最大值 = this.计数[i];
       }
     }
+    return 最大值;
+  }
+
+  /** 柱高：按计数峰值等比缩放，最小 2vp 保证可见 */
+  private 柱高(值: number): number {
     if (值 <= 0) {
       return 2;
     }
-    return Math.max(值 / 最大值 * 70, 2);
+    return Math.max(值 / this.峰值() * 70, 2);
+  }
+
+  /** 柱色：按色带类型 + 统计页归一化口径取 Anki 官方色 */
+  private 柱色(索引: number): string {
+    const 柱数: number = this.计数.length;
+    switch (this.色带) {
+      case 'difficulty':
+        return 取难度柱色((索引 < this.键.length ? this.键[索引] : 0) / 100);
+      case 'interval':
+        return 取间隔柱色((索引 + 1) / Math.max(1, 柱数));
+      case 'future':
+        return 取预测柱色(索引 / Math.max(1, 柱数 - 1));
+      default:
+        return 取小时柱色((索引 < this.计数.length ? this.计数[索引] : 0) / this.峰值());
+    }
   }
 
   build() {
     Row({ space: 1 }) {
-      ForEach(this.数据, (值: number, 索引: number) => {
+      ForEach(this.计数, (值: number, 索引: number) => {
         Stack({ alignContent: Alignment.Bottom }) {
           Column()
             .width('70%')
             .height(this.柱高(值))
-            .backgroundColor(this.动作主色)
+            .backgroundColor(this.柱色(索引))
             .borderRadius(1)
         }
         .width('100%')
@@ -298,17 +329,19 @@ export struct 主页摘要分页 {
       }
       .width('100%')
 
+      // 系列色对齐 Anki schemeBlues/Oranges/Reds/Greens（与统计页卡片数量图、桌面卡片一致）
       Row({ space: 应用尺寸.间距_10 }) {
-        计数格组件({ 标签: this.t('未学习', 'New'), 数值: this.图表快照!.卡片状态.新卡, 色型: 'new' })
-        计数格组件({ 标签: this.t('学习中', 'Learning'), 数值: this.图表快照!.卡片状态.学习中, 色型: 'learn' })
-        计数格组件({ 标签: this.t('重学中', 'Relearn'), 数值: this.图表快照!.卡片状态.重学中, 色型: '#B34C00' })
+        计数格组件({ 标签: this.t('未学习', 'New'), 数值: this.图表快照!.卡片状态.新卡, 色型: 色卡片_新卡 })
+        计数格组件({ 标签: this.t('学习中', 'Learning'), 数值: this.图表快照!.卡片状态.学习中, 色型: 色卡片_学习中 })
+        计数格组件({ 标签: this.t('重学中', 'Relearn'), 数值: this.图表快照!.卡片状态.重学中, 色型: 色卡片_重学中 })
+        计数格组件({ 标签: this.t('欠熟练', 'Young'), 数值: this.图表快照!.卡片状态.年轻, 色型: 色卡片_年轻 })
       }
       .width('100%')
 
       Row({ space: 应用尺寸.间距_10 }) {
-        计数格组件({ 标签: this.t('欠熟练', 'Young'), 数值: this.图表快照!.卡片状态.年轻, 色型: 'review' })
-        计数格组件({ 标签: this.t('已熟练', 'Mature'), 数值: this.图表快照!.卡片状态.成熟, 色型: '#238463' })
-        计数格组件({ 标签: this.t('已暂停', 'Suspended'), 数值: this.图表快照!.卡片状态.暂停, 色型: '#991B1B' })
+        计数格组件({ 标签: this.t('已熟练', 'Mature'), 数值: this.图表快照!.卡片状态.成熟, 色型: 色卡片_成熟 })
+        计数格组件({ 标签: this.t('已暂停', 'Suspended'), 数值: this.图表快照!.卡片状态.暂停, 色型: 色卡片_已暂停 })
+        计数格组件({ 标签: this.t('已搁置', 'Buried'), 数值: this.图表快照!.卡片状态.埋藏, 色型: 色卡片_已埋藏 })
       }
       .width('100%')
     }
@@ -346,7 +379,11 @@ export struct 主页摘要分页 {
       }
       .width('100%')
 
-      柱状图组件({ 数据: this.图表快照!.小时分布.map((项: [number, number]): number => 项[0]) })
+      柱状图组件({
+        计数: this.图表快照!.小时分布.map((项: [number, number]): number => 项[0]),
+        键: [],
+        色带: 'hour'
+      })
 
       // 小时刻度：五等分居中，五个数字中心落点 10%/30%/50%/70%/90%，间距严格相等
       //（与统计页小时分布卡、桌面卡片同款）
@@ -406,7 +443,11 @@ export struct 主页摘要分页 {
       }
       .width('100%')
 
-      柱状图组件({ 数据: this.图表快照!.难度分布.桶.map((项: [number, number]): number => 项[1]) })
+      柱状图组件({
+        计数: this.图表快照!.难度分布.桶.map((项: [number, number]): number => 项[1]),
+        键: this.图表快照!.难度分布.桶.map((项: [number, number]): number => 项[0]),
+        色带: 'difficulty'
+      })
 
       // 难度刻度：五等分居中（与小时分布刻度行、桌面卡片同款），柱图基线与其他柱图页统一
       Row() {
@@ -444,7 +485,11 @@ export struct 主页摘要分页 {
       }
       .width('100%')
 
-      柱状图组件({ 数据: this.图表快照!.间隔分布.map((项: [number, number]): number => 项[1]) })
+      柱状图组件({
+        计数: this.图表快照!.间隔分布.map((项: [number, number]): number => 项[1]),
+        键: [],
+        色带: 'interval'
+      })
 
       // 间隔刻度：五等分居中显示间隔天数（与小时分布刻度行、桌面卡片同款），
       // 柱图基线与其他柱图页统一
@@ -482,7 +527,11 @@ export struct 主页摘要分页 {
       }
       .width('100%')
 
-      柱状图组件({ 数据: this.图表快照!.未来到期.map((项: [number, number]): number => 项[1]) })
+      柱状图组件({
+        计数: this.图表快照!.未来到期.map((项: [number, number]): number => 项[1]),
+        键: [],
+        色带: 'future'
+      })
 
       // 天数刻度：与小时分布页刻度行同款，今/+15/+29
       Row() {

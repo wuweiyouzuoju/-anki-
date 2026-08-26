@@ -83,7 +83,9 @@ export struct 真实保留率卡 {
       范围切换条({
         当前索引: this.视图索引,
         标签集: this.视图标签,
-        onRangeChange: (): void => {}
+        onRangeChange: (索引: number): void => {
+          this.视图索引 = 索引;
+        }
       })
 
       if (this.保留率数据 === null) {
@@ -118,7 +120,7 @@ export struct 真实保留率卡 {
 
       ForEach(this.取行列表(), (行: 保留率行) => {
         this.单列行(行)
-      }, (行: 保留率行) => `${行.周期}`)
+      }, (行: 保留率行) => `${行.周期}_${this.视图索引}`)
     }
     .width('100%')
   }
