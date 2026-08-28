@@ -16,7 +16,7 @@ test('解析云端牌组目录 accepts public and reserved redeem-code entries',
         description: 'Starter deck',
         version: '1.0.0',
         accessType: 'public',
-        downloadUrl: 'https://cdn.example.cn/decks/english.apkg?token=short',
+        downloadUrl: 'https://api.example.cn/download?id=english-basic&token=short',
         size: 1536,
       },
       {
@@ -39,6 +39,17 @@ test('解析云端牌组目录 accepts public and reserved redeem-code entries',
   assert.equal(catalog.decks[1].downloadUrl, '');
 });
 
+test('解析云端牌组目录 accepts extensionless HTTPS links from third-party APIs', () => {
+  const catalog = 解析云端牌组目录(JSON.stringify({
+    schemaVersion: 1,
+    decks: [{
+      id: 'api-link', name: 'API Link', description: '', version: '1', accessType: 'public',
+      downloadUrl: 'https://files.example.cn/v1/download?id=42', size: 2048,
+    }],
+  }));
+  assert.equal(catalog.decks[0].downloadUrl, 'https://files.example.cn/v1/download?id=42');
+});
+
 test('解析云端牌组目录 rejects malformed JSON and unsupported schemas', () => {
   assert.throws(() => 解析云端牌组目录('{'), /JSON|目录/);
   assert.throws(() => 解析云端牌组目录(JSON.stringify({ schemaVersion: 2, decks: [] })), /版本/);
@@ -48,6 +59,8 @@ test('解析云端牌组目录 drops duplicate and unsafe entries', () => {
   const catalog = 解析云端牌组目录(JSON.stringify({
     schemaVersion: 1,
     decks: [
+      null,
+      42,
       {
         id: 'safe', name: 'Safe', description: '', version: '1', accessType: 'public',
         downloadUrl: 'https://cdn.example.cn/safe.apkg', size: 10,
@@ -75,7 +88,7 @@ test('解析云端牌组目录 drops duplicate and unsafe entries', () => {
     ],
   }));
 
-  assert.deepEqual(catalog.decks.map((deck) => deck.id), ['safe']);
+  assert.deepEqual(catalog.decks.map((deck) => deck.id), ['safe', 'zip']);
 });
 
 test('格式化云端牌组大小 handles unknown, bytes, KiB and MiB', () => {

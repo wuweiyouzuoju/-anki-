@@ -44,7 +44,9 @@ test('cloud deck service streams APKG files to a sandbox directory with progress
   assert.match(source, /task\.on\('completed'/);
   assert.match(source, /task\.on\('failed'/);
   assert.match(source, /statSync/);
+  assert.match(source, /readSync/);
   assert.match(source, /unlinkSync/);
+  assert.doesNotMatch(source, /!\/\\\.apkg\(\?:\[\?\#\]\|\$\)\/i\.test\(deck\.downloadUrl\)/);
 });
 
 test('cloud deck service cannot strand a download promise when listener cleanup throws', () => {
@@ -52,6 +54,29 @@ test('cloud deck service cannot strand a download promise when listener cleanup 
   assert.match(source, /try\s*\{\s*task\.off\('progress'/);
   assert.match(source, /try\s*\{\s*task\.off\('completed'/);
   assert.match(source, /try\s*\{\s*task\.off\('failed'/);
+});
+
+test('cloud deck service settles and cleans up a foreground task when the system pauses it', () => {
+  const source = read('../../entry/src/main/ets/backend/云端牌组服务.ets');
+  assert.match(source, /task\.on\('pause', pauseCallback\)/);
+  assert.match(source, /task\.off\('pause', pauseCallback\)/);
+  const pauseBody = source.match(/const pauseCallback\s*=\s*\([^)]*\): void =>\s*\{([\s\S]*?)\n\s*\};/);
+  assert.ok(pauseBody, 'pause callback body should exist');
+  assert.ok(pauseBody[1].indexOf('fail(') < pauseBody[1].indexOf('removeTask('),
+    'the promise must settle before task cleanup can throw');
+  assert.doesNotMatch(pauseBody[1], /progressCallback\(/);
+  assert.match(source, /const removeTask[\s\S]*try\s*\{[\s\S]*request\.agent\.remove/);
+  assert.match(source, /request\.agent\.remove\(task\.tid\)/);
+});
+
+test('cloud deck service times out waiting or retrying tasks that make no byte progress', () => {
+  const source = read('../../entry/src/main/ets/backend/云端牌组服务.ets');
+  assert.match(source, /云端牌组无进度超时毫秒/);
+  assert.match(source, /setTimeout\(/);
+  assert.match(source, /clearTimeout\(/);
+  assert.match(source, /progress\.processed > lastProcessed/);
+  assert.match(source, /长时间无下载进度/);
+  assert.match(source, /request\.agent\.remove\(task\.tid\)/);
 });
 
 test('import source modal offers local and software-cloud choices on the shared frosted surface', () => {

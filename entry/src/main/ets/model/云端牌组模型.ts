@@ -45,10 +45,6 @@ function 是HTTPS地址(url: string): boolean {
   return /^https:\/\/[^\s]+$/i.test(url);
 }
 
-function 是APKG地址(url: string): boolean {
-  return /^https:\/\/[^\s?#]+\.apkg(?:[?#][^\s]*)?$/i.test(url);
-}
-
 function 是有效大小(size: number | undefined): boolean {
   return size === undefined || (Number.isInteger(size) && size >= 0);
 }
@@ -67,10 +63,10 @@ function 解析目录项(raw: 原始牌组目录项): 云端牌组目录项 | nu
   if (accessType !== 'public' && accessType !== 'redeem_code') {
     return null;
   }
-  if (accessType === 'public' && !是APKG地址(downloadUrl)) {
+  if (accessType === 'public' && !是HTTPS地址(downloadUrl)) {
     return null;
   }
-  if (accessType === 'redeem_code' && downloadUrl.length > 0 && !是APKG地址(downloadUrl)) {
+  if (accessType === 'redeem_code' && downloadUrl.length > 0 && !是HTTPS地址(downloadUrl)) {
     return null;
   }
 
@@ -113,6 +109,9 @@ export function 解析云端牌组目录(jsonText: string): 云端牌组目录 {
   const decks: 云端牌组目录项[] = [];
   const seenIds: Set<string> = new Set<string>();
   for (const rawItem of raw.decks) {
+    if (rawItem === null || typeof rawItem !== 'object' || Array.isArray(rawItem)) {
+      continue;
+    }
     const item: 云端牌组目录项 | null = 解析目录项(rawItem);
     if (item === null || seenIds.has(item.id)) {
       continue;

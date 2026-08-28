@@ -22,6 +22,8 @@ export class 云端牌组服务错误 extends Error {
 
 export type 云端牌组下载进度回调 = (processed: number, total: number) => void;
 
+const 云端牌组无进度超时毫秒: number = 90000;
+
 function 是HTTPS地址(url: string): boolean {
   return /^https:\/\/[^\s]+$/i.test(url);
 }
@@ -52,6 +54,21 @@ function 校验下载文件(path: string, expectedSize: number | undefined): voi
   }
   if (expectedSize !== undefined && expectedSize > 0 && stat.size !== expectedSize) {
     throw new 云端牌组服务错误('file', '下载文件大小不匹配');
+  }
+  const file: fs.File = fs.openSync(path, fs.OpenMode.READ_ONLY);
+  try {
+    const buffer: ArrayBuffer = new ArrayBuffer(4);
+    const bytesRead: number = fs.readSync(file.fd, buffer, { length: 4 });
+    const signature: Uint8Array = new Uint8Array(buffer);
+    const isZip: boolean = bytesRead === 4 && signature[0] === 0x50 && signature[1] === 0x4B &&
+      ((signature[2] === 0x03 && signature[3] === 0x04) ||
+        (signature[2] === 0x05 && signature[3] === 0x06) ||
+        (signature[2] === 0x07 && signature[3] === 0x08));
+    if (!isZip) {
+      throw new 云端牌组服务错误('file', '下载内容不是有效的 APKG 文件');
+    }
+  } finally {
+    fs.closeSync(file);
   }
 }
 
@@ -112,8 +129,7 @@ export class 云端牌组服务 {
     deck: 云端牌组目录项,
     onProgress: 云端牌组下载进度回调
   ): Promise<string> {
-    if (deck.accessType !== 'public' || !是HTTPS地址(deck.downloadUrl) ||
-      !/\.apkg(?:[?#]|$)/i.test(deck.downloadUrl)) {
+    if (deck.accessType !== 'public' || !是HTTPS地址(deck.downloadUrl)) {
       throw new 云端牌组服务错误('invalid_url', '牌组下载地址不可用');
     }
 
@@ -147,12 +163,26 @@ export class 云端牌组服务 {
     return new Promise<string>((resolve: (value: string) => void,
       reject: (reason: Error) => void): void => {
       let settled: boolean = false;
+      let timeoutId: number = -1;
+      let lastProcessed: number = -1;
 
       const progressCallback = (progress: request.agent.Progress): void => {
         const total: number = progress.sizes.length > progress.index ? progress.sizes[progress.index] : 0;
-        onProgress(progress.processed, total);
+        try {
+          onProgress(progress.processed, total);
+        } catch (error) {
+          // 界面进度回调失败不应中断系统下载任务。
+        }
+        if (progress.processed > lastProcessed) {
+          lastProcessed = progress.processed;
+          resetIdleTimeout();
+        }
       };
       const removeListeners = (): void => {
+        if (timeoutId !== -1) {
+          clearTimeout(timeoutId);
+          timeoutId = -1;
+        }
         try {
           task.off('progress', progressCallback);
         } catch (error) {
@@ -168,6 +198,11 @@ export class 云端牌组服务 {
         } catch (error) {
           // 同上。
         }
+        try {
+          task.off('pause', pauseCallback);
+        } catch (error) {
+          // 同上。
+        }
       };
       const fail = (message: string): void => {
         if (settled) return;
@@ -175,6 +210,26 @@ export class 云端牌组服务 {
         removeListeners();
         静默删除(outputPath);
         reject(new Error(message));
+      };
+      const removeTask = (): void => {
+        try {
+          request.agent.remove(task.tid).then((): void => {
+            静默删除(outputPath);
+          }).catch((): void => {
+            静默删除(outputPath);
+          });
+        } catch (error) {
+          静默删除(outputPath);
+        }
+      };
+      const resetIdleTimeout = (): void => {
+        if (timeoutId !== -1) {
+          clearTimeout(timeoutId);
+        }
+        timeoutId = setTimeout((): void => {
+          fail('牌组长时间无下载进度，请检查网络后重试');
+          removeTask();
+        }, 云端牌组无进度超时毫秒);
       };
       const completedCallback = (progress: request.agent.Progress): void => {
         if (settled) return;
@@ -192,13 +247,26 @@ export class 云端牌组服务 {
       const failedCallback = (progress: request.agent.Progress): void => {
         fail(`牌组下载失败：${progress.state}`);
       };
+      const pauseCallback = (progress: request.agent.Progress): void => {
+        fail(`牌组下载已暂停：${progress.state}`);
+        removeTask();
+      };
 
-      task.on('progress', progressCallback);
-      task.on('completed', completedCallback);
-      task.on('failed', failedCallback);
-      task.start().catch((error: Error): void => {
-        fail(error.message);
-      });
+      try {
+        task.on('progress', progressCallback);
+        task.on('completed', completedCallback);
+        task.on('failed', failedCallback);
+        task.on('pause', pauseCallback);
+        resetIdleTimeout();
+        task.start().catch((error: Error): void => {
+          fail(error.message);
+          removeTask();
+        });
+      } catch (error) {
+        const detail: string = error instanceof Error ? error.message : `${error}`;
+        fail(detail);
+        removeTask();
+      }
     });
   }
 }
