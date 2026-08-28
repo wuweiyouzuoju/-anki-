@@ -492,6 +492,8 @@
     { "name": "glossary_browser_info_help", "value": "In the browser, tap the ⓘ icon on the right of a card row to view that card's details:\n\n· Card state: New / Learning / Review / Suspended / Buried\n· Scheduling: due date, interval, ease, review count, lapse count\n· Review history: dates and ratings of recent reviews\n\nCard info is a read-only view. To edit content, tap the card row to enter the edit area." },
     { "name": "settings_sync_group", "value": "AnkiWeb Sync" },
     { "name": "sync_subtitle_logged_out", "value": "Sign in to sync decks and media" },
+    { "name": "sync_account_required_hint", "value": "An Anki account is required (free sign-up on the AnkiWeb website)" },
+    { "name": "sync_register_link", "value": "Sign Up" },
     { "name": "sync_username_hint", "value": "AnkiWeb username (email)" },
     { "name": "sync_password_hint", "value": "Password" },
     { "name": "sync_login", "value": "Sign In" },

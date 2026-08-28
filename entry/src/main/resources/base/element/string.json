@@ -1098,6 +1098,8 @@
     { "name": "glossary_lapse_help", "value": "复习卡按「重来」时即发生一次遗忘，进入重学流程。\n\n重学流程：按「重新学习步幅」（默认 10 分钟）依次重现，通过后新间隔按「最短遗忘间隔」（默认 1 天）起步。\n\n每发生一次遗忘，该卡的遗忘次数 +1；累计达「难卡阈值」会被标记为难卡。\n\n启用 FSRS 后，遗忘后的新间隔由 FSRS 根据 memory_state 重新计算，不再使用旧版「遗忘间隔系数」。" },
     { "name": "settings_sync_group", "value": "AnkiWeb 云同步" },
     { "name": "sync_subtitle_logged_out", "value": "登录后可同步牌组与媒体文件" },
+    { "name": "sync_account_required_hint", "value": "需先拥有 Anki 账号（可在 AnkiWeb 官网免费注册）" },
+    { "name": "sync_register_link", "value": "前往注册" },
     { "name": "sync_username_hint", "value": "AnkiWeb 用户名（邮箱）" },
     { "name": "sync_password_hint", "value": "密码" },
     { "name": "sync_login", "value": "登录" },

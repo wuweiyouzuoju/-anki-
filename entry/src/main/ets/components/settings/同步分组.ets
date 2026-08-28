@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { common } from '@kit.AbilityKit';
+import { pasteboard } from '@kit.BasicServicesKit';
 import { 同步服务 } from '../../backend/同步服务';
 import { 后端错误 } from '../../backend/错误类型';
 import type { SyncAuth } from '../../proto/messages/SyncMessages';
@@ -81,6 +83,8 @@ export struct 同步分组 {
   private 鉴权凭证: SyncAuth | null = null;
 
   private readonly 同步服务实例: 同步服务 = new 同步服务();
+  // AnkiWeb 注册页（外部网址保留原文，与 设置面板.AnkiWeb网址 同款约定）
+  private readonly 注册网址: string = 'https://ankiweb.net/account/signup';
 
   aboutToAppear(): void {
     // 启动读取本地凭证：有 hkey 直接进 已登录（重启免登录）
@@ -108,6 +112,30 @@ export struct 同步分组 {
   /** 按钮背景专用主色（配 #FFFFFF 文字 ≥ 4.5:1）。2.1.4.1 深色模式修复。 */
   private 解析主色按钮背景(): string {
     return this.主色按钮背景链接 !== '' ? this.主色按钮背景链接 : 设置面板色板_取(this.是否深色).主色按钮背景;
+  }
+
+  /**
+   * 前往注册：用系统浏览器打开 AnkiWeb 注册页（与 设置面板.打开AnkiWeb网址 同款约定，
+   * 不在 app 内嵌 Web 打开，避免登录态与本应用混淆）。无可用浏览器时兜底复制网址到剪贴板 + toast。
+   */
+  private 打开注册页(): void {
+    const 上下文: common.UIAbilityContext =
+      this.getUIContext().getHostContext() as common.UIAbilityContext;
+    上下文.startAbility({
+      action: 'ohos.want.action.viewData',
+      uri: this.注册网址
+    }).catch(async (错误: Error): Promise<void> => {
+      try {
+        const 剪贴数据: pasteboard.PasteData =
+          pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, this.注册网址);
+        await pasteboard.getSystemPasteboard().setData(剪贴数据);
+        this.getUIContext().getPromptAction().showToast({
+          message: $r('app.string.about_ankiweb_open_failed')
+        });
+      } catch (剪贴错误) {
+        // 复制失败静默；用户仍可按说明文字手动搜索 AnkiWeb 注册
+      }
+    });
   }
 
   // ========================================================
@@ -275,6 +303,21 @@ export struct 同步分组 {
       .fontSize(12)
       .fontColor(色板.次文字)
       .width('100%')
+    // 账号前置说明：同步需先有 Anki 账号，右侧「前往注册」拉起系统浏览器打开 AnkiWeb 注册页
+    Row({ space: 6 }) {
+      Text($r('app.string.sync_account_required_hint'))
+        .fontSize(12)
+        .fontColor(色板.三级文字)
+        .layoutWeight(1)
+      Text($r('app.string.sync_register_link'))
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.解析主色按钮背景())
+        .onClick((): void => {
+          this.打开注册页();
+        })
+    }
+    .width('100%')
     TextInput({ placeholder: $r('app.string.sync_username_hint'), text: this.用户名输入 })
       .width('100%')
       .height(44)
