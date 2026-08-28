@@ -13,9 +13,8 @@ import { 后端会话 } from '../backend/后端会话';
 import { 笔记服务, 笔记字段校验错误 } from '../backend/笔记服务';
 import { 笔记类型服务 } from '../backend/笔记类型服务';
 import { 图片遮罩服务 } from '../backend/图片遮罩服务';
-import { 媒体服务 } from '../backend/媒体服务';
 import { 文本中的填空编号 } from '../model/填空解析器';
-import { 生成Occlusions字符串 } from '../model/图片遮罩模型';
+import { 生成Occlusions字符串, 识别图片扩展名 } from '../model/图片遮罩模型';
 import type { 遮罩描述 } from '../model/图片遮罩模型';
 import { 加载主题模式 } from '../model/主题存储';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
@@ -65,7 +64,6 @@ export struct 添加笔记页 {
   private readonly 笔记服务实例: 笔记服务 = new 笔记服务();
   private readonly 笔记类型服务实例: 笔记类型服务 = new 笔记类型服务();
   private readonly 图片遮罩服务实例: 图片遮罩服务 = new 图片遮罩服务();
-  private readonly 媒体服务实例: 媒体服务 = new 媒体服务();
   // Cloze Text 字段专用 controller：用于点击 c1-c5 后定位光标。
   // 仅 cloze 笔记类型的 Text 字段绑定此 controller，其它字段不绑定。
   private readonly 填空字段控制器: TextAreaController = new TextAreaController();
@@ -699,7 +697,8 @@ export struct 添加笔记页 {
   // @名称 读取图片字节
   //
   // @作用
-  // 把 PhotoViewPicker 返回的 URI 流式读为 Uint8Array，供 媒体服务.添加媒体文件 写入 collection.media。
+  // 把 PhotoViewPicker 返回的 URI 流式读为 Uint8Array，
+  // 供 写入临时图片文件 落到沙箱临时文件后交后端 AddImageOcclusionNote 读取。
   //
   // @输入
   // URI: PhotoViewPicker / 沙箱路径皆可（fs.openSync 直接消费 picker URI 的临时 provider 权限）
@@ -753,8 +752,9 @@ export struct 添加笔记页 {
   // @作用
   // ImageOcclusion 模式下的提交流程：
   //   1. 校验已选图、至少 1 个遮罩
-  //   2. 读 URI 字节 → 媒体服务.添加媒体文件 写入 collection.media 得最终文件名
-  //   3. 图片遮罩服务.添加图片遮罩笔记 一键落库（image_path + occlusions + header + back_extra + tags + notetype_id）
+  //   2. 读 URI 字节 → 按魔数识别扩展名 → 写入沙箱临时文件（cacheDir）
+  //   3. 图片遮罩服务.添加图片遮罩笔记 传临时文件绝对路径，后端读取字节、
+  //      以临时文件名为期望名写入 collection.media、登记媒体库、建笔记（image_path 指向临时文件）
   //   4. pop 返回牌组详情（与既有 Basic / Cloze 流程一致）
   //
   // @输入
@@ -765,14 +765,17 @@ export struct 添加笔记页 {
   //
   // @业务规则
   // 防重入：处理中 / 牌组ID=0 / 已选笔记类型ID=0 时直接返回（与 提交 同守卫）。
-  // 走 AddImageOcclusionNote 专用 RPC 而非通用「新建笔记 + 添加笔记」路径——
-  //   后端内部自动按 ImageOcclusion 字段索引填值，前端无需先取字段索引、再手动填字段。
-  // 文件名基于时间戳生成，扩展名 .img（后端会按 collection.media 已存在文件去重返回最终名）。
+  // image_path 必须是磁盘上真实存在的文件绝对路径（Anki 桌面端同样传临时文件路径）——
+  //   后端第一步 read_file(image_path)，传 media 文件名会因相对路径解析失败报
+  //   "Failed to read 'xxx': No such file or directory"（2026-08-27 修复的建卡失败根因）。
+  // 扩展名用魔数嗅探的真实图片格式：Anki is_image_file 只认 jpg/png/gif/webp 等，
+  //   伪扩展名（如 .img）会让遮罩编辑器无法回读图片。
   // 牌组ID 由后端按当前选中牌组写入（AddImageOcclusionNote 不接受 deckId 参数，
   //   使用 collection 的 current deck；用户在牌组详情页点「加卡」进入时 current deck 已切到该牌组）。
+  // 临时文件在 finally 中删除；后端已把字节写入 collection.media，删除不影响已建笔记。
   //
   // @副作用
-  // 调后端 添加媒体文件 / 添加图片遮罩笔记；读写 处理中 状态；成功后 pop 页面栈。
+  // 写 / 删沙箱临时文件；调后端 添加图片遮罩笔记；读写 处理中 状态；成功后 pop 页面栈。
   // ========================================================
   private async 图片遮盖_提交(): Promise<void> {
     if (this.处理中 || this.牌组ID === 0 || this.已选笔记类型ID === 0) {
@@ -787,16 +790,21 @@ export struct 添加笔记页 {
       this.错误信息 = this.取本地化文案($r('app.string.add_note_image_occlusion_need_mask'));
       return;
     }
+    const 上下文: common.UIAbilityContext | null = this.取能力上下文();
+    if (上下文 === null) {
+      return;
+    }
     this.错误信息 = '';
     this.处理中 = true;
+    let 临时路径: string = '';
     try {
-      // 1-2. 读 URI 字节并写入 collection.media
+      // 1-2. 读 URI 字节，按魔数定扩展名，写入沙箱临时文件
       const 字节: Uint8Array = this.读取图片字节(this.图片遮盖_源图Uri);
-      const 期望文件名: string = `image-occlusion-${Date.now()}.img`;
-      const 最终文件名: string = await this.媒体服务实例.添加媒体文件(期望文件名, 字节);
-      // 3. 调添加图片遮罩笔记 RPC 落库（后端内部按 ImageOcclusion 字段索引自动填值）
+      临时路径 = `${上下文.cacheDir}/image-occlusion-${Date.now()}.${识别图片扩展名(字节)}`;
+      this.写入临时图片文件(临时路径, 字节);
+      // 3. 调添加图片遮罩笔记 RPC 落库（后端自行读临时文件并写入 collection.media + 建笔记）
       await this.图片遮罩服务实例.添加图片遮罩笔记({
-        imagePath: 最终文件名,
+        imagePath: 临时路径,
         occlusions: 生成Occlusions字符串(this.图片遮盖_遮罩列表),
         header: this.图片遮盖_标题,
         backExtra: this.图片遮盖_额外,
@@ -811,7 +819,45 @@ export struct 添加笔记页 {
     } catch (错误) {
       this.错误信息 = 错误 instanceof Error ? 错误.message : `${错误}`;
     } finally {
+      if (临时路径 !== '') {
+        try {
+          fs.unlinkSync(临时路径);
+        } catch (清理错误) {
+          // 临时文件清理失败不影响主流程；cacheDir 由系统回收
+        }
+      }
       this.处理中 = false;
+    }
+  }
+
+  // ========================================================
+  // @块ID UI-PAGE-ADDNOTE-IMG-OCC-WRITE-TEMP
+  // @名称 写入临时图片文件
+  //
+  // @作用
+  // 把图片字节写入沙箱临时文件，供后端 AddImageOcclusionNote 按文件路径读取。
+  //
+  // @输入
+  // 路径: cacheDir 下的绝对路径；字节: 图片全部字节
+  //
+  // @输出
+  // 无（失败抛异常，由 图片遮盖_提交 统一显示错误）
+  //
+  // @业务规则
+  // TRUNC 确保重名时清空旧内容；写入失败时关闭描述符后异常上抛。
+  //
+  // @副作用
+  // 创建 / 写入 / 关闭沙箱文件。
+  // ========================================================
+  private 写入临时图片文件(路径: string, 字节: Uint8Array): void {
+    const 文件: fs.File = fs.openSync(
+      路径, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+    try {
+      // Uint8Array.buffer 的类型是 ArrayBufferLike，writeSync 需要 ArrayBuffer，显式收窄
+      const 缓冲: ArrayBuffer = 字节.buffer as ArrayBuffer;
+      fs.writeSync(文件.fd, 缓冲);
+    } finally {
+      fs.closeSync(文件);
     }
   }
 

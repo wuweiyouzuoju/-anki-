@@ -108,6 +108,45 @@ export function 生成Occlusions字符串(遮罩列表: 遮罩描述[]): string 
 }
 
 // ========================================================
+// @块ID MODEL-IMAGE-OCCLUSION-005
+// @名称 识别图片扩展名
+//
+// @作用
+// 按图片字节头部的魔数识别格式，返回 Anki 支持的扩展名（jpg/png/webp/gif）。
+// 后端 AddImageOcclusionNote 会用临时文件名直接作为 collection.media 里的媒体文件名，
+// 而 Anki rslib is_image_file 只认 jpg/jpeg/png/gif/svg/webp/ico/avif，
+// 扩展名不对会导致遮罩编辑器无法回读图片，因此不能用 .img 之类的伪扩展名。
+//
+// @输入
+// 图片完整字节（Uint8Array）
+//
+// @输出
+// 扩展名字符串（不含点）；无法识别时兜底 png（受 Anki 支持，渲染按内容嗅探）
+//
+// @业务规则
+// 魔数依据：JPEG=FF D8 FF；PNG=89 50 4E 47；WEBP=RIFF....WEBP；GIF=GIF8。
+//
+// @副作用
+// 无。
+// ========================================================
+export function 识别图片扩展名(字节: Uint8Array): string {
+  if (字节.length >= 3 && 字节[0] === 0xFF && 字节[1] === 0xD8 && 字节[2] === 0xFF) {
+    return 'jpg';
+  }
+  if (字节.length >= 4 && 字节[0] === 0x89 && 字节[1] === 0x50 && 字节[2] === 0x4E && 字节[3] === 0x47) {
+    return 'png';
+  }
+  if (字节.length >= 12 && 字节[0] === 0x52 && 字节[1] === 0x49 && 字节[2] === 0x46 && 字节[3] === 0x46
+    && 字节[8] === 0x57 && 字节[9] === 0x45 && 字节[10] === 0x42 && 字节[11] === 0x50) {
+    return 'webp';
+  }
+  if (字节.length >= 3 && 字节[0] === 0x47 && 字节[1] === 0x49 && 字节[2] === 0x46) {
+    return 'gif';
+  }
+  return 'png';
+}
+
+// ========================================================
 // @块ID MODEL-IMAGE-OCCLUSION-004
 // @名称 编号颜色
 //

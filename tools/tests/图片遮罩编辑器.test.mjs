@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// 图片遮罩编辑器 单元测试：仅测纯函数 生成Occlusions字符串 与 编号颜色。
+// 图片遮罩编辑器 单元测试：仅测纯函数 生成Occlusions字符串 / 编号颜色 / 识别图片扩展名。
 // 渲染交互（ArkUI Canvas + PanGesture）不在 node test runner 范围内，
 // 由真机验收覆盖（spec T5.5）。
 // 格式参考：third_party/anki/rslib/src/image_occlusion/imageocclusion.rs
@@ -9,7 +9,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   生成Occlusions字符串,
-  编号颜色
+  编号颜色,
+  识别图片扩展名
 } from '../../entry/src/main/ets/model/图片遮罩模型.ts';
 
 test('生成Occlusions字符串_单个c1矩形', () => {
@@ -103,4 +104,23 @@ test('编号颜色_越界返回默认灰', () => {
   assert.equal(编号颜色(0), '#9E9E9E');
   assert.equal(编号颜色(6), '#9E9E9E');
   assert.equal(编号颜色(-1), '#9E9E9E');
+});
+
+test('识别图片扩展名_按魔数识别jpg/png/webp/gif', () => {
+  // 魔数依据：JPEG=FF D8 FF；PNG=89 50 4E 47；WEBP=RIFF....WEBP；GIF=GIF8
+  assert.equal(识别图片扩展名(new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 0x00])), 'jpg');
+  assert.equal(识别图片扩展名(new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])), 'png');
+  assert.equal(
+    识别图片扩展名(
+      new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50])),
+    'webp');
+  assert.equal(识别图片扩展名(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])), 'gif');
+});
+
+test('识别图片扩展名_无法识别兜底png', () => {
+  // 兜底 png：Anki is_image_file 只认 jpg/jpeg/png/gif/svg/webp/ico/avif，
+  // 必须返回受支持的扩展名，否则遮罩编辑器无法回读图片
+  assert.equal(识别图片扩展名(new Uint8Array([0x00, 0x01, 0x02, 0x03])), 'png');
+  assert.equal(识别图片扩展名(new Uint8Array([0x42, 0x4D])), 'png');
+  assert.equal(识别图片扩展名(new Uint8Array(0)), 'png');
 });

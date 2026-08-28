@@ -6,7 +6,7 @@
 //
 // @作用
 // 包装后端图片遮罩服务的 6 个 RPC：
-//   - 获取遮罩用图片（GetImageForOcclusion）：按 collection.media 中的文件名读取图片字节
+//   - 获取遮罩用图片（GetImageForOcclusion）：按磁盘文件路径读取图片字节（后端 read_file 直读，无 media 解析）
 //   - 获取图片遮罩笔记（GetImageOcclusionNote）：按 noteId 取已有笔记（含遮罩列表）用于编辑回填
 //   - 获取图片遮罩字段（GetImageOcclusionFields）：取该笔记类型 4 个字段在 fields 数组中的索引
 //   - 添加图片遮罩笔记类型（AddImageOcclusionNotetype）：幂等确保 ImageOcclusion 笔记类型存在
@@ -15,7 +15,7 @@
 // 编解码 + 经 后端会话 调用；不持有 UI 状态，失败抛 后端错误。
 //
 // @输入
-// 获取遮罩用图片：path（collection.media 中的文件名，string）
+// 获取遮罩用图片：path（磁盘文件路径，string；后端按相对进程 CWD 解析，必须传绝对路径）
 // 获取图片遮罩笔记：noteId（number）
 // 获取图片遮罩字段：notetypeId（number）
 // 添加图片遮罩笔记类型：无
@@ -33,7 +33,9 @@
 // @业务规则
 // AddImageOcclusionNotetype 入参为 generic.Empty，传空字节。
 // 字段索引映射：proto occlusions→遮罩、image→图片、header→标题、back_extra→额外。
-// 添加图片遮罩笔记 的 imagePath 应为 媒体服务.添加媒体文件 写入 collection.media 后返回的最终文件名。
+// 添加图片遮罩笔记 的 imagePath 应为应用沙箱内真实存在的图片文件绝对路径（如 cacheDir 临时文件）——
+// 后端第一步 read_file(image_path) 直读磁盘，再以文件名为期望名写入 collection.media 并登记媒体库；
+// 传 media 文件名会因相对路径解析失败报 "Failed to read 'xxx': No such file or directory"。
 // 更新图片遮罩笔记 不含 image_path——图片本身不更新，沿用原值。
 //
 // @副作用
@@ -73,8 +75,7 @@ export class 图片遮罩服务 {
   private readonly 会话: 后端会话 = 后端会话.获取实例();
 
   /**
-   * 获取遮罩用图片：按 collection.media 中的文件名读取图片字节与最终文件名。
-   * 用于编辑已有图片遮罩笔记时把图片加载回编辑器底图。
+   * 获取遮罩用图片：按磁盘文件路径读取图片字节与文件名（后端 read_file 直读，须传绝对路径）。
    * 失败以 后端错误 抛出，message 可直接展示。
    */
   async 获取遮罩用图片(路径: string): Promise<GetImageForOcclusionResponse> {
@@ -115,8 +116,9 @@ export class 图片遮罩服务 {
   }
 
   /**
-   * 添加图片遮罩笔记：把选好的图片路径、遮罩 cloze 字符串、Header/Back Extra、tags 一并落库。
-   * imagePath 应为 媒体服务.添加媒体文件 写入 collection.media 后返回的最终文件名。
+   * 添加图片遮罩笔记：把选好的图片文件路径、遮罩 cloze 字符串、Header/Back Extra、tags 一并落库。
+   * imagePath 必须是应用沙箱内真实存在的图片文件绝对路径（后端直读磁盘并把字节写入 collection.media），
+   * 文件名会直接作为媒体文件名，扩展名需为 Anki 支持的图片格式（jpg/png/webp/gif 等）。
    * 返回 OpChanges（实体变更标记，UI 据此刷新对应区域）。
    * 失败以 后端错误 抛出，message 可直接展示。
    */
