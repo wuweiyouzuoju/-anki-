@@ -63,6 +63,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 统计页 | `entry/src/main/ets/pages/统计页.ets` + `entry/src/main/ets/components/stats/` | NavDestination；阶段状态机 loading→data/error（切换牌组重载时保留旧图表不闪空）；13 个图表分区对齐 Anki 14 图（难度/难度系数互斥合一，稳定度/记忆率仅 FSRS 显示）；顶部条内嵌牌组选择下拉（全库=空搜索串，选中牌组传 `deck:"全名"`）；桌面卡片快照仅全库口径刷新 |
 | 统计图表组件 | `entry/src/main/ets/components/stats/*.ets` | 纯展示层；@Prop 数据 + @StorageProp 主题色；**build 方法必须单根 Column**（if/else 分支 + @Builder 渲染内容）；@Builder 内不能写 const/let，数据通过参数传入；颜色/分箱走 `model/统计色板.ets`（d3 色带插值）与 `model/统计分箱.ets`（d3 ticks/nice/分位）纯函数 |
 | 媒体管理面板 | `entry/src/main/ets/components/settings/媒体管理面板.ets` | Stack 遮罩+面板；持有 媒体服务 实例直接调后端；检查中/处理中防重入；清空回收站需二次确认 |
+| 云端牌组下载 | `model/{云端牌组模型,云端牌组配置,云端牌组引导存储}.*` + `backend/云端牌组服务.ets` + `components/{导入来源弹窗,云端牌组弹窗}.ets` + `pages/首页.ets` | 公开 HTTPS JSON 目录；系统下载代理直写 `filesDir/cloud-decks`；首页串行下载后复用 `执行牌组导入` 自动安装；目录地址为空时友好降级，不影响本地导入 |
 | 卡片预览页 | `entry/src/main/ets/components/browser/卡片预览页.ets` | Web 组件复用 卡片渲染服务；支持翻面 + 左右滑切上下张；底部"编辑字段"进浏览编辑区 |
 
 ## 常见任务路由
@@ -79,6 +80,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 排查 NAPI 错误 | `native/napi_bridge/src/native_module.cpp` + `backend/错误类型.ts` | `nativeStatus=3` 是 BACKEND_ERROR；`nativeStatus=4` 是 NATIVE_FATAL |
 | 排查 Rust panic | `native/rsharmony/src/lib.rs` | `call_with_registry` 用 catch_unwind 包裹；BackendRegistry 是全局 OnceLock |
 | 修改媒体渲染 | `utils/{声音播放器,TTS播放器,媒体响应助手}.ets` + `model/学习卡片HTML构建器.ets` | 媒体经 `https://jidecards-media.local/` 自建域名 |
+| 修改云端牌组托管 | `model/云端牌组配置.ts`（唯一目录 URL）+ `docs/cloud-deck-hosting.md`（协议）+ `model/云端牌组模型.ts`（校验） | 客户端只放公开 HTTPS 读取地址，禁止放网盘账号、上传令牌或签名密钥；兑换码以后走第三方 API 返回短时下载地址 |
 | 修改全屏转场（NavDestination/弹窗） | `utils/转场时长.ets`（分档时长 + 弹簧曲线）+ `utils/自定义转场.ets`（NavDestination opacity 回调注册表）+ `pages/首页.ets` 的 `customNavContentTransition` 回调 | 时长按物理英寸分档（<8.5→200ms / 8.5-12→250ms / >12→300ms）；曲线统一 `curves.springCurve(0, 228, 22, 1)`；首页推栈（from/to index=-1）必须返回 undefined 走系统默认；`proxy.finishTransition()` 必须调，否则 1200ms timeout 后 UI 卡住 |
 | 修改色彩对比度 | `resources/{base,dark}/element/color.json` + `model/颜色主题.ets` + `model/色阶生成.ets`（导出 WCAG 函数）+ `tools/verify-hardcoded-colors.mjs`（扫描硬编码颜色并验算对比度） | 文字档 ≥4.5:1，图标/标题档 ≥3:1；改 token 必须同时改 base + dark 避免深色模式反转；`色阶生成.ets` 的 `对比度(a,b)` 可直接调用验算；语义 token：`error_text`(#D92D20/#F97066)、`warning_text`(#B34C00/#FF9929)；**禁止硬编码 `#RRGGBB` 用作文字色**，必须走 `$r('app.color.xxx')` |
 | 新增 Anki backend 方法 | `backend/服务索引.ts` 加 SERVICE/METHOD 常量 | **升级 Anki 版本时必须重新提取本表** |
@@ -120,6 +122,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 新增 i18n key | `resources/base/element/string.json` + `resources/en_US/element/string.json` 同步加 key（数量+名称必须对齐，英文不能含中文）+ 调用点用 `$r` 或 `localized` / `localizedFmt` | `theme_color_*` / `about_rate_*`（含 `%s` / `%1$s` 占位符时用 `localizedFmt(resource, args)`） |
 | 新增设置入口（应用内系统弹窗） | `components/设置面板.ets` aboutGroupContent 内加行 + 对应私有方法 | `处理好评()` 调 `commentManager.showCommentDialog`（@kit.AppGalleryKit）+ Deep Linking 降级；按错误码分支处理（1021500006-9）；**不要用 promptAction.showDialog** |
 | 新增"首次完成 X 触发弹窗"引导 | 三件套：`components/<X>引导对话框.ets`(磨砂遮罩+surface_card) + `model/<X>引导存储.ets`(preferences「只弹一次」) + 触发点写 AppStorage 标记 + 首页 onPop 检查标记 | `AnkiWeb引导对话框`(首次启动)：参考 `显示AnkiWeb引导一次` 的「先标记再弹窗」模式。**好评引导已改用系统 commentManager.showCommentDialog 弹窗，不再走自定义对话框模式**（见上「升级好评引导」行） |
+| 新增云端牌组字段/托管方 | `model/云端牌组模型.ts` + `backend/云端牌组服务.ets` + `docs/cloud-deck-hosting.md` | model 保持纯 TS；大文件必须走 `request.agent`，不得用 HTTP response 一次性载入内存；仍只接受 HTTPS `.apkg` |
 | 新增 NavDestination 自定义转场 | (1) `pages/<X>页.ets` 的 NavDestination 加 `@State 转场透明度: number = 1` + `.opacity(this.转场透明度)` (2) `aboutToAppear` 调 `CustomTransition.getInstance().注册NavParam('<PageName>', 起点回调, 终点回调)`（起点设 opacity=0 进入/1 退出，终点设目标值）(3) `aboutToDisappear` 调 `注销NavParam('<PageName>')` (4) `pages/首页.ets` 的 `自定义转场回调` 已统一处理，无需改 | `pages/学习页.ets`('StudyPage') / `pages/添加笔记页.ets`('AddNotePage')：参考其 aboutToAppear 注册 + aboutToDisappear 注销模式；**key 必须与 NavPathStack pushPath 时的 name 一致**（首页.ets:1555 用 `from.name ?? ''` 查找） |
 | 新增全屏弹窗/面板 | `components/<X>面板.ets` 内 `Stack` 的遮罩 Column 与主面板 Column 都加 `.transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))`；如需 scale 入场用 `TransitionEffect.asymmetric` + `.combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))` | `components/AnkiWeb引导对话框.ets`（OPACITY + scale 0.96）/ `components/牌组定制面板.ets`（纯 OPACITY）：禁止左右平移/上下位移/单帧切换 |
 | 新增浏览页侧边栏节点 | `components/browser/浏览侧边栏.ets`（阶段 4 T6）+ `搜索服务.连接搜索节点` / `搜索服务.替换搜索节点` | 树形展示牌组/标签/已保存搜索；点击节点触发 onSearchWithNode；长按切追加 AND/OR 语义 |

@@ -71,6 +71,30 @@
 
 ## 3. 目录结构
 
+### 3.1 云端牌组下载与本地安装
+
+云端牌组是独立于 Anki 同步的公开内容分发边界，不引入应用账号或自建业务服务器：
+
+```text
+首次启动 / 新建牌组→导入牌组→软件云端牌组
+  ↓
+首页.ets：加载与选择状态、任务串行协调
+  ↓
+云端牌组服务.ets
+  ├─ NetworkKit HTTP：读取小型 HTTPS JSON 目录
+  └─ request.agent：把大体积 .apkg 直接下载到 filesDir/cloud-decks
+  ↓
+数据迁移服务.执行牌组导入(downloadedPath)
+  ↓
+Anki Rust backend IMPORT_ANKI_PACKAGE
+  ↓
+刷新首页并展开新出现的父牌组
+```
+
+`model/云端牌组模型.ts` 是无 `@kit.*` 依赖的纯协议层；`model/云端牌组配置.ts` 是唯一托管目录配置点。客户端不保存托管管理凭据。目录地址为空、网络失败或目录无效只影响该弹窗，本地导入与学习链路继续可用。详见 [cloud-deck-hosting.md](cloud-deck-hosting.md)。
+
+### 3.2 目录树
+
 ```
 jidecards/
 ├── AppScope/                      应用级配置（app.json5）

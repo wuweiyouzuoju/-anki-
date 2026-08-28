@@ -95,4 +95,3 @@
 5. Use `superpowers:requesting-code-review` with the feature diff; fix all critical and important findings and re-run relevant verification.
 6. Use `superpowers:verification-before-completion` and capture fresh evidence.
 7. Use `superpowers:finishing-a-development-branch` to present integration options without touching the user's dirty main checkout.
-

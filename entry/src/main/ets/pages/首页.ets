@@ -7,10 +7,13 @@ import { 后端会话 } from '../backend/后端会话';
 import { 牌组服务 } from '../backend/牌组服务';
 import { 统计服务 } from '../backend/统计服务';
 import { 导出集合, 导出牌组, 完成导出, 执行牌组导入, 暂存导入文件, 替换集合 } from '../backend/数据迁移服务';
+import { 云端牌组服务, 云端牌组服务错误 } from '../backend/云端牌组服务';
 import { 设置面板 } from '../components/设置面板';
 import { 牌组详情面板 } from '../components/牌组详情面板';
 import { 许可证面板 } from '../components/许可证面板';
 import { 主页操作面板 } from '../components/主页操作面板';
+import { 导入来源弹窗 } from '../components/导入来源弹窗';
+import { 云端牌组弹窗 } from '../components/云端牌组弹窗';
 import { 牌组定制面板, 牌组定制结果 } from '../components/牌组定制面板';
 import { 添加笔记页, 添加笔记页参数, 添加笔记牌组选项 } from './添加笔记页';
 import { 数据迁移意图, 数据迁移模式, 导出牌组选项 } from '../components/数据迁移面板';
@@ -72,6 +75,8 @@ import { 可见牌组行, 平铺牌组树 } from '../model/牌组层级';
 import { 检查节流标记, 获取节流奖励 } from '../utils/操作节流';
 import { 欢迎弹窗 } from '../components/欢迎弹窗';
 import { 是否已展示欢迎弹窗, 标记已展示欢迎弹窗 } from '../model/欢迎弹窗存储';
+import { 是否已完成云端牌组引导, 标记已完成云端牌组引导 } from '../model/云端牌组引导存储';
+import { 云端牌组目录, 云端牌组目录项 } from '../model/云端牌组模型';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { CustomTransition } from '../utils/自定义转场';
 
@@ -89,6 +94,7 @@ struct 首页 {
   private readonly 牌组服务实例: 牌组服务 = new 牌组服务();
   private readonly 统计服务实例: 统计服务 = new 统计服务();
   private readonly 牌组配置服务实例: 牌组配置服务 = new 牌组配置服务();
+  private readonly 云端牌组服务实例: 云端牌组服务 = new 云端牌组服务();
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
   // 笔记添加广播：添加笔记页保存成功后写 noteAddedTick = Date.now()，
   // 这里 @Watch 监听变化触发 加载主页数据，绕开 NavPathStack.onPop 偶发不触发的问题，
@@ -186,6 +192,21 @@ struct 首页 {
   private 上次牌组已恢复: boolean = false;
   // 首次启动欢迎弹窗：介绍基础操作/个性设置/作者的话，由 aboutToAppear → 显示欢迎弹窗一次 触发
   @State private 显示欢迎弹窗: boolean = false;
+  @State private 显示导入来源弹窗: boolean = false;
+  @State private 显示云端牌组弹窗: boolean = false;
+  @State private 云端牌组首次引导: boolean = false;
+  @State private 云端牌组加载中: boolean = false;
+  @State private 云端牌组忙碌: boolean = false;
+  @State private 云端牌组错误: string = '';
+  @State private 云端牌组列表: 云端牌组目录项[] = [];
+  @State private 云端牌组选中ID列表: string[] = [];
+  @State private 云端牌组成功ID列表: string[] = [];
+  @State private 云端牌组失败ID列表: string[] = [];
+  @State private 云端牌组当前名称: string = '';
+  @State private 云端牌组当前阶段: string = '';
+  @State private 云端牌组进度: number = 0;
+  @State private 云端牌组已处理数: number = 0;
+  @State private 云端牌组任务数: number = 0;
   @State private 显示节流奖励: boolean = false;
   @State private 节流奖励文案: string = '';
   // 窄屏详情显隐（方案 C 2026-07-25）：点牌组后 true，根 Stack 内 牌组详情面板 盖住列表，替代推栈 NavDestination
@@ -195,9 +216,18 @@ struct 首页 {
     this.恢复主题();
     this.恢复颜色主题();
     this.恢复今日进度卡开关();
-    // 首次启动弹一次欢迎弹窗（preferences 持久化标记，仅展示一次）。
-    // fire-and-forget：不阻塞首页加载；await 自然延迟弹窗时机到 UI 就绪后。
-    this.显示欢迎弹窗一次();
+    // 新安装先提供可直接安装的云端牌组，再展示版本欢迎内容，避免两个全屏弹窗叠加。
+    this.显示首次弹窗序列();
+  }
+
+  /** 首次云端牌组引导优先于版本欢迎弹窗。 */
+  private async 显示首次弹窗序列(): Promise<void> {
+    const 已完成: boolean = await 是否已完成云端牌组引导();
+    if (!已完成) {
+      this.打开云端牌组弹窗(true);
+      return;
+    }
+    await this.显示欢迎弹窗一次();
   }
 
   // ========================================================
@@ -246,6 +276,12 @@ struct 首页 {
     if (this.显示过滤牌组面板) { this.显示过滤牌组面板 = false; return true; }
     if (this.显示牌组选项) { this.显示牌组选项 = false; return true; }
     if (this.显示创建牌组) { this.显示创建牌组 = false; return true; }
+    if (this.显示云端牌组弹窗) {
+      if (this.云端牌组忙碌) return true;
+      this.关闭云端牌组弹窗();
+      return true;
+    }
+    if (this.显示导入来源弹窗) { this.显示导入来源弹窗 = false; return true; }
     if (this.显示主页操作) { this.显示主页操作 = false; return true; }
     if (this.显示更多菜单) { this.显示更多菜单 = false; return true; }
     if (this.显示节流奖励) { this.显示节流奖励 = false; return true; }
@@ -1191,6 +1227,160 @@ struct 首页 {
   // @副作用
   // 调后端导入/导出服务；读写沙箱文件
   // ========================================================
+  private 云端牌组错误文案(error: Error): string {
+    let resource: Resource = $r('app.string.cloud_deck_load_failed');
+    if (error instanceof 云端牌组服务错误) {
+      if (error.code === 'not_configured') {
+        resource = $r('app.string.cloud_deck_not_configured');
+      } else if (error.code === 'catalog' || error.code === 'invalid_url') {
+        resource = $r('app.string.cloud_deck_invalid_catalog');
+      }
+    }
+    return this.getUIContext().getHostContext()!.resourceManager.getStringSync(resource.id);
+  }
+
+  /** 打开可复用的云端牌组弹窗，并重置上一次临时任务状态。 */
+  private 打开云端牌组弹窗(onboarding: boolean): void {
+    this.云端牌组首次引导 = onboarding;
+    this.显示云端牌组弹窗 = true;
+    this.云端牌组选中ID列表 = [];
+    this.云端牌组成功ID列表 = [];
+    this.云端牌组失败ID列表 = [];
+    this.云端牌组当前名称 = '';
+    this.云端牌组当前阶段 = '';
+    this.云端牌组进度 = 0;
+    this.云端牌组已处理数 = 0;
+    this.云端牌组任务数 = 0;
+    this.加载云端牌组目录();
+  }
+
+  /** 加载目录；未配置和网络错误都只留在弹窗中，不阻断首页。 */
+  private async 加载云端牌组目录(): Promise<void> {
+    this.云端牌组加载中 = true;
+    this.云端牌组错误 = '';
+    try {
+      const catalog: 云端牌组目录 = await this.云端牌组服务实例.加载目录();
+      this.云端牌组列表 = catalog.decks;
+    } catch (error) {
+      const normalized: Error = error instanceof Error ? error : new Error(`${error}`);
+      this.云端牌组列表 = [];
+      this.云端牌组错误 = this.云端牌组错误文案(normalized);
+    } finally {
+      this.云端牌组加载中 = false;
+    }
+  }
+
+  /** 关闭首次引导时落盘，并继续尚未展示的版本欢迎弹窗。 */
+  private async 关闭云端牌组弹窗(): Promise<void> {
+    if (this.云端牌组忙碌) return;
+    const wasOnboarding: boolean = this.云端牌组首次引导;
+    this.显示云端牌组弹窗 = false;
+    this.云端牌组首次引导 = false;
+    if (wasOnboarding) {
+      await 标记已完成云端牌组引导();
+      await this.显示欢迎弹窗一次();
+    }
+  }
+
+  private 切换云端牌组选择(deckId: string): void {
+    if (this.云端牌组忙碌 || this.云端牌组成功ID列表.indexOf(deckId) >= 0) return;
+    const index: number = this.云端牌组选中ID列表.indexOf(deckId);
+    if (index >= 0) {
+      this.云端牌组选中ID列表 = this.云端牌组选中ID列表.filter(
+        (id: string): boolean => id !== deckId);
+    } else {
+      this.云端牌组选中ID列表 = this.云端牌组选中ID列表.concat([deckId]);
+    }
+  }
+
+  /** 刷新导入后的主页，并展开这次新出现且含子牌组的父节点。 */
+  private 展开新导入牌组(oldDeckIds: Set<string>): void {
+    const nextExpanded: Set<string> = new Set(this.展开的牌组ID集合);
+    for (const deck of this.主页快照数据.decks) {
+      if (deck.hasChildren && !oldDeckIds.has(deck.id)) {
+        nextExpanded.add(deck.id);
+      }
+    }
+    if (nextExpanded.size > this.展开的牌组ID集合.size) {
+      this.展开的牌组ID集合 = nextExpanded;
+      this.牌组数据源.replaceAll(可见牌组行(this.主页快照数据.decks,
+        this.展开的牌组ID集合, this.隐藏的牌组ID集合));
+    }
+  }
+
+  /** 按选择顺序串行下载并导入，单项失败不阻断后续牌组。 */
+  private async 下载选中云端牌组(): Promise<void> {
+    if (this.云端牌组忙碌 || this.云端牌组选中ID列表.length === 0) return;
+    const context: common.UIAbilityContext | null = this.取能力上下文();
+    if (context === null) return;
+
+    const selectedDecks: 云端牌组目录项[] = [];
+    for (const deck of this.云端牌组列表) {
+      if (deck.accessType === 'public' && this.云端牌组选中ID列表.indexOf(deck.id) >= 0) {
+        selectedDecks.push(deck);
+      }
+    }
+    if (selectedDecks.length === 0) return;
+
+    const oldDeckIds: Set<string> = new Set(this.主页快照数据.decks.map(
+      (deck: 牌组汇总): string => deck.id));
+    const successIds: string[] = [];
+    const failedIds: string[] = [];
+    this.云端牌组忙碌 = true;
+    this.云端牌组任务数 = selectedDecks.length;
+    this.云端牌组已处理数 = 0;
+    this.云端牌组成功ID列表 = [];
+    this.云端牌组失败ID列表 = [];
+
+    try {
+      await 后端会话.获取实例().确保已打开(context.filesDir);
+      for (const deck of selectedDecks) {
+        this.云端牌组当前名称 = deck.name;
+        this.云端牌组当前阶段 = 'downloading';
+        this.云端牌组进度 = 0;
+        try {
+          const downloadedPath: string = await this.云端牌组服务实例.下载牌组(
+            context, context.filesDir, deck, (processed: number, total: number): void => {
+              const expected: number = total > 0 ? total : (deck.size === undefined ? 0 : deck.size);
+              if (expected > 0) {
+                this.云端牌组进度 = Math.min(99, Math.floor(processed * 100 / expected));
+              }
+            });
+          this.云端牌组当前阶段 = 'importing';
+          this.云端牌组进度 = 100;
+          await 执行牌组导入(downloadedPath);
+          successIds.push(deck.id);
+          this.云端牌组成功ID列表 = successIds.concat([]);
+        } catch (error) {
+          failedIds.push(deck.id);
+          this.云端牌组失败ID列表 = failedIds.concat([]);
+        }
+        this.云端牌组已处理数 += 1;
+      }
+
+      if (successIds.length > 0) {
+        await this.加载主页数据();
+        this.展开新导入牌组(oldDeckIds);
+      }
+    } catch (error) {
+      for (const deck of selectedDecks) {
+        if (failedIds.indexOf(deck.id) < 0 && successIds.indexOf(deck.id) < 0) {
+          failedIds.push(deck.id);
+        }
+      }
+      this.云端牌组失败ID列表 = failedIds.concat([]);
+    } finally {
+      this.云端牌组忙碌 = false;
+      this.云端牌组当前阶段 = '';
+      this.云端牌组选中ID列表 = failedIds.concat([]);
+      if (this.云端牌组首次引导) {
+        await 标记已完成云端牌组引导();
+      }
+      this.显示提示(failedIds.length > 0 ?
+        $r('app.string.cloud_deck_install_partial') : $r('app.string.cloud_deck_install_complete'));
+    }
+  }
+
   private async 从选择器导入牌组(): Promise<void> {
     if (this.数据迁移中) return;
     const context: common.UIAbilityContext | null = this.取能力上下文();
@@ -1211,17 +1401,7 @@ struct 首页 {
       this.数据迁移阶段 = 2; // 刷新列表中
       const oldDeckIds: Set<string> = new Set(this.主页快照数据.decks.map((d: 牌组汇总): string => d.id));
       await this.加载主页数据();
-      // 展开新导入的含子牌组的父牌组
-      const nextExpanded: Set<string> = new Set(this.展开的牌组ID集合);
-      for (const deck of this.主页快照数据.decks) {
-        if (deck.hasChildren && !oldDeckIds.has(deck.id)) {
-          nextExpanded.add(deck.id);
-        }
-      }
-      if (nextExpanded.size > this.展开的牌组ID集合.size) {
-        this.展开的牌组ID集合 = nextExpanded;
-        this.牌组数据源.replaceAll(可见牌组行(this.主页快照数据.decks, this.展开的牌组ID集合, this.隐藏的牌组ID集合));
-      }
+      this.展开新导入牌组(oldDeckIds);
       this.显示提示($r('app.string.transfer_done'));
       // B13 2026-07-22：导入成功后关闭弹窗（原仅 显示提示，弹窗残留）
       this.显示数据迁移 = false;
@@ -1849,7 +2029,7 @@ struct 首页 {
             },
             导入牌组回调: (): void => {
               this.显示主页操作 = false;
-              this.从选择器导入牌组();
+              this.显示导入来源弹窗 = true;
             },
             关闭回调: (): void => {
               this.显示主页操作 = false;
@@ -2038,6 +2218,55 @@ struct 首页 {
             },
             onSuccess: (): void => {
               this.加载主页数据();
+            }
+          })
+        }
+
+        if (this.显示导入来源弹窗) {
+          导入来源弹窗({
+            isDark: this.是否深色(),
+            busy: false,
+            onLocal: (): void => {
+              this.显示导入来源弹窗 = false;
+              this.从选择器导入牌组();
+            },
+            onCloud: (): void => {
+              this.显示导入来源弹窗 = false;
+              this.打开云端牌组弹窗(false);
+            },
+            onClose: (): void => {
+              this.显示导入来源弹窗 = false;
+            }
+          })
+        }
+
+        if (this.显示云端牌组弹窗) {
+          云端牌组弹窗({
+            isDark: this.是否深色(),
+            onboarding: this.云端牌组首次引导,
+            loading: this.云端牌组加载中,
+            busy: this.云端牌组忙碌,
+            errorMessage: this.云端牌组错误,
+            decks: this.云端牌组列表,
+            selectedIds: this.云端牌组选中ID列表,
+            successIds: this.云端牌组成功ID列表,
+            failedIds: this.云端牌组失败ID列表,
+            currentDeckName: this.云端牌组当前名称,
+            currentStage: this.云端牌组当前阶段,
+            progressPercent: this.云端牌组进度,
+            completedCount: this.云端牌组已处理数,
+            taskCount: this.云端牌组任务数,
+            onToggle: (deckId: string): void => {
+              this.切换云端牌组选择(deckId);
+            },
+            onRetry: (): void => {
+              this.加载云端牌组目录();
+            },
+            onDownload: (): void => {
+              this.下载选中云端牌组();
+            },
+            onClose: (): void => {
+              this.关闭云端牌组弹窗();
             }
           })
         }
