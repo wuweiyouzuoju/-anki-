@@ -104,6 +104,15 @@ export struct 真实保留率卡 {
     .width('100%')
   }
 
+  /** 行键数值部分：空数据显示 -，数据变化时 key 跟随变化 */
+  private 取行键(行: 保留率行): string {
+    if (行.数据 === null) {
+      return 'null';
+    }
+    const d: TrueRetention = 行.数据;
+    return `${d.youngPassed}_${d.youngFailed}_${d.maturePassed}_${d.matureFailed}`;
+  }
+
   @Builder
   private 渲染单列表() {
     Column() {
@@ -118,9 +127,10 @@ export struct 真实保留率卡 {
       .width('100%')
       .padding({ bottom: 应用尺寸.间距_4 })
 
+      // key 含全部数值字段：数据变 → key 变 → 行重建（key 不含数值时牌组切换后数字冻结）
       ForEach(this.取行列表(), (行: 保留率行) => {
         this.单列行(行)
-      }, (行: 保留率行) => `${行.周期}_${this.视图索引}`)
+      }, (行: 保留率行) => `${行.周期}_${this.视图索引}_${this.取行键(行)}`)
     }
     .width('100%')
   }
@@ -163,9 +173,10 @@ export struct 真实保留率卡 {
       .width('100%')
       .padding({ bottom: 应用尺寸.间距_4 })
 
+      // key 含全部数值字段：数据变 → key 变 → 行重建（key 不含数值时牌组切换后数字冻结）
       ForEach(this.取行列表(), (行: 保留率行) => {
         this.保留率行(行)
-      }, (行: 保留率行) => `${行.周期}`)
+      }, (行: 保留率行) => `${行.周期}_${this.取行键(行)}`)
     }
     .width('100%')
   }

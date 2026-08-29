@@ -11,7 +11,14 @@ import { 应用尺寸 } from '../../utils/应用尺寸';
 
 @Component
 export struct 今日计数卡 {
-  @Prop 今日数据: TodayCounts | null = null;
+  @Prop @Watch('数据已变') 今日数据: TodayCounts | null = null;
+  /** 渲染哨兵：@Prop 变化经 @Watch 递增，驱动本组件重新渲染
+   *  （@Prop 直连 UI 在统计图表分区尾闭包内不触发刷新，实测 2026-08-29） */
+  @State private 渲染指纹: number = 0;
+
+  private 数据已变(): void {
+    this.渲染指纹 = this.渲染指纹 + 1;
+  }
 
   private 取能力上下文(): common.UIAbilityContext | null {
     const ctx: common.UIAbilityContext | undefined =
@@ -70,6 +77,9 @@ export struct 今日计数卡 {
 
   build() {
     Column() {
+      // 渲染哨兵：读 渲染指纹 建立依赖，@Prop 变化 → @Watch → 指纹变化 → 本组件重新渲染
+      Text(`${this.渲染指纹}`).fontSize(1).opacity(0).height(0)
+
       if (this.今日数据 === null || this.今日数据.answerCount === 0) {
         Text($r('app.string.stats_today_no_cards'))
           .fontSize(应用尺寸.字号_正文)
@@ -78,46 +88,50 @@ export struct 今日计数卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染今日(this.今日数据 as TodayCounts)
+        // 内容内联（原 @Builder 值传参参数被固化，牌组切换后数字不更新，2026-08-29 修复）
+        Column({ space: 应用尺寸.间距_10 }) {
+          Text($r('app.string.stats_today_studied', (this.今日数据 as TodayCounts).answerCount,
+            this.格式化用时((this.今日数据 as TodayCounts).answerMillis),
+            this.取每卡秒(this.今日数据 as TodayCounts)))
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .textAlign(TextAlign.Center)
+          Text($r('app.string.stats_today_again',
+            this.取重来次数(this.今日数据 as TodayCounts),
+            this.取重来百分比(this.今日数据 as TodayCounts)))
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .textAlign(TextAlign.Center)
+          Text($r('app.string.stats_today_types', (this.今日数据 as TodayCounts).learnCount,
+            (this.今日数据 as TodayCounts).reviewCount, (this.今日数据 as TodayCounts).relearnCount,
+            (this.今日数据 as TodayCounts).earlyReviewCount))
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .textAlign(TextAlign.Center)
+          if ((this.今日数据 as TodayCounts).matureCount > 0) {
+            Text($r('app.string.stats_today_mature_line',
+              (this.今日数据 as TodayCounts).matureCorrect,
+              (this.今日数据 as TodayCounts).matureCount,
+              this.取成熟正确率(this.今日数据 as TodayCounts)))
+              .fontSize(应用尺寸.字号_正文)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .textAlign(TextAlign.Center)
+          } else {
+            Text($r('app.string.stats_today_no_mature'))
+              .fontSize(应用尺寸.字号_正文)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+              .textAlign(TextAlign.Center)
+          }
+        }
+        .width('100%')
+        .padding({ top: 应用尺寸.间距_8, bottom: 应用尺寸.间距_8 })
       }
     }
     .width('100%')
-  }
-
-  @Builder
-  private 渲染今日(d: TodayCounts) {
-    Column({ space: 应用尺寸.间距_10 }) {
-      Text($r('app.string.stats_today_studied', d.answerCount,
-        this.格式化用时(d.answerMillis), this.取每卡秒(d)))
-        .fontSize(应用尺寸.字号_正文)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .textAlign(TextAlign.Center)
-      Text($r('app.string.stats_today_again', this.取重来次数(d), this.取重来百分比(d)))
-        .fontSize(应用尺寸.字号_正文)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .textAlign(TextAlign.Center)
-      Text($r('app.string.stats_today_types', d.learnCount, d.reviewCount, d.relearnCount, d.earlyReviewCount))
-        .fontSize(应用尺寸.字号_正文)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .textAlign(TextAlign.Center)
-      if (d.matureCount > 0) {
-        Text($r('app.string.stats_today_mature_line', d.matureCorrect, d.matureCount, this.取成熟正确率(d)))
-          .fontSize(应用尺寸.字号_正文)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .textAlign(TextAlign.Center)
-      } else {
-        Text($r('app.string.stats_today_no_mature'))
-          .fontSize(应用尺寸.字号_正文)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-          .textAlign(TextAlign.Center)
-      }
-    }
-    .width('100%')
-    .padding({ top: 应用尺寸.间距_8, bottom: 应用尺寸.间距_8 })
   }
 }

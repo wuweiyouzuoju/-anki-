@@ -5,9 +5,10 @@
 // 堆叠顺序自下而上：成熟(深绿)→年轻(浅绿)→重学(红)→学习(橙)→过滤(紫)，色带随时间从旧到新加深。
 // 底部统计表对齐 Anki：学习天数（X/Y 天 Z%）/ 总计 / 期间日均 / 学习日日均；
 // 时间模式总计/日均为时长（分钟/天），另加「平均答题时间」（秒/张 + 张/分钟）。
-// Invariants: 数据键为距今天数（0=今天，1=昨天）；build 单根 Column。
+// Invariants: 数据键为距今天数（rslib 语义：0=今天，-1=昨天，-N=N 天前；正数=未来不出现）；build 单根 Column。
 
 import { common } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import type { ReviewKindCounts } from '../../proto/messages/StatsMessages';
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 颜色键 } from '../../model/颜色主题';
@@ -56,7 +57,8 @@ export struct 复习卡 {
     return this.复习计数;
   }
 
-  /** 范围 → 回看天数上限（0=1月 1=3月 2=1年 3=全部；AllTime 上限按 count 源最大键，与 Anki 一致） */
+  /** 范围 → 回看天数上限（0=1月 1=3月 2=1年 3=全部；AllTime 上限按 count 源最深过去键，与 Anki 一致）。
+   *  键语义（rslib reviews.rs:18 elapsed_secs_since(next_day_start)）：0=今天，-1=昨天，-N=N 天前。 */
   private 取范围天数(): number {
     if (this.复习计数 === null || this.复习计数.size === 0) {
       return 30;
@@ -66,13 +68,13 @@ export struct 复习卡 {
       case 1: return 89;
       case 2: return 364;
       default: {
-        let 最大: number = 0;
-        this.复习计数.forEach((计数: ReviewKindCounts, 天: number) => {
-          if (天 > 最大) {
-            最大 = 天;
+        let 最深: number = 0;
+        this.复习计数.forEach((_计数: ReviewKindCounts, 天: number) => {
+          if (天 < 最深) {
+            最深 = 天;
           }
         });
-        return 最大;
+        return Math.abs(最深);
       }
     }
   }
@@ -103,10 +105,12 @@ export struct 复习卡 {
     }
     if (源 !== null) {
       源.forEach((计数: ReviewKindCounts, 天: number) => {
-        if (天 < 0 || 天 > 天数上限) {
+        // 键域 [-天数上限, 0]：负=过去（保留），0=今天，正=未来（丢弃）
+        if (天 > 0 || 天 < -天数上限) {
           return;
         }
-        const 索引: number = Math.floor(天 / 步长);
+        // 索引映射：-上限→0（最旧，最左），0→柱数-1（今天，最右）
+        const 索引: number = Math.floor((天 + 天数上限) / 步长);
         if (索引 >= 0 && 索引 < 柱数) {
           柱[索引].成熟 += 计数.mature;
           柱[索引].年轻 += 计数.young;
@@ -116,9 +120,17 @@ export struct 复习卡 {
         }
       });
     }
-    // 显示顺序：旧→新（左→右）
-    柱.reverse();
+    // 索引已按 旧→新 排列（索引 0=最旧，柱数-1=今天），无需 reverse
     this.柱缓存 = 柱;
+    let 样例: string = '无';
+    if (源 !== null && 源.size > 0) {
+      const 首键: number[] = [];
+      源.forEach((_v: ReviewKindCounts, k: number): void => { 首键.push(k); });
+      首键.sort((a: number, b: number): number => a - b);
+      const v: ReviewKindCounts | undefined = 源.get(首键[0]);
+      样例 = `天${首键[0]}:成熟${v !== undefined ? v.mature : 'undef'}年轻${v !== undefined ? v.young : 'undef'}`;
+    }
+    hilog.info(0xFFFE, '复习卡', `缓存重算 源键数=${源 !== null ? 源.size : -1} 柱数=${柱.length} 总计=${this.取总计()} ${样例}`);
   }
 
   private 取柱总量(柱: 复习柱): number {
@@ -163,7 +175,7 @@ export struct 复习卡 {
     let 天数: number = 0;
     源.forEach((计数: ReviewKindCounts, 天: number) => {
       const 总: number = 计数.mature + 计数.young + 计数.relearn + 计数.learn + 计数.filtered;
-      if (总 > 0 && 天 >= 0 && 天 <= 上限) {
+      if (总 > 0 && 天 <= 0 && 天 >= -上限) {
         天数 += 1;
       }
     });
@@ -178,7 +190,7 @@ export struct 复习卡 {
     const 上限: number = this.取范围天数();
     let 总: number = 0;
     this.复习计数.forEach((计数: ReviewKindCounts, 天: number) => {
-      if (天 >= 0 && 天 <= 上限) {
+      if (天 <= 0 && 天 >= -上限) {
         总 += 计数.mature + 计数.young + 计数.relearn + 计数.learn + 计数.filtered;
       }
     });
@@ -276,54 +288,152 @@ export struct 复习卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染堆叠柱(this.取轴())
-        this.渲染图例()
-        this.渲染统计表()
-      }
-    }
-    .width('100%')
-  }
+        // 柱区内联（原 @Builder 值传参参数被固化，牌组切换后纵轴/柱高不更新，2026-08-29 修复）
+        Column({ space: 应用尺寸.间距_2 }) {
+          Row() {
+            纵轴刻度({
+              刻度: this.取轴().刻度,
+              高度: this.柱区高度,
+              是否时长: this.处于时间模式()
+            })
+            Row({ space: 1 }) {
+              // key 含全部数据字段：数据变 → key 变 → 柱子重建（key 仅索引时数据变化 UI 冻结）
+              ForEach(this.柱缓存, (柱: 复习柱, 索引: number) => {
+                Stack({ alignContent: Alignment.Bottom }) {
+                  // 自下而上：成熟→年轻→重学→学习→过滤
+                  Column().width('70%').height(柱.成熟 / this.取轴().上限 * this.柱区高度)
+                    .backgroundColor(取复习系列色(0, 索引 / Math.max(1, this.柱缓存.length - 1)))
+                  Column().width('70%').height(柱.年轻 / this.取轴().上限 * this.柱区高度)
+                    .backgroundColor(取复习系列色(1, 索引 / Math.max(1, this.柱缓存.length - 1)))
+                  Column().width('70%').height(柱.重学 / this.取轴().上限 * this.柱区高度)
+                    .backgroundColor(取复习系列色(2, 索引 / Math.max(1, this.柱缓存.length - 1)))
+                  Column().width('70%').height(柱.学习 / this.取轴().上限 * this.柱区高度)
+                    .backgroundColor(取复习系列色(3, 索引 / Math.max(1, this.柱缓存.length - 1)))
+                  Column().width('70%').height(柱.过滤 / this.取轴().上限 * this.柱区高度)
+                    .backgroundColor(取复习系列色(4, 索引 / Math.max(1, this.柱缓存.length - 1)))
+                }
+                .width('100%')
+                .height(this.柱区高度)
+                .layoutWeight(1)
+              }, (柱: 复习柱, 索引: number) => `${索引}_${柱.成熟}_${柱.年轻}_${柱.重学}_${柱.学习}_${柱.过滤}`)
+            }
+            .layoutWeight(1)
+            .height(this.柱区高度)
+          }
+          .width('100%')
 
-  @Builder
-  private 渲染堆叠柱(域: 轴域) {
-    Column({ space: 应用尺寸.间距_2 }) {
-      Row() {
-        纵轴刻度({
-          刻度: 域.刻度,
-          高度: this.柱区高度,
-          是否时长: this.处于时间模式()
-        })
-        Row({ space: 1 }) {
-          ForEach(this.柱缓存, (柱: 复习柱, 索引: number) => {
-            Stack({ alignContent: Alignment.Bottom }) {
-              // 自下而上：成熟→年轻→重学→学习→过滤
-              Column().width('70%').height(`${柱.成熟 / 域.上限 * 100}%`)
-                .backgroundColor(取复习系列色(0, 索引 / Math.max(1, this.柱缓存.length - 1)))
-              Column().width('70%').height(`${柱.年轻 / 域.上限 * 100}%`)
-                .backgroundColor(取复习系列色(1, 索引 / Math.max(1, this.柱缓存.length - 1)))
-              Column().width('70%').height(`${柱.重学 / 域.上限 * 100}%`)
-                .backgroundColor(取复习系列色(2, 索引 / Math.max(1, this.柱缓存.length - 1)))
-              Column().width('70%').height(`${柱.学习 / 域.上限 * 100}%`)
-                .backgroundColor(取复习系列色(3, 索引 / Math.max(1, this.柱缓存.length - 1)))
-              Column().width('70%').height(`${柱.过滤 / 域.上限 * 100}%`)
-                .backgroundColor(取复习系列色(4, 索引 / Math.max(1, this.柱缓存.length - 1)))
+          // 横轴日期：左端 = 范围最早日，右端 = 今天
+          横轴日期条({
+            左端偏移天: -this.取范围天数(),
+            右端偏移天: 0,
+            轴左宽: 纵轴宽
+          })
+        }
+        .width('100%')
+
+        this.渲染图例()
+
+        // 统计表内联（原 @Builder 值传参的 Text 文本固化在首次渲染，牌组切换后数字不更新）
+        Column({ space: 应用尺寸.间距_4 }) {
+          Row() {
+            Text($r('app.string.stats_reviews_days_studied'))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Text($r('app.string.stats_reviews_days_of_total', this.取学习天数(),
+              this.取期间天数(), `${(this.取学习天数() / this.取期间天数() * 100).toFixed(0)}%`))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+
+          if (this.处于时间模式()) {
+            Row() {
+              Text($r('app.string.stats_total_label'))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_secondary'))
+              Blank()
+              Text(this.格式化时长(this.取总计()))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_primary'))
             }
             .width('100%')
-            .height('100%')
-            .layoutWeight(1)
-          }, (柱: 复习柱, 索引: number) => `${索引}`)
+            Row() {
+              Text($r('app.string.stats_reviews_avg_period'))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_secondary'))
+              Blank()
+              Text($r('app.string.stats_reviews_minutes_per_day',
+                Math.round(this.取总计() / 1000 / 60 / this.取期间天数())))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .width('100%')
+            if (this.取学习天数() > 0 && this.取学习天数() < this.取期间天数()) {
+              Row() {
+                Text($r('app.string.stats_reviews_avg_studied'))
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.text_secondary'))
+                Blank()
+                Text($r('app.string.stats_reviews_minutes_per_day',
+                  Math.round(this.取总计() / 1000 / 60 / this.取学习天数())))
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.text_primary'))
+              }
+              .width('100%')
+            }
+            if (this.取平均答题秒() > 0) {
+              Row() {
+                Text($r('app.string.stats_average_answer_time_label'))
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.text_secondary'))
+                Blank()
+                Text($r('app.string.stats_average_answer_time',
+                  `${this.取平均答题秒().toFixed(1)}`,
+                  `${this.取每分钟卡数().toFixed(1)}`))
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.text_primary'))
+              }
+              .width('100%')
+            }
+          } else {
+            Row() {
+              Text($r('app.string.stats_total_label'))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_secondary'))
+              Blank()
+              Text($r('app.string.stats_reviews_total_count', this.取总计()))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .width('100%')
+            Row() {
+              Text($r('app.string.stats_reviews_avg_period'))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_secondary'))
+              Blank()
+              Text($r('app.string.stats_reviews_per_day', Math.round(this.取总计() / this.取期间天数())))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_primary'))
+            }
+            .width('100%')
+            if (this.取学习天数() > 0 && this.取学习天数() < this.取期间天数()) {
+              Row() {
+                Text($r('app.string.stats_reviews_avg_studied'))
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.text_secondary'))
+                Blank()
+                Text($r('app.string.stats_reviews_per_day', Math.round(this.取总计() / this.取学习天数())))
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor($r('app.color.text_primary'))
+              }
+              .width('100%')
+            }
+          }
         }
-        .layoutWeight(1)
-        .height(this.柱区高度)
+        .width('100%')
+        .alignItems(HorizontalAlign.Center)
       }
-      .width('100%')
-
-      // 横轴日期：左端 = 范围最早日，右端 = 今天
-      横轴日期条({
-        左端偏移天: -this.取范围天数(),
-        右端偏移天: 0,
-        轴左宽: 纵轴宽
-      })
     }
     .width('100%')
   }
@@ -354,57 +464,5 @@ export struct 复习卡 {
     }
     .alignItems(VerticalAlign.Center)
     .margin({ right: 应用尺寸.间距_10, bottom: 应用尺寸.间距_4 })
-  }
-
-  @Builder
-  private 渲染统计表() {
-    Column({ space: 应用尺寸.间距_4 }) {
-      this.统计行($r('app.string.stats_reviews_days_studied'),
-        $r('app.string.stats_reviews_days_of_total', this.取学习天数(),
-          this.取期间天数(), `${(this.取学习天数() / this.取期间天数() * 100).toFixed(0)}%`))
-      if (this.处于时间模式()) {
-        // 时间模式：总计/日均显示时长（毫秒 → 分钟/天），另加平均答题时间
-        this.统计行($r('app.string.stats_total_label'), this.格式化时长(this.取总计()))
-        this.统计行($r('app.string.stats_reviews_avg_period'),
-          $r('app.string.stats_reviews_minutes_per_day',
-            Math.round(this.取总计() / 1000 / 60 / this.取期间天数())))
-        if (this.取学习天数() > 0 && this.取学习天数() < this.取期间天数()) {
-          this.统计行($r('app.string.stats_reviews_avg_studied'),
-            $r('app.string.stats_reviews_minutes_per_day',
-              Math.round(this.取总计() / 1000 / 60 / this.取学习天数())))
-        }
-        if (this.取平均答题秒() > 0) {
-          this.统计行($r('app.string.stats_average_answer_time_label'),
-            $r('app.string.stats_average_answer_time',
-              `${this.取平均答题秒().toFixed(1)}`,
-              `${this.取每分钟卡数().toFixed(1)}`))
-        }
-      } else {
-        this.统计行($r('app.string.stats_total_label'),
-          $r('app.string.stats_reviews_total_count', this.取总计()))
-        this.统计行($r('app.string.stats_reviews_avg_period'),
-          $r('app.string.stats_reviews_per_day', Math.round(this.取总计() / this.取期间天数())))
-        if (this.取学习天数() > 0 && this.取学习天数() < this.取期间天数()) {
-          this.统计行($r('app.string.stats_reviews_avg_studied'),
-            $r('app.string.stats_reviews_per_day', Math.round(this.取总计() / this.取学习天数())))
-        }
-      }
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
-  private 统计行(标签: Resource, 值: ResourceStr) {
-    Row() {
-      Text(标签)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_secondary'))
-      Blank()
-      Text(值)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_primary'))
-    }
-    .width('100%')
   }
 }

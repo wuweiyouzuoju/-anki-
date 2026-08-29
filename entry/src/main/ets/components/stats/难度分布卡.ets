@@ -172,67 +172,63 @@ export struct 难度分布卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染难度(this.取数据() as Eases, this.取轴())
-      }
-    }
-    .width('100%')
-  }
+        // 直方图内联（原 @Builder 值传参参数被固化，牌组切换后柱高/统计行不更新，2026-08-29 修复）
+        Column({ space: 应用尺寸.间距_8 }) {
+          Row() {
+            纵轴刻度({
+              刻度: this.取轴().刻度,
+              高度: this.柱区高度
+            })
+            Row({ space: 1 }) {
+              // key 含数据字段：数据变 → key 变 → 柱子重建（key 仅索引时数据变化 UI 冻结）
+              ForEach(this.柱缓存, (柱: 难度柱, 索引: number) => {
+                Stack({ alignContent: Alignment.Bottom }) {
+                  Column()
+                    .width('70%')
+                    .height(Math.max(柱.卡数 / this.取轴().上限 * this.柱区高度, 柱.卡数 > 0 ? 4 : 0))
+                    .backgroundColor(this.取柱色(柱))
+                    .borderRadius(1)
+                }
+                .width('100%')
+                .height(this.柱区高度)
+                .layoutWeight(1)
+              }, (柱: 难度柱, 索引: number) => `${索引}_${柱.右端}_${柱.卡数}`)
+            }
+            .layoutWeight(1)
+            .height(this.柱区高度)
+          }
+          .width('100%')
 
-  @Builder
-  private 渲染难度(数据: Eases, 域: 轴域) {
-    Column({ space: 应用尺寸.间距_8 }) {
-      // 直方图（RdYlGn 渐变，约 20 柱）
-      Row() {
-        纵轴刻度({
-          刻度: 域.刻度,
-          高度: this.柱区高度
-        })
-        Row({ space: 1 }) {
-          ForEach(this.柱缓存, (柱: 难度柱, 索引: number) => {
-            Stack({ alignContent: Alignment.Bottom }) {
-              Column()
-                .width('70%')
-                .height(`${Math.max(柱.卡数 / 域.上限 * 100, 柱.卡数 > 0 ? 4 : 0)}%`)
-                .backgroundColor(this.取柱色(柱))
-                .borderRadius(1)
+          // 轴标签：域两端百分比
+          Row() {
+            Text(`${this.域下限}%`)
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.Start)
+            Text(`${this.域上限}%`)
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.End)
+          }
+          .width('100%')
+          .padding({ left: 纵轴宽 })
+
+          // 平均难度（Anki average 直出行；后端已换算为百分比口径）
+          if ((this.取数据() as Eases).average > 0) {
+            Row() {
+              Text($r('app.string.stats_ease_average_label'))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_secondary'))
+              Blank()
+              // % 放入参数而非资源模式，避免资源格式化歧义出现双 %%
+              Text($r('app.string.stats_ease_average', `${(this.取数据() as Eases).average.toFixed(0)}%`))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_primary'))
             }
             .width('100%')
-            .height('100%')
-            .layoutWeight(1)
-          }, (柱: 难度柱, 索引: number) => `${索引}`)
-        }
-        .layoutWeight(1)
-        .height(this.柱区高度)
-      }
-      .width('100%')
-
-      // 轴标签：域两端百分比
-      Row() {
-        Text(`${this.域下限}%`)
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.Start)
-        Text(`${this.域上限}%`)
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.End)
-      }
-      .width('100%')
-      .padding({ left: 纵轴宽 })
-
-      // 平均难度（Anki average 直出行；后端已换算为百分比口径）
-      if (数据.average > 0) {
-        Row() {
-          Text($r('app.string.stats_ease_average_label'))
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor($r('app.color.text_secondary'))
-          Blank()
-          // % 放入参数而非资源模式，避免资源格式化歧义出现双 %%
-          Text($r('app.string.stats_ease_average', `${数据.average.toFixed(0)}%`))
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor($r('app.color.text_primary'))
+          }
         }
         .width('100%')
       }

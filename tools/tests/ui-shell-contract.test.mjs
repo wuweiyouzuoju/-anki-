@@ -242,6 +242,114 @@ test('graphs request days follow the persisted stats range preference, never der
   }
 });
 
+test('stats page load is race-guarded: stale graph responses must not overwrite newer data', () => {
+  // 2026-08-28 修复：统计页快速切换牌组/天数时多个 获取图表统计 并发，
+  // 慢的旧请求后完成会把 图表数据 覆盖成旧口径（与 2026-08-24 首页 加载链串行 同族）。
+  // 症状：下拉框显示 A 而图表是 B 的数据；切回来显示又不同；偶发"卡在同一个界面"。
+  // 修复模式：请求序号（每次加载递增，旧请求返回发现序号不匹配即丢弃）+ 请求前固化搜索串
+  //（await 后重读 取搜索串() 会把单牌组数据当全库推给桌面卡片，污染首页/桌面卡片快照）。
+  const stats = read('entry/src/main/ets/pages/统计页.ets');
+  assert.match(stats, /private 请求序号: number = 0/, '统计页须有请求序号字段');
+  assert.match(stats, /const 本次序号: number = \+\+this\.请求序号/, '加载统计数据 开头须取本次序号');
+  assert.match(stats, /const 搜索串: string = this\.取搜索串\(\)/, '搜索串须在 await 前固化');
+  // 图表返回后与 catch 里都必须有序号校验（旧数据 / 旧错误都不得落地；中间可夹诊断日志行）
+  assert.match(stats, /if \(本次序号 !== this\.请求序号\) \{\s*\n\s*\/\/ 等待期间已有更新的请求[\s\S]{0,200}?\n\s*return;/,
+    '图表返回后须校验序号丢弃旧结果');
+  assert.match(stats, /if \(本次序号 !== this\.请求序号\) \{\s*\n\s*\/\/ 旧请求的失败不作数[\s\S]{0,200}?\n\s*return;/,
+    'catch 须校验序号丢弃旧错误');
+  // 桌面卡片快照只按固化搜索串判定全库（禁止 await 后重读状态再 await 快照的旧 bug 形态）
+  assert.match(stats, /if \(搜索串 === ''\) \{\s*\n\s*await this\.刷新卡片快照\(本次序号\)/, '快照推送须用固化搜索串并传序号');
+  assert.doesNotMatch(stats, /if \(this\.取搜索串\(\) === ''\) \{\s*\n\s*await this\.刷新卡片快照/, '禁止 await 后重读 取搜索串() 判定全库');
+  // 快照内部等牌组树期间也须校验序号（防旧快照覆盖新快照）
+  assert.match(stats, /刷新卡片快照\(序号: number \| null = null\)/, '刷新卡片快照 须收可选序号');
+  assert.match(stats, /if \(序号 !== null && 序号 !== this\.请求序号\) \{\s*\n\s*return;/, '快照落盘前须校验序号');
+  // 分离复选框切换推送快照须限定全库口径（单牌组图表数据不得污染首页/桌面卡片）
+  assert.match(stats, /if \(this\.取搜索串\(\) === ''\) \{\s*\n\s*this\.刷新卡片快照\(\)\.catch/, '分离切换推送快照须限定全库');
+});
+
+test('stats bar heights use fixed vp arithmetic, never template percent strings', () => {
+  // 2026-08-28 修复：柱高模板字符串百分比（`${x}%`）在两级百分比链（柱格 Stack height('100%')
+  // → 柱子 height(`${x}%`)）下依赖父容器实测高度。牌组快速切换重建组件树时存在父容器零尺寸帧
+  //（UI 树实锤：竖条的 5 层祖先 bounds 全为 [0,0][0,0]，柱子却 44×2510px 撑满滚动视口），
+  // 百分比失去基准被解析成撑满视口 → "大竖条霸屏"。
+  // 修复：柱高改固定 vp 算式（柱区高度是常量：统计页 108/110、widget 50/55），纯算术零测量依赖；
+  // 视觉与百分比完全等价（原百分比基准本就是这个常量）。柱宽仍 layoutWeight 自适应屏宽。
+  const files = [
+    'entry/src/main/ets/components/stats/预测卡.ets',
+    'entry/src/main/ets/components/stats/间隔分布卡.ets',
+    'entry/src/main/ets/components/stats/难度分布卡.ets',
+    'entry/src/main/ets/components/stats/稳定度分布卡.ets',
+    'entry/src/main/ets/components/stats/记忆率卡.ets',
+    'entry/src/main/ets/components/stats/新增卡.ets',
+    'entry/src/main/ets/components/stats/回答按钮卡.ets',
+    'entry/src/main/ets/components/stats/复习卡.ets',
+    'entry/src/main/ets/widget/pages/统计卡片.ets'
+  ];
+  for (const f of files) {
+    const src = read(f);
+    assert.doesNotMatch(src, /height\(`\$\{/, `${f} 禁止模板字符串百分比柱高（父容器零尺寸帧会霸屏）`);
+  }
+  // 抽查两处正确写法：vp 算式 + 柱格 Stack 固定高度
+  // 2026-08-29 注：柱区已内联（原 @Builder 值传参的 域.上限 参数被固化，牌组切换后柱高不更新），
+  // 柱高直接读 this.取轴()（每次渲染重新求值），断言同步改为新写法，意图不变（防百分比霸屏）。
+  const review = read('entry/src/main/ets/components/stats/复习卡.ets');
+  assert.match(review, /height\(柱\.成熟 \/ this\.取轴\(\)\.上限 \* this\.柱区高度\)/, '复习卡柱高须为 vp 算式');
+  assert.match(review, /\.height\(this\.柱区高度\)\s*\n\s*\.layoutWeight\(1\)/, '复习卡柱格 Stack 须固定高度');
+  const widget = read('entry/src/main/ets/widget/pages/统计卡片.ets');
+  assert.match(widget, /Math\.max\(项\[0\] \/ Math\.max\(1, this\.小时最大值\(\)\) \* 50/, 'widget 小时柱高须为 vp 算式且防最大值除零');
+});
+
+test('stats graph cards stay reactive across deck switches: data-carrying ForEach keys and no value-passing @Builder for data UI', () => {
+  // 2026-08-29 修复：统计页切换牌组后所有图表冻结在旧值。三个根因（真机实锤）：
+  // 1) ForEach key 只用索引/列号：数据变 → key 集合不变 → ArkUI 判定无增删 → 柱子/格子永不重建
+  // 2) @Builder 值传参（含无参 @Builder 内读 @State）的子树在组件 re-render 时不重新求值
+  //    → 统计表文本/纵轴刻度/格子颜色固化在首次渲染（点击"时间"复选框后统计表仍旧值实锤）
+  // 3) @Prop 直连 UI（无 @Watch+@State 链）在统计图表分区尾闭包内不触发子组件刷新
+  //    → 需 @Watch 递增渲染哨兵 @State 驱动重渲染（卡片状态分布 2190 冻结实锤）
+  // 契约：柱状图 ForEach key 必须含数据字段；数据 UI 内联在 build 中不进值传参 @Builder。
+  const cards = [
+    'entry/src/main/ets/components/stats/复习卡.ets',
+    'entry/src/main/ets/components/stats/预测卡.ets',
+    'entry/src/main/ets/components/stats/新增卡.ets',
+    'entry/src/main/ets/components/stats/间隔分布卡.ets',
+    'entry/src/main/ets/components/stats/稳定度分布卡.ets',
+    'entry/src/main/ets/components/stats/记忆率卡.ets',
+    'entry/src/main/ets/components/stats/难度分布卡.ets',
+    'entry/src/main/ets/components/stats/小时分布卡.ets',
+    'entry/src/main/ets/components/stats/日历卡.ets',
+    'entry/src/main/ets/components/stats/回答按钮卡.ets'
+  ];
+  for (const f of cards) {
+    const src = read(f);
+    // 仅约束数据绑定 ForEach（数据源为 柱缓存/取数据/取行列表 等状态数据）；
+    // 静态标签集（范围切换条、小时标签）key 用索引不涉数据，豁免。
+    assert.doesNotMatch(src, /ForEach\(this\.柱缓存[\s\S]{0,800}?=> `\$\{索引\}`\)/,
+      `${f} 柱缓存 ForEach key 禁止只用索引（数据变化柱子冻结）`);
+    assert.doesNotMatch(src, /ForEach\(this\.取数据\(\)[\s\S]{0,800}?=> `\$\{索引\}`\)/,
+      `${f} 取数据 ForEach key 禁止只用索引`);
+    assert.doesNotMatch(src, /ForEach\(this\.取行列表\(\)[\s\S]{0,800}?=> `\$\{周期\}`\)/,
+      `${f} 行列表 ForEach key 禁止只用周期（数据变化行冻结）`);
+  }
+  // 日历卡格子：列 ForEach key 必须含格子数量（keyGenerator 读 取格数据）
+  const calendar = read('entry/src/main/ets/components/stats/日历卡.ets');
+  assert.match(calendar, /=> `\$\{列\}_\$\{this\.取格数据\(列, 行\)\?\.数量 \?\? -1\}`/,
+    '日历卡格子 ForEach key 须含格子数量');
+  // 抽查：复习卡 key 含全部 5 系列数据字段
+  const review = read('entry/src/main/ets/components/stats/复习卡.ets');
+  assert.match(review, /`\$\{索引\}_\$\{柱\.成熟\}_\$\{柱\.年轻\}_\$\{柱\.重学\}_\$\{柱\.学习\}_\$\{柱\.过滤\}`/,
+    '复习卡 ForEach key 须含全部数据字段');
+  // @Prop 直连卡须有 @Watch + 渲染哨兵驱动重渲染
+  const counts = read('entry/src/main/ets/components/stats/卡片状态分布.ets');
+  assert.match(counts, /@Prop @Watch\('数据已变'\) 卡片计数/, '卡片状态分布 @Prop 须挂 @Watch');
+  assert.match(counts, /渲染指纹/, '卡片状态分布须有渲染哨兵 @State 驱动重渲染');
+  const today = read('entry/src/main/ets/components/stats/今日计数卡.ets');
+  assert.match(today, /@Prop @Watch\('数据已变'\) 今日数据/, '今日计数卡 @Prop 须挂 @Watch');
+  assert.match(today, /渲染指纹/, '今日计数卡须有渲染哨兵 @State 驱动重渲染');
+  // 复习卡统计表已内联：不得再出现值传参 统计行 @Builder
+  assert.doesNotMatch(review, /private 统计行\(标签: Resource, 值: ResourceStr\)/,
+    '复习卡统计表不得用值传参 @Builder（文本固化）');
+});
+
 test('widget payload stays under the 2KB form transfer limit', () => {
   // FormBindingData 跨进程传输上限约 2KB：难度桶（SM-2 键域 130~390 可上百桶）与
   // 间隔桶不截断时 JSON 超限，updateForm 静默失败，桌面卡片冻结在旧数据。

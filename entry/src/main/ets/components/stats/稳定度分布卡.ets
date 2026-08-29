@@ -125,69 +125,60 @@ export struct 稳定度分布卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染直方图(this.取轴())
-        this.渲染轴标签()
-        this.渲染统计行()
-      }
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 渲染直方图(域: 轴域) {
-    Row() {
-      纵轴刻度({
-        刻度: 域.刻度,
-        高度: this.柱区高度
-      })
-      Row({ space: 1 }) {
-        ForEach(this.柱缓存, (卡数: number, 索引: number) => {
-          Stack({ alignContent: Alignment.Bottom }) {
-            Column()
-              .width('70%')
-              .height(`${Math.max(卡数 / 域.上限 * 100, 卡数 > 0 ? 4 : 0)}%`)
-              .backgroundColor(取间隔柱色((索引 + 1) / this.柱缓存.length))
-              .borderRadius(1)
+        // 直方图内联（原 @Builder 值传参参数被固化，牌组切换后纵轴/柱高不更新，2026-08-29 修复）
+        Row() {
+          纵轴刻度({
+            刻度: this.取轴().刻度,
+            高度: this.柱区高度
+          })
+          Row({ space: 1 }) {
+            // key 含数据字段：数据变 → key 变 → 柱子重建（key 仅索引时数据变化 UI 冻结）
+            ForEach(this.柱缓存, (卡数: number, 索引: number) => {
+              Stack({ alignContent: Alignment.Bottom }) {
+                Column()
+                  .width('70%')
+                  .height(Math.max(卡数 / this.取轴().上限 * this.柱区高度, 卡数 > 0 ? 4 : 0))
+                  .backgroundColor(取间隔柱色((索引 + 1) / this.柱缓存.length))
+                  .borderRadius(1)
+              }
+              .width('100%')
+              .height(this.柱区高度)
+              .layoutWeight(1)
+            }, (卡数: number, 索引: number) => `${索引}_${卡数}`)
           }
-          .width('100%')
-          .height('100%')
           .layoutWeight(1)
-        }, (卡数: number, 索引: number) => `${索引}`)
+          .height(this.柱区高度)
+        }
+        .width('100%')
+
+        // 轴标签内联（@Builder 内读 @State 也不响应，数据变化时上限固化）
+        Row() {
+          Text('0')
+            .fontSize(应用尺寸.字号_说明_小)
+            .fontColor($r('app.color.text_tertiary'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.Start)
+          Text(`${this.显示上限}`)
+            .fontSize(应用尺寸.字号_说明_小)
+            .fontColor($r('app.color.text_tertiary'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.End)
+        }
+        .width('100%')
+        .padding({ left: 纵轴宽 })
+
+        // 统计行内联（@Builder 内读 @State 也不响应，牌组切换后中位稳定度固化）
+        Row() {
+          Text($r('app.string.stats_stability_median'))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor($r('app.color.text_secondary'))
+          Blank()
+          Text($r('app.string.stats_interval_median_days', this.取中位稳定度()))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor($r('app.color.text_primary'))
+        }
+        .width('100%')
       }
-      .layoutWeight(1)
-      .height(this.柱区高度)
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 渲染轴标签() {
-    Row() {
-      Text('0')
-        .fontSize(应用尺寸.字号_说明_小)
-        .fontColor($r('app.color.text_tertiary'))
-        .layoutWeight(1)
-        .textAlign(TextAlign.Start)
-      Text(`${this.显示上限}`)
-        .fontSize(应用尺寸.字号_说明_小)
-        .fontColor($r('app.color.text_tertiary'))
-        .layoutWeight(1)
-        .textAlign(TextAlign.End)
-    }
-    .width('100%')
-    .padding({ left: 纵轴宽 })
-  }
-
-  @Builder
-  private 渲染统计行() {
-    Row() {
-      Text($r('app.string.stats_stability_median'))
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_secondary'))
-      Blank()
-      Text($r('app.string.stats_interval_median_days', this.取中位稳定度()))
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_primary'))
     }
     .width('100%')
   }

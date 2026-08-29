@@ -632,12 +632,12 @@ struct 统计卡片 {
           Stack({ alignContent: Alignment.Bottom }) {
             Column()
               .width('70%')
-              .height(`${Math.max(项[0] / this.小时最大值() * 100, 项[0] > 0 ? 6 : 0)}%`)
-              .backgroundColor(取小时柱色(项[0] / this.小时最大值()))
+              .height(Math.max(项[0] / Math.max(1, this.小时最大值()) * 50, 项[0] > 0 ? 3 : 0))
+              .backgroundColor(取小时柱色(项[0] / Math.max(1, this.小时最大值())))
               .borderRadius(1)
           }
           .width('100%')
-          .height('100%')
+          .height(50)
           .layoutWeight(1)
         }, (项: [number, number], 索引: number) => `${索引}`)
       }
@@ -798,12 +798,12 @@ struct 统计卡片 {
           Stack({ alignContent: Alignment.Bottom }) {
             Column()
               .width('70%')
-              .height(`${Math.max(项[1] / this.难度最大值() * 100, 项[1] > 0 ? 6 : 0)}%`)
+              .height(Math.max(项[1] / Math.max(1, this.难度最大值()) * 50, 项[1] > 0 ? 3 : 0))
               .backgroundColor(取难度柱色(项[0] / 100))
               .borderRadius(1)
           }
           .width('100%')
-          .height('100%')
+          .height(50)
           .layoutWeight(1)
         }, (项: [number, number], 索引: number) => `${索引}`)
       }
@@ -902,7 +902,7 @@ struct 统计卡片 {
           Stack({ alignContent: Alignment.Bottom }) {
             Column()
               .width('70%')
-              .height(`${Math.max(项[1] / this.间隔最大值() * 100, 项[1] > 0 ? 6 : 0)}%`)
+              .height(Math.max(项[1] / Math.max(1, this.间隔最大值()) * 55, 项[1] > 0 ? 3 : 0))
               .backgroundColor(取间隔柱色((索引 + 1) / Math.max(1, this.数据.间隔分布.length)))
               .borderRadius(1)
           }
@@ -976,12 +976,12 @@ struct 统计卡片 {
           Stack({ alignContent: Alignment.Bottom }) {
             Column()
               .width('70%')
-              .height(`${Math.max(项[1] / this.预测最大值() * 100, 项[1] > 0 ? 6 : 0)}%`)
+              .height(Math.max(项[1] / Math.max(1, this.预测最大值()) * 50, 项[1] > 0 ? 3 : 0))
               .backgroundColor(取预测柱色(索引 / Math.max(1, this.数据.未来到期.length - 1)))
               .borderRadius(1)
           }
           .width('100%')
-          .height('100%')
+          .height(50)
           .layoutWeight(1)
         }, (项: [number, number], 索引: number) => `${索引}`)
       }

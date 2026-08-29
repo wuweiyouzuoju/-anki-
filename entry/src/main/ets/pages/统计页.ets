@@ -60,7 +60,7 @@ import { 牌组服务 } from '../backend/牌组服务';
 import { 平铺牌组树 } from '../model/牌组层级';
 import type { 牌组汇总 } from '../model/主页模型';
 import type { DeckTreeNode } from '../proto/messages/DeckMessages';
-import type { GraphsView, GraphPreferences } from '../proto/messages/StatsMessages';
+import type { GraphsView, GraphPreferences, ReviewKindCounts } from '../proto/messages/StatsMessages';
 import { Weekday } from '../proto/messages/StatsMessages';
 
 /** 统计页阶段状态机：loading=加载中，content=展示数据，error=出错 */
@@ -91,6 +91,9 @@ export struct 统计页 {
   @State private 牌组选项: SelectOption[] = [];
   @State private 选中牌组索引: number = 0;
   private 牌组名列表: string[] = [];
+  // 加载竞态防护：每次 加载统计数据 递增；旧的未完成请求返回后发现序号不匹配即丢弃，
+  // 防止快速切换牌组/天数时慢的旧请求后完成覆盖新数据（与首页 加载链串行 同族问题，2026-08-28 修复）。
+  private 请求序号: number = 0;
   // 小时分布时间段（0=近1月 1=近3月 2=近1年 3=全部）：与首页卡片/桌面卡片共用同一偏好
   @State private 小时分布窗口: number = 0;
   // 分区帮助浮层：点击各分区 i 时由 onHelp 回调设置标题/正文，页面级 Stack 统一弹字段帮助面板
@@ -167,6 +170,7 @@ export struct 统计页 {
 
   /** 牌组下拉切换：重选牌组后重新加载统计 */
   private on牌组切换(索引: number): void {
+    hilog.info(0xFFFE, '统计页', `牌组切换请求 索引=${索引} 旧=${this.选中牌组索引}`);
     if (索引 === this.选中牌组索引) {
       return;
     }
@@ -205,8 +209,11 @@ export struct 统计页 {
         futureDueShowBacklog: 旧.futureDueShowBacklog
       };
     });
-    // 分离偏好改变卡片数量口径：立即重提卡片快照，首页摘要/桌面卡片跟随
-    this.刷新卡片快照().catch((): void => {});
+    // 分离偏好改变卡片数量口径：立即重提卡片快照，首页摘要/桌面卡片跟随。
+    // 仅全库口径推送：选中单牌组时 图表数据 为单牌组口径，推送会污染首页/桌面卡片（跳过）。
+    if (this.取搜索串() === '') {
+      this.刷新卡片快照().catch((): void => {});
+    }
   }
 
   /** 日历图星期标签点击切换周首日（图内控件，即时落库） */
@@ -241,8 +248,9 @@ export struct 统计页 {
   /**
    * 用当前 图表数据 + 小时分布窗口 + 分离偏好 提取卡片数据并保存推送。
    * 拉牌组树算待学数/牌组数，供桌面卡片今日进度页（失败时传0，桌面卡片显示"-"）。
+   * 序号非空时（来自 加载统计数据）：等牌组树期间若有更新的加载请求则放弃本次推送，防旧快照覆盖新快照。
    */
-  private async 刷新卡片快照(): Promise<void> {
+  private async 刷新卡片快照(序号: number | null = null): Promise<void> {
     const 图表: GraphsView | null = this.图表数据;
     if (图表 === null) {
       return;
@@ -251,6 +259,9 @@ export struct 统计页 {
     try {
       const 牌组服务实例 = new 牌组服务();
       const tree: DeckTreeNode = await 牌组服务实例.获取牌组树();
+      if (序号 !== null && 序号 !== this.请求序号) {
+        return;
+      }
       let 总待学: number = 0;
       for (const 子节点 of tree.children) {
         总待学 += 子节点.newCount + 子节点.learnCount + 子节点.reviewCount;
@@ -260,6 +271,9 @@ export struct 统计页 {
         hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
       });
     } catch (_牌组错误) {
+      if (序号 !== null && 序号 !== this.请求序号) {
+        return;
+      }
       保存卡片数据(提取卡片数据(图表, 0, 0, this.小时分布窗口, 分离暂停)).catch((e: Object): void => {
         hilog.error(0xFFFE, '统计页', `保存卡片数据失败 ${e}`);
       });
@@ -267,6 +281,10 @@ export struct 统计页 {
   }
 
   private async 加载统计数据(): Promise<void> {
+    const 本次序号: number = ++this.请求序号;
+    // 请求前固化搜索串：await 期间用户可能再切换牌组，返回后必须按发起时的口径处理
+    //（含桌面卡片快照的"仅全库"判定，防止单牌组数据污染首页/桌面卡片）。
+    const 搜索串: string = this.取搜索串();
     this.阶段 = 'loading';
     try {
       const context: common.UIAbilityContext | null = this.取能力上下文();
@@ -278,8 +296,25 @@ export struct 统计页 {
       await 后端会话.获取实例().确保已打开(context.filesDir);
       // 图表统计是主数据，偏好加载失败不阻塞（回退默认值）。
       // 搜索串为空 = 全库统计；选中牌组时传 deck:"全名"（后端 graph_data_for_search 牌组分支）
-      const 图表: GraphsView = await this.统计服务实例.获取图表统计(this.统计天数, this.取搜索串());
+      const 图表: GraphsView = await this.统计服务实例.获取图表统计(this.统计天数, 搜索串);
+      if (本次序号 !== this.请求序号) {
+        // 等待期间已有更新的请求（牌组/天数再切换）：丢弃本次旧结果，防止旧数据覆盖新数据
+        hilog.info(0xFFFE, '统计页', `丢弃过期请求 序号=${本次序号} 当前=${this.请求序号} 搜索串=${搜索串}`);
+        return;
+      }
       this.图表数据 = 图表;
+      const 复习天数: number = 图表.reviewCountsByDaysAgo !== null ? 图表.reviewCountsByDaysAgo.size : -1;
+      let 首日样例: string = '无';
+      if (图表.reviewCountsByDaysAgo !== null && 图表.reviewCountsByDaysAgo.size > 0) {
+        const 键值: string[] = [];
+        图表.reviewCountsByDaysAgo.forEach((v: ReviewKindCounts, k: number): void => {
+          const 总: number = v.mature + v.young + v.relearn + v.learn + v.filtered;
+          键值.push(`${k}:${总}`);
+        });
+        键值.sort();
+        首日样例 = 键值.join(',');
+      }
+      hilog.info(0xFFFE, '统计页', `图表已更新 序号=${本次序号} 搜索串=${搜索串} 键值=${首日样例}`);
       try {
         this.图表偏好 = await this.统计服务实例.获取图表偏好();
       } catch (_偏好错误) {
@@ -289,10 +324,14 @@ export struct 统计页 {
       // 顺带刷新桌面卡片数据（仅全库口径；选中单牌组时不覆盖首页/桌面卡片）：
       // 用户进入统计页时把最新 GraphsView 推送到桌面卡片，
       // 避免桌面卡片长期显示旧数据（FSRS 切换、复习后未回首页等场景）。
-      if (this.取搜索串() === '') {
-        await this.刷新卡片快照();
+      if (搜索串 === '') {
+        await this.刷新卡片快照(本次序号);
       }
     } catch (error) {
+      if (本次序号 !== this.请求序号) {
+        // 旧请求的失败不作数（新请求进行中会自行落 阶段），防止旧错误顶掉新数据
+        return;
+      }
       this.阶段 = 'error';
       this.错误详情 = error instanceof Error ? error.message : `${error}`;
       hilog.error(0xFFFE, '统计页', `加载失败: ${this.错误详情}`);
@@ -387,7 +426,7 @@ export struct 统计页 {
           .optionFontColor($r('app.color.text_primary'))
           .backgroundColor(this.主色容器色)
           .borderRadius(应用尺寸.圆角_进度条)
-          .constraintSize({ maxWidth: '50%' })
+          .constraintSize({ maxWidth: '45%' })
           .onSelect((索引: number) => {
             this.on牌组切换(索引);
           })
@@ -463,7 +502,6 @@ export struct 统计页 {
         }) {
           日历卡({
             复习计数: this.图表数据 !== null ? this.图表数据.reviewCountsByDaysAgo : null,
-            日切小时: this.图表数据 !== null ? this.图表数据.rolloverHour : 0,
             周首日: this.图表偏好.calendarFirstDayOfWeek,
             统计天数: this.统计天数,
             是否深色: this.是否深色(),

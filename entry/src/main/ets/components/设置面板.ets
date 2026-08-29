@@ -22,6 +22,7 @@ import { 外观分组 } from './settings/外观分组';
 import { 调度器分组 } from './settings/调度器分组';
 import { 布局分组 } from './settings/布局分组';
 import { 数据分组 } from './settings/数据分组';
+import { 模式切换菜单 } from './settings/模式切换菜单';
 import { 同步分组 } from './settings/同步分组';
 import { 术语分组 } from './settings/术语分组';
 import { 媒体管理面板 } from './settings/媒体管理面板';
@@ -53,8 +54,10 @@ interface 分组头部参数 {
 // @名称 设置面板主壳
 //
 // @作用
-// 设置面板主壳：Stack 遮罩 + List 列出 7 个分组 ListItem。
-// 5 个分组（外观/调度器/布局/数据/术语表）已抽到 components/settings/ 子组件；
+// 设置面板主壳：Stack 遮罩 + List 列出各分组 ListItem + 根 Stack 顶层浮层。
+// 顶栏布局：左「确认」（关闭设置页）+ 中标题 + 右「当前模式名」按钮（弹出 模式切换菜单 选 简洁版/实验版，
+// 替代原底部「当前模式」分组，该分组已于 2026-08-29 删除）。
+// 5 个分组（外观/调度器/布局/数据/术语表）+ 模式切换菜单 已抽到 components/settings/ 子组件；
 // 数据库检查分组与关于分组保留在主壳中：
 //   - 数据库检查：契约测试 check-database-contract 要求主壳直接持有 集合服务 并调 检查数据库；
 //   - 关于分组：契约测试要求 feedback_email / sponsor_qrcode 资源引用留在主壳。
@@ -124,8 +127,8 @@ export struct 设置面板 {
   @State private 数据分组展开: boolean = false;
   @State private 数据库分组展开: boolean = false;
   @State private 关于分组展开: boolean = false;
-  // 当前模式分组（底部）：展开后明文说明 + Select 选择框，替代顶部条 Select
-  @State private 当前模式分组展开: boolean = false;
+  // 右上角模式切换菜单：顶栏「当前模式」按钮触发，弹出 简洁版/实验版 选择
+  @State private 显示模式菜单: boolean = false;
   // 实验性功能分组（仅实验版可见）：Tap Zones 开关，默认折叠（手写白板已移除开关，常驻学习页更多菜单）
   @State private 实验性分组展开: boolean = false;
   // 不在契约要求中但保持父组件统一管理，便于后续按分组排序。
@@ -182,14 +185,6 @@ export struct 设置面板 {
 
   private 取本地化文本(资源: Resource): string {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id);
-  }
-
-  /** 简洁模式 Select 选项：简洁版 / 实验版 */
-  private 简洁模式选项(): SelectOption[] {
-    return [
-      { value: this.取本地化文本($r('app.string.settings_simple_mode_simple')) },
-      { value: this.取本地化文本($r('app.string.settings_simple_mode_full')) }
-    ];
   }
 
   // ========================================================
@@ -822,21 +817,22 @@ export struct 设置面板 {
   build() {
     Stack() {
       Column() {
-        // 顶部条（与统计/提醒/浏览页同款：左返回 + 中标题 + 右确认）
+        // 顶部条：左确认（关闭设置页）+ 中标题 + 右当前模式按钮（弹出 简洁版/实验版 菜单）
         Stack() {
           Row() {
-            按下态按钮({
-              文案: $r('app.string.study_back'),
-              选中态背景: this.主色容器色,
-              字色: $r('app.color.text_primary'),
-              点击回调: (): void => { this.关闭回调(); }
-            })
-            Blank()
             按下态按钮({
               文案: $r('app.string.settings_confirm'),
               选中态背景: this.主色容器色,
               字色: this.动作主色链接,
               点击回调: (): void => { this.关闭回调(); }
+            })
+            Blank()
+            按下态按钮({
+              文案: this.简洁模式 ? $r('app.string.settings_simple_mode_simple')
+                : $r('app.string.settings_simple_mode_full'),
+              选中态背景: this.主色容器色,
+              字色: $r('app.color.text_primary'),
+              点击回调: (): void => { this.显示模式菜单 = true; }
             })
           }
           .width('100%')
@@ -1062,59 +1058,7 @@ export struct 设置面板 {
           .borderRadius(12)
         }
 
-        // 9. 当前模式分组（底部）：展开后明文说明 + Select 选择框
-        ListItem() {
-          Column() {
-            this.分组头部({
-              标题: this.取本地化文本($r('app.string.settings_simple_mode')),
-              已展开: this.当前模式分组展开,
-              切换回调: (): void => { this.当前模式分组展开 = !this.当前模式分组展开; }
-            })
-
-            if (this.当前模式分组展开) {
-              Column({ space: 12 }) {
-                // 明文说明（原 ⓘ 浮层内容直接铺开，不使用 ⓘ 按钮）
-                Text($r('app.string.settings_simple_mode_help'))
-                  .fontSize(13)
-                  .fontColor(设置面板色板_取(this.是否深色).次文字)
-                  .width('100%')
-                  .lineHeight(20)
-
-                Divider()
-                  .color(设置面板色板_取(this.是否深色).分隔线)
-                  .strokeWidth(1)
-                  .margin({ top: 4, bottom: 4 })
-
-                // 最下方选择框：简洁版 / 实验版
-                Row() {
-                  Text(this.取本地化文本($r('app.string.settings_simple_mode')))
-                    .fontSize(15)
-                    .fontColor(设置面板色板_取(this.是否深色).主文字)
-                  Blank()
-                  Select(this.简洁模式选项())
-                    .selected(this.简洁模式 ? 0 : 1)
-                    .value(this.简洁模式
-                      ? this.取本地化文本($r('app.string.settings_simple_mode_simple'))
-                      : this.取本地化文本($r('app.string.settings_simple_mode_full')))
-                    .controlSize(ControlSize.SMALL)
-                    .onSelect((索引: number): void => {
-                      保存简洁模式(索引 === 0);
-                    })
-                }
-                .width('100%')
-                .height(48)
-
-              }
-              .width('100%')
-            }
-          }
-          .width('100%')
-          .padding(16)
-          .backgroundColor(设置面板色板_取(this.是否深色).背景)
-          .borderRadius(12)
-        }
-
-        // 10. 实验性功能分组：仅「实验版」模式下可见；包含 Tap Zones 快速答题。
+        // 9. 实验性功能分组：仅「实验版」模式下可见；包含 Tap Zones 快速答题。
         // 分组头部与其他分组同款（无 ⓘ）；开关行旁的 ⓘ 保留说明用法。
         if (!this.简洁模式) {
           ListItem() {
@@ -1189,6 +1133,22 @@ export struct 设置面板 {
           标题: this.说明标题,
           正文: this.说明正文,
           onClose: (): void => { this.显示说明浮层 = false; }
+        })
+      }
+
+      // 右上角模式切换菜单：顶栏「当前模式」按钮触发，挂在根 Stack 顶层
+      if (this.显示模式菜单) {
+        模式切换菜单({
+          当前简洁模式: this.简洁模式,
+          主色: this.解析主色(),
+          顶部偏移: 应用尺寸.工具栏高度 + this.状态栏高度 + 应用尺寸.间距_8,
+          选择回调: (简洁: boolean): void => {
+            this.显示模式菜单 = false;
+            if (简洁 !== this.简洁模式) {
+              保存简洁模式(简洁);
+            }
+          },
+          关闭回调: (): void => { this.显示模式菜单 = false; }
         })
       }
 

@@ -230,76 +230,89 @@ export struct 预测卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染预测柱(this.取轴())
-        this.渲染统计表()
-      }
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 渲染预测柱(域: 轴域) {
-    Column({ space: 应用尺寸.间距_2 }) {
-      Row() {
-        纵轴刻度({
-          刻度: 域.刻度,
-          高度: this.柱区高度
-        })
-        Row({ space: 1 }) {
-          ForEach(this.柱缓存, (柱: 预测柱, 索引: number) => {
-            Stack({ alignContent: Alignment.Bottom }) {
-              Column()
-                .width('70%')
-                .height(`${Math.max(柱.数量 / 域.上限 * 100, 柱.数量 > 0 ? 4 : 0)}%`)
-                .backgroundColor(取预测柱色(索引 / Math.max(1, this.柱缓存.length - 1)))
-                .borderRadius(1)
+        // 柱区内联（原 @Builder 值传参参数被固化，牌组切换后纵轴/柱高不更新，2026-08-29 修复）
+        Column({ space: 应用尺寸.间距_2 }) {
+          Row() {
+            纵轴刻度({
+              刻度: this.取轴().刻度,
+              高度: this.柱区高度
+            })
+            Row({ space: 1 }) {
+              // key 含数据字段：数据变 → key 变 → 柱子重建（key 仅索引时数据变化 UI 冻结）
+              ForEach(this.柱缓存, (柱: 预测柱, 索引: number) => {
+                Stack({ alignContent: Alignment.Bottom }) {
+                  Column()
+                    .width('70%')
+                    .height(Math.max(柱.数量 / this.取轴().上限 * this.柱区高度, 柱.数量 > 0 ? 4 : 0))
+                    .backgroundColor(取预测柱色(索引 / Math.max(1, this.柱缓存.length - 1)))
+                    .borderRadius(1)
+                }
+                .width('100%')
+                .height(this.柱区高度)
+                .layoutWeight(1)
+              }, (柱: 预测柱, 索引: number) => `${索引}_${柱.数量}_${柱.是否积压}`)
             }
-            .width('100%')
-            .height('100%')
             .layoutWeight(1)
-          }, (柱: 预测柱, 索引: number) => `${索引}`)
+            .height(this.柱区高度)
+          }
+          .width('100%')
+
+          // 横轴日期：左端 = 积压起点（无积压则今天），右端 = 前瞻末日
+          横轴日期条({
+            左端偏移天: -this.取积压跨度(),
+            右端偏移天: this.取范围天数(),
+            轴左宽: 纵轴宽
+          })
         }
-        .layoutWeight(1)
-        .height(this.柱区高度)
+        .width('100%')
+
+        // 统计表内联（原 @Builder 值传参的 Text 文本固化在首次渲染，牌组切换后数字不更新）
+        Column({ space: 应用尺寸.间距_4 }) {
+          Row() {
+            Text($r('app.string.stats_total_label'))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Text($r('app.string.stats_forecast_total', this.取总计()))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+          Row() {
+            Text($r('app.string.stats_average_label'))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Text($r('app.string.stats_forecast_average', `${Math.round(this.取总计() / this.取期间天数())}`))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+          Row() {
+            Text($r('app.string.stats_forecast_due_tomorrow_label'))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Text($r('app.string.stats_forecast_due_tomorrow', this.取明日到期()))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+          Row() {
+            Text($r('app.string.stats_forecast_daily_load_label'))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Text($r('app.string.stats_forecast_daily_load_value', this.预测数据 !== null ? this.预测数据.dailyLoad : 0))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+        }
+        .width('100%')
       }
-      .width('100%')
-
-      // 横轴日期：左端 = 积压起点（无积压则今天），右端 = 前瞻末日
-      横轴日期条({
-        左端偏移天: -this.取积压跨度(),
-        右端偏移天: this.取范围天数(),
-        轴左宽: 纵轴宽
-      })
     }
     .width('100%')
   }
 
-  @Builder
-  private 渲染统计表() {
-    Column({ space: 应用尺寸.间距_4 }) {
-      this.统计行($r('app.string.stats_total_label'),
-        $r('app.string.stats_forecast_total', this.取总计()))
-      this.统计行($r('app.string.stats_average_label'),
-        $r('app.string.stats_forecast_average', `${Math.round(this.取总计() / this.取期间天数())}`))
-      this.统计行($r('app.string.stats_forecast_due_tomorrow_label'),
-        $r('app.string.stats_forecast_due_tomorrow', this.取明日到期()))
-      this.统计行($r('app.string.stats_forecast_daily_load_label'),
-        $r('app.string.stats_forecast_daily_load_value', this.预测数据 !== null ? this.预测数据.dailyLoad : 0))
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 统计行(标签: Resource, 值: Resource) {
-    Row() {
-      Text(标签)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_secondary'))
-      Blank()
-      Text(值)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_primary'))
-    }
-    .width('100%')
-  }
 }

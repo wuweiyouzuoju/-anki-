@@ -124,54 +124,50 @@ export struct 回答按钮卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染按钮图(this.组缓存[0], this.取最大值())
-      }
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 渲染按钮图(组: ButtonCounts, 最大值: number) {
-    Row({ space: 应用尺寸.间距_16 }) {
-      this.渲染按钮组(组, 0, $r('app.string.stats_cards_learn'), 最大值)
-      this.渲染按钮组(组, 1, $r('app.string.stats_cards_young'), 最大值)
-      this.渲染按钮组(组, 2, $r('app.string.stats_cards_mature'), 最大值)
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 渲染按钮组(组: ButtonCounts, 类别: number, 标签: Resource, 最大值: number) {
-    Column({ space: 应用尺寸.间距_4 }) {
-      Row({ space: 应用尺寸.间距_7 }) {
-        ForEach([0, 1, 2, 3], (按钮: number) => {
-          Stack({ alignContent: Alignment.Bottom }) {
-            Column()
+        // 按钮图内联（原 @Builder 值传参参数被固化，牌组切换后柱高/正确率不更新，2026-08-29 修复）
+        Row({ space: 应用尺寸.间距_16 }) {
+          // key 含类别数据：数据变 → key 变 → 组重建（key 仅类别时数据变化 UI 冻结）
+          ForEach([0, 1, 2], (类别: number) => {
+            Column({ space: 应用尺寸.间距_4 }) {
+              Row({ space: 应用尺寸.间距_7 }) {
+                // key 含计数值：数据变 → key 变 → 柱子重建
+                ForEach([0, 1, 2, 3], (按钮: number) => {
+                  Stack({ alignContent: Alignment.Bottom }) {
+                    Column()
+                      .width('100%')
+                      .height(this.取按钮计数(this.组缓存[0], 类别, 按钮)
+                        / Math.max(1, this.取最大值()) * this.柱区高度)
+                      .backgroundColor(取按钮色(按钮 + 1))
+                      .opacity(0.8)
+                      .borderRadius(2)
+                  }
+                  .layoutWeight(1)
+                  .height(this.柱区高度)
+                }, (按钮: number) => `${按钮}_${this.取按钮计数(this.组缓存[0], 类别, 按钮)}`)
+              }
               .width('100%')
-              .height(`${this.取按钮计数(组, 类别, 按钮) / 最大值 * 100}%`)
-              .backgroundColor(取按钮色(按钮 + 1))
-              .opacity(0.8)
-              .borderRadius(2)
-          }
-          .layoutWeight(1)
-          .height('100%')
-        }, (按钮: number) => `${按钮}`)
-      }
-      .width('100%')
-      .height(this.柱区高度)
-      .alignItems(VerticalAlign.Bottom)
+              .height(this.柱区高度)
+              .alignItems(VerticalAlign.Bottom)
 
-      Text(标签)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_secondary'))
-      // 各类正确率（Anki 手册：percentage of correct reviews for each type of card）
-      if (this.取组正确率(组, 类别) >= 0) {
-        Text($r('app.string.stats_buttons_correct_rate', `${this.取组正确率(组, 类别).toFixed(0)}%`))
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
+              Text(类别 === 0 ? $r('app.string.stats_cards_learn')
+                : (类别 === 1 ? $r('app.string.stats_cards_young') : $r('app.string.stats_cards_mature')))
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor($r('app.color.text_secondary'))
+              // 各类正确率（Anki 手册：percentage of correct reviews for each type of card）
+              if (this.取组正确率(this.组缓存[0], 类别) >= 0) {
+                Text($r('app.string.stats_buttons_correct_rate',
+                  `${this.取组正确率(this.组缓存[0], 类别).toFixed(0)}%`))
+                  .fontSize(应用尺寸.字号_说明_小)
+                  .fontColor($r('app.color.text_tertiary'))
+              }
+            }
+            .layoutWeight(1)
+            .width('100%')
+          }, (类别: number) => `${类别}_${this.取组正确率(this.组缓存[0], 类别)}`)
+        }
+        .width('100%')
       }
     }
-    .layoutWeight(1)
     .width('100%')
   }
 }

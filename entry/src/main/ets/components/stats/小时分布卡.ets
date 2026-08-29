@@ -118,126 +118,123 @@ export struct 小时分布卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染小时分布(this.取数据(), this.取轴(this.取数据()))
-      }
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 渲染小时分布(数据: HourBucket[], 域: 轴域) {
-    Column({ space: 应用尺寸.间距_8 }) {
-      // 时间段切换
-      Row({ space: 应用尺寸.间距_4 }) {
-        ForEach(this.时间段标签, (标签: Resource, 索引: number) => {
-          Text(标签)
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor(索引 === this.时间段索引 ? this.主色 : $r('app.color.text_secondary'))
-            .fontWeight(索引 === this.时间段索引 ? FontWeight.Bold : FontWeight.Normal)
-            .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8,
-              top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
-            .backgroundColor(索引 === this.时间段索引 ? this.容器色 : Color.Transparent)
-            .borderRadius(应用尺寸.圆角_进度条)
-            .onClick(() => {
-              this.时间段索引 = 索引;
-              if (this.onRangeChange !== undefined) {
-                this.onRangeChange(索引);
-              }
-            })
-        }, (标签: Resource, 索引: number) => `${索引}`)
-      }
-      .width('100%')
-
-      // 柱状图（Anki HourGraph 的柱部分）：
-      // 左轴=复习次数、底轴=小时；柱=复习数量；柱色对齐 Anki：Blues(0.1+0.7×归一化计数)，
-      // 无复习浅蓝、峰值深蓝。
-      // 【暂时隐藏 2026-08-26】正确率面积叠加 + 右轴百分比（官方三轴设计的另两轴：
-      // 面积=correct/total 正确率、右轴 y2=[0,25,50,75,100]%）按用户要求先隐藏，
-      // 实现整块注释保留在下方，恢复说明见文件头。
-      Row() {
-        纵轴刻度({
-          刻度: 域.刻度,
-          高度: this.图表高度
-        })
-        Stack({ alignContent: Alignment.TopStart }) {
-          Row() {
-            ForEach(数据, (桶: HourBucket, 索引: number) => {
-              Stack({ alignContent: Alignment.Bottom }) {
-                Column()
-                  .width('70%')
-                  .height((桶.total / 域.上限) * this.图表高度)
-                  .backgroundColor(取小时柱色(桶.total / this.取峰值(数据)))
-                  .borderRadius(1)
-              }
-              .layoutWeight(1)
-              .height(this.图表高度)
-            }, (桶: HourBucket, 索引: number) => `${索引}`)
+        // 图表内联（原 @Builder 值传参参数被固化，牌组切换后柱子不更新，2026-08-29 修复）
+        Column({ space: 应用尺寸.间距_8 }) {
+          // 时间段切换
+          Row({ space: 应用尺寸.间距_4 }) {
+            ForEach(this.时间段标签, (标签: Resource, 索引: number) => {
+              Text(标签)
+                .fontSize(应用尺寸.字号_正文_小)
+                .fontColor(索引 === this.时间段索引 ? this.主色 : $r('app.color.text_secondary'))
+                .fontWeight(索引 === this.时间段索引 ? FontWeight.Bold : FontWeight.Normal)
+                .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8,
+                  top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
+                .backgroundColor(索引 === this.时间段索引 ? this.容器色 : Color.Transparent)
+                .borderRadius(应用尺寸.圆角_进度条)
+                .onClick(() => {
+                  this.时间段索引 = 索引;
+                  if (this.onRangeChange !== undefined) {
+                    this.onRangeChange(索引);
+                  }
+                })
+            }, (标签: Resource, 索引: number) => `${索引}`)
           }
           .width('100%')
-          .height(this.图表高度)
 
-          // 【暂时隐藏 2026-08-26】正确率灰色面积（对齐 Anki CumulativeOverlay 的
-          // 极淡 fill/stroke），随右轴百分比一起注释保留，恢复时取消注释即可：
-          // if (this.取正确率面积路径(数据) !== '') {
-          //   Path()
-          //     .commands(this.取正确率面积路径(数据))
-          //     .fill(this.是否深色 ? '#ffffff' : '#000000')
-          //     .fillOpacity(this.是否深色 ? 0.08 : 0.03)
-          //     .stroke('#000000')
-          //     .strokeOpacity(this.是否深色 ? 0.18 : 0.08)
-          //     .strokeWidth(1)
-          //     .width('100%')
-          //     .height(this.图表高度)
-          // }
-        }
-        .layoutWeight(1)
-        .height(this.图表高度)
-        .onAreaChange((_旧: Area, 新: Area): void => {
-          const 宽: Length = 新.width;
-          if (typeof 宽 === 'number') {
-            this.图宽 = 宽;
+          // 柱状图（Anki HourGraph 的柱部分）：
+          // 左轴=复习次数、底轴=小时；柱=复习数量；柱色对齐 Anki：Blues(0.1+0.7×归一化计数)，
+          // 无复习浅蓝、峰值深蓝。
+          // 【暂时隐藏 2026-08-26】正确率面积叠加 + 右轴百分比（官方三轴设计的另两轴：
+          // 面积=correct/total 正确率、右轴 y2=[0,25,50,75,100]%）按用户要求先隐藏，
+          // 实现整块注释保留在下方，恢复说明见文件头。
+          Row() {
+            纵轴刻度({
+              刻度: this.取轴(this.取数据()).刻度,
+              高度: this.图表高度
+            })
+            Stack({ alignContent: Alignment.TopStart }) {
+              Row() {
+                // key 含数据字段：数据变 → key 变 → 柱子重建（key 仅索引时数据变化 UI 冻结）
+                ForEach(this.取数据(), (桶: HourBucket, 索引: number) => {
+                  Stack({ alignContent: Alignment.Bottom }) {
+                    Column()
+                      .width('70%')
+                      .height((桶.total / this.取轴(this.取数据()).上限) * this.图表高度)
+                      .backgroundColor(取小时柱色(桶.total / this.取峰值(this.取数据())))
+                      .borderRadius(1)
+                  }
+                  .layoutWeight(1)
+                  .height(this.图表高度)
+                }, (桶: HourBucket, 索引: number) => `${索引}_${桶.total}_${桶.correct}`)
+              }
+              .width('100%')
+              .height(this.图表高度)
+
+              // 【暂时隐藏 2026-08-26】正确率灰色面积（对齐 Anki CumulativeOverlay 的
+              // 极淡 fill/stroke），随右轴百分比一起注释保留，恢复时取消注释即可：
+              // if (this.取正确率面积路径(数据) !== '') {
+              //   Path()
+              //     .commands(this.取正确率面积路径(数据))
+              //     .fill(this.是否深色 ? '#ffffff' : '#000000')
+              //     .fillOpacity(this.是否深色 ? 0.08 : 0.03)
+              //     .stroke('#000000')
+              //     .strokeOpacity(this.是否深色 ? 0.18 : 0.08)
+              //     .strokeWidth(1)
+              //     .width('100%')
+              //     .height(this.图表高度)
+              // }
+            }
+            .layoutWeight(1)
+            .height(this.图表高度)
+            .onAreaChange((_旧: Area, 新: Area): void => {
+              const 宽: Length = 新.width;
+              if (typeof 宽 === 'number') {
+                this.图宽 = 宽;
+              }
+            })
+
+            // 【暂时隐藏 2026-08-26】右轴 y2 正确率百分比刻度（面积的读数轴）。
+            // 面积隐藏后此轴无对应图形，一并注释保留，恢复时取消注释：
+            // 右轴百分比({
+            //   高度: this.图表高度
+            // })
           }
-        })
+          .width('100%')
 
-        // 【暂时隐藏 2026-08-26】右轴 y2 正确率百分比刻度（面积的读数轴）。
-        // 面积隐藏后此轴无对应图形，一并注释保留，恢复时取消注释：
-        // 右轴百分比({
-        //   高度: this.图表高度
-        // })
+          // 小时刻度：五等分居中，五个数字中心落点 10%/30%/50%/70%/90%，间距严格相等
+          Row() {
+            Text('0')
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+            Text('6')
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+            Text('12')
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+            Text('18')
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+            Text('23')
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+          }
+          .width('100%')
+          // 【暂时隐藏 2026-08-26】右轴已注释，right 让位同步移除；恢复时加回 right: 右轴宽
+          .padding({ left: 纵轴宽 })
+        }
+        .width('100%')
       }
-      .width('100%')
-
-      // 小时刻度：五等分居中，五个数字中心落点 10%/30%/50%/70%/90%，间距严格相等
-      Row() {
-        Text('0')
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-        Text('6')
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-        Text('12')
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-        Text('18')
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-        Text('23')
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-      }
-      .width('100%')
-      // 【暂时隐藏 2026-08-26】右轴已注释，right 让位同步移除；恢复时加回 right: 右轴宽
-      .padding({ left: 纵轴宽 })
     }
     .width('100%')
   }

@@ -140,80 +140,78 @@ export struct 记忆率卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染记忆率(this.记忆率数据 as RetrievabilitySummary, this.取轴())
-      }
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 渲染记忆率(d: RetrievabilitySummary, 域: 轴域) {
-    Column({ space: 应用尺寸.间距_8 }) {
-      // 直方图（RdYlGn 渐变，20 桶；柱色按桶在 [0,100] 值域中的绝对位置取色）
-      Row() {
-        纵轴刻度({
-          刻度: 域.刻度,
-          高度: this.柱区高度
-        })
-        Row({ space: 1 }) {
-          ForEach(this.柱缓存, (卡数: number, 索引: number) => {
-            Stack({ alignContent: Alignment.Bottom }) {
-              Column()
-                .width('70%')
-                .height(`${Math.max(卡数 / 域.上限 * 100, 卡数 > 0 ? 4 : 0)}%`)
-                .backgroundColor(取可提取性柱色(this.取桶位置(索引)))
-                .borderRadius(1)
+        Column({ space: 应用尺寸.间距_8 }) {
+          // 直方图内联（原 @Builder 值传参参数被固化，牌组切换后柱高/统计行不更新，2026-08-29 修复）
+          Row() {
+            纵轴刻度({
+              刻度: this.取轴().刻度,
+              高度: this.柱区高度
+            })
+            Row({ space: 1 }) {
+              // key 含数据字段：数据变 → key 变 → 柱子重建（key 仅索引时数据变化 UI 冻结）
+              ForEach(this.柱缓存, (卡数: number, 索引: number) => {
+                Stack({ alignContent: Alignment.Bottom }) {
+                  Column()
+                    .width('70%')
+                    .height(Math.max(卡数 / this.取轴().上限 * this.柱区高度, 卡数 > 0 ? 4 : 0))
+                    .backgroundColor(取可提取性柱色(this.取桶位置(索引)))
+                    .borderRadius(1)
+                }
+                .width('100%')
+                .height(this.柱区高度)
+                .layoutWeight(1)
+              }, (卡数: number, 索引: number) => `${索引}_${卡数}`)
             }
-            .width('100%')
-            .height('100%')
             .layoutWeight(1)
-          }, (卡数: number, 索引: number) => `${索引}`)
+            .height(this.柱区高度)
+          }
+          .width('100%')
+
+          // 轴标签：当前值域下限 ~ 上限
+          Row() {
+            Text(`${Math.round(this.域下限)}%`)
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.Start)
+            Text(`${Math.ceil(this.域上限)}%`)
+              .fontSize(应用尺寸.字号_说明_小)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.End)
+          }
+          .width('100%')
+          .padding({ left: 纵轴宽 })
+
+          // 平均可提取性（% 放入参数，避免资源格式化双 %%）
+          Row() {
+            Text($r('app.string.stats_retrievability_average_label'))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Text($r('app.string.stats_retrievability_average_value',
+              `${(this.记忆率数据 as RetrievabilitySummary).average.toFixed(0)}%`))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
+
+          // 预估已掌握（Anki Estimated total knowledge）
+          Row() {
+            Text($r('app.string.stats_retrievability_knowledge_label'))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_secondary'))
+            Blank()
+            Text($r('app.string.stats_retrievability_knowledge',
+              Math.round((this.记忆率数据 as RetrievabilitySummary).sumByCard),
+              Math.round((this.记忆率数据 as RetrievabilitySummary).sumByNote)))
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.text_primary'))
+          }
+          .width('100%')
         }
-        .layoutWeight(1)
-        .height(this.柱区高度)
+        .width('100%')
       }
-      .width('100%')
-
-      // 轴标签：当前值域下限 ~ 上限
-      Row() {
-        Text(`${Math.round(this.域下限)}%`)
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.Start)
-        Text(`${Math.ceil(this.域上限)}%`)
-          .fontSize(应用尺寸.字号_说明_小)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
-          .textAlign(TextAlign.End)
-      }
-      .width('100%')
-      .padding({ left: 纵轴宽 })
-
-      // 平均可提取性（% 放入参数，避免资源格式化双 %%）
-      Row() {
-        Text($r('app.string.stats_retrievability_average_label'))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
-        Blank()
-        Text($r('app.string.stats_retrievability_average_value', `${d.average.toFixed(0)}%`))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .width('100%')
-
-      // 预估已掌握（Anki Estimated total knowledge）
-      Row() {
-        Text($r('app.string.stats_retrievability_knowledge_label'))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
-        Blank()
-        Text($r('app.string.stats_retrievability_knowledge',
-          Math.round(d.sumByCard), Math.round(d.sumByNote)))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .width('100%')
     }
     .width('100%')
   }

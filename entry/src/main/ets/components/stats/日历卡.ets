@@ -5,7 +5,8 @@
 // 空日固定浅灰/深灰。年份导航 ◄/► 的下限由统计天数决定（与 Anki revlogRange 锁定逻辑一致）。
 // 左侧星期标签点击切换周首日（对齐 Anki calendar.ts：仅周日/周一/周五/周六四个标签可点，
 // 点击即设为一周首日并回写偏好；周二/三/四标签无响应）。
-// Invariants: build 单根 Column；日切小时（rolloverHour）参与日期换算，与后端分桶口径一致。
+// Invariants: build 单根 Column；后端键已按日切点（rolloverHour）分桶，前端换算直接加天数，
+// 不得再减日切小时（重复扣减会导致所有格子整体偏移一天）。
 
 import type { ReviewKindCounts } from '../../proto/messages/StatsMessages';
 import { Weekday } from '../../proto/messages/StatsMessages';
@@ -31,19 +32,20 @@ function 周首日转数字(首日: Weekday): number {
   }
 }
 
-/** 相对天数 → 实际日期（按 Anki 日切小时回拨，与后端分桶一致） */
-function 取日期(距今天数: number, 日切小时: number): Date {
+/** 相对天数 → 实际日期。
+ *  后端键已按 Anki 日切点（rollover，凌晨 0-日切小时算前一天）分桶，
+ *  前端直接加天数即可；再减日切小时会重复扣减，整体偏移一天（2026-08-29 修复）。
+ */
+function 取日期(距今天数: number): Date {
   const d: Date = new Date();
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() + 距今天数);
-  d.setHours(d.getHours() - 日切小时);
   return d;
 }
 
 @Component
 export struct 日历卡 {
   @Prop @Watch('重算格子') 复习计数: Map<number, ReviewKindCounts> | null = null;
-  @Prop 日切小时: number = 0;
   @Prop @Watch('重算格子') 周首日: Weekday = Weekday.SUNDAY;
   /** 星期标签点击回调：父组件负责写 GraphPreferences（Anki 点标签即存，autoSavingPrefs 行为） */
   on首日变更: (首日: Weekday) => void = (_首日: Weekday): void => {};
@@ -92,7 +94,7 @@ export struct 日历卡 {
       this.复习计数.forEach((计数: ReviewKindCounts, 天: number) => {
         const 总: number = 计数.learn + 计数.relearn + 计数.young + 计数.mature + 计数.filtered;
         if (总 > 0) {
-          const 日期: Date = 取日期(天, this.日切小时);
+          const 日期: Date = 取日期(天);
           计数映射.set(`${日期.getFullYear()}-${日期.getMonth()}-${日期.getDate()}`, 总);
         }
       });
@@ -172,38 +174,46 @@ export struct 日历卡 {
           .textAlign(TextAlign.Center)
           .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
       } else {
-        this.渲染热力图()
-      }
-    }
-    .width('100%')
-  }
-
-  @Builder
-  private 渲染热力图() {
-    Column({ space: 2 }) {
-      ForEach([0, 1, 2, 3, 4, 5, 6], (行: number) => {
-        Row({ space: 2 }) {
-          // 星期窄标签（按周首日排序；文字色对齐 Anki calendar.ts：深色 #ddd / 浅色 black）。
-          // 点击切换周首日（对齐官方：仅周日/周一/周五/周六标签可点，其余无响应）
-          Text(this.星期标签[(周首日转数字(this.周首日) + 行) % 7])
-            .fontSize(应用尺寸.字号_说明_小)
-            .fontColor(this.是否深色 ? '#dddddd' : '#000000')
-            .width(10)
-            .textAlign(TextAlign.End)
-            .onClick((): void => {
-              const 数字: number = (周首日转数字(this.周首日) + 行) % 7;
-              if (数字 !== 2 && 数字 !== 3 && 数字 !== 4) {
-                this.on首日变更(数字 as Weekday);
-              }
-            })
-          ForEach([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-            21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
-            41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52], (列: number) => {
-            this.渲染格子(this.取格数据(列, 行))
-          }, (列: number) => `${列}`)
+        // 热力图内联（原 @Builder 渲染的格子颜色被固化，牌组切换后不更新，2026-08-29 修复）
+        Column({ space: 2 }) {
+          ForEach([0, 1, 2, 3, 4, 5, 6], (行: number) => {
+            Row({ space: 2 }) {
+              // 星期窄标签（按周首日排序；文字色对齐 Anki calendar.ts：深色 #ddd / 浅色 black）。
+              // 点击切换周首日（对齐官方：仅周日/周一/周五/周六标签可点，其余无响应）
+              Text(this.星期标签[(周首日转数字(this.周首日) + 行) % 7])
+                .fontSize(应用尺寸.字号_说明_小)
+                .fontColor(this.是否深色 ? '#dddddd' : '#000000')
+                .width(10)
+                .textAlign(TextAlign.End)
+                .onClick((): void => {
+                  const 数字: number = (周首日转数字(this.周首日) + 行) % 7;
+                  if (数字 !== 2 && 数字 !== 3 && 数字 !== 4) {
+                    this.on首日变更(数字 as Weekday);
+                  }
+                })
+              // key 含格子数量：数据变 → key 变 → 格子重建（key 仅列号时数据变化颜色冻结）
+              ForEach([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+                21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+                41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52], (列: number) => {
+                if (this.取格数据(列, 行) === null) {
+                  // 未来/越界日期：透明占位保持列对齐
+                  Column()
+                    .aspectRatio(1)
+                    .layoutWeight(1)
+                } else {
+                  Column()
+                    .aspectRatio(1)
+                    .layoutWeight(1)
+                    .backgroundColor(this.取格色((this.取格数据(列, 行) as 日历格).数量))
+                    .borderRadius(1)
+                }
+              }, (列: number) => `${列}_${this.取格数据(列, 行)?.数量 ?? -1}`)
+            }
+            .width('100%')
+          }, (行: number) => `${行}_${周首日转数字(this.周首日)}`)
         }
         .width('100%')
-      }, (行: number) => `${行}`)
+      }
     }
     .width('100%')
   }
@@ -211,21 +221,5 @@ export struct 日历卡 {
   /** 取某列某行的格数据（缺失返回 null，渲染为透明占位） */
   private 取格数据(列: number, 行: number): 日历格 | null {
     return this.格子缓存.get(列 * 7 + 行) ?? null;
-  }
-
-  @Builder
-  private 渲染格子(格: 日历格 | null) {
-    if (格 === null) {
-      // 未来/越界日期：透明占位保持列对齐
-      Column()
-        .aspectRatio(1)
-        .layoutWeight(1)
-    } else {
-      Column()
-        .aspectRatio(1)
-        .layoutWeight(1)
-        .backgroundColor(this.取格色(格.数量))
-        .borderRadius(1)
-    }
   }
 }
