@@ -286,15 +286,15 @@ git commit -m "feat: require one cloud deck before entering"
 
 - [ ] **Step 1: Add release-contract assertions and verify RED**
 
-Update the catalog/flow contract to require version `2.0.3`, six hosted entries, `cardCount`, and the high-school URL. Run the focused tests and confirm failure on the old version.
+Update the catalog/flow contract to require version `2.3.3`, six hosted entries, `cardCount`, and the high-school URL. Run the focused tests and confirm failure on the old version.
 
 - [ ] **Step 2: Bump version and update hosting documentation**
 
 Set:
 
 ```json5
-versionCode: 2003,
-versionName: '2.0.3',
+versionCode: 2303,
+versionName: '2.3.3',
 ```
 
 Document `cardCount`, the mandatory one-time onboarding, and interrupted-download cleanup in `docs/cloud-deck-hosting.md`.
@@ -322,7 +322,7 @@ Use the already-authorized signed-in 123 Cloud Disk session to replace `cloud-de
 
 ```powershell
 git add -- AppScope/app.json5 docs/cloud-deck-hosting.md
-git commit -m "release: prepare mandatory cloud deck onboarding 2.0.3"
+git commit -m "release: prepare mandatory cloud deck onboarding 2.3.3"
 ```
 
 - [ ] **Step 7: Record final artifact integrity**
