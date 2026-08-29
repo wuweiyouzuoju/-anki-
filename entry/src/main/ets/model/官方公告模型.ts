@@ -149,12 +149,39 @@ function 两位(value: number): string {
   return value < 10 ? `0${value}` : `${value}`;
 }
 
+/**
+ * 123 直链 CDN 忽略查询参数，但会区分百分号编码中字母的大小写；两种写法在源站仍指向同一文件。
+ * 每个 10 分钟时间桶轮换一种等价路径，避免删除后同名上传仍命中旧边缘缓存。
+ */
+function 轮换等价路径编码(baseUrl: string, bucketIndex: number): string {
+  const queryIndex: number = baseUrl.indexOf('?');
+  const path: string = queryIndex >= 0 ? baseUrl.substring(0, queryIndex) : baseUrl;
+  const query: string = queryIndex >= 0 ? baseUrl.substring(queryIndex) : '';
+  let letterIndex: number = 0;
+  let rotated: string = '';
+  for (let index: number = 0; index < path.length; index++) {
+    const value: string = path[index];
+    const inEscape: boolean = index >= 1 && path[index - 1] === '%' ||
+      index >= 2 && path[index - 2] === '%';
+    if (inEscape && /^[A-Fa-f]$/.test(value)) {
+      const useLowerCase: boolean = Math.floor(bucketIndex / Math.pow(2, letterIndex)) % 2 === 1;
+      rotated += useLowerCase ? value.toLowerCase() : value.toUpperCase();
+      letterIndex += 1;
+    } else {
+      rotated += value;
+    }
+  }
+  return `${rotated}${query}`;
+}
+
 export function 构建官方公告请求地址(baseUrl: string, nowMs: number): string {
-  const bucketMs: number = Math.floor(nowMs / 官方公告检查窗口毫秒) * 官方公告检查窗口毫秒;
+  const bucketIndex: number = Math.floor(nowMs / 官方公告检查窗口毫秒);
+  const bucketMs: number = bucketIndex * 官方公告检查窗口毫秒;
   const date: Date = new Date(bucketMs);
   const key: string = `${date.getUTCFullYear()}${两位(date.getUTCMonth() + 1)}${两位(date.getUTCDate())}` +
     `${两位(date.getUTCHours())}${两位(date.getUTCMinutes())}`;
-  return `${baseUrl}${baseUrl.indexOf('?') >= 0 ? '&' : '?'}v=${key}`;
+  const rotatedUrl: string = 轮换等价路径编码(baseUrl, bucketIndex);
+  return `${rotatedUrl}${rotatedUrl.indexOf('?') >= 0 ? '&' : '?'}v=${key}`;
 }
 
 /** 返回主页后距离下一次允许检查还剩多少毫秒；0 表示现在即可检查。 */

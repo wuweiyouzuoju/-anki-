@@ -153,11 +153,12 @@ test('hosted announcement manifest publishes the v2.3.3 release notice under 5 K
   assert.ok(Buffer.byteLength(text, 'utf8') <= 5 * 1024);
 });
 
-test('hosting guide requires an actual stable long link and ten-minute delivery window', () => {
+test('hosting guide requires one stable file path and ten-minute CDN cache rotation', () => {
   const guide = read('../../docs/official-announcement-hosting.md');
   assert.match(guide, /实际生成的 HTTPS 长链/);
-  assert.match(guide, /同名替换/);
-  assert.match(guide, /原长链仍返回新内容/);
+  assert.match(guide, /删除旧文件，再上传同名的新文件/);
+  assert.match(guide, /百分号路径编码/);
+  assert.match(guide, /查询参数仅保留用于诊断/);
   assert.match(guide, /10 分钟/);
   assert.match(guide, /5 KiB/);
   assert.match(guide, /不得.*自行拼接/);

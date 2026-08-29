@@ -99,6 +99,21 @@ test('builds a stable ten-minute cache key', () => {
   assert.match(c, /&v=202608291810$/);
 });
 
+test('rotates an equivalent encoded path between ten-minute windows', () => {
+  const base =
+    'https://4001784660.cdn.123clouddisk.com/4001784660/CET%E5%9B%9B%E5%85%AD%E7%BA%A7/announcement.json';
+  const first = 构建官方公告请求地址(base, Date.parse('2026-08-29T18:00:00Z'));
+  const sameWindow = 构建官方公告请求地址(base, Date.parse('2026-08-29T18:09:59Z'));
+  const nextWindow = 构建官方公告请求地址(base, Date.parse('2026-08-29T18:10:00Z'));
+  const firstPath = first.split('?')[0];
+  const nextPath = nextWindow.split('?')[0];
+
+  assert.equal(first, sameWindow);
+  assert.notEqual(firstPath, nextPath);
+  assert.equal(decodeURI(firstPath), decodeURI(base));
+  assert.equal(decodeURI(nextPath), decodeURI(base));
+});
+
 test('home check delay is immediate initially and otherwise bounded by ten minutes', () => {
   const start = 1000000;
   assert.equal(官方公告检查窗口毫秒, 600000);
