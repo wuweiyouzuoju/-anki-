@@ -1,0 +1,164 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+
+test('announcement acknowledgements use one bounded Preferences record', () => {
+  const source = read('../../entry/src/main/ets/model/官方公告存储.ets');
+  assert.match(source, /official_announcement_acknowledged_ids_v1/);
+  assert.match(source, /读取已确认官方公告ID列表\(\): Promise<string\[\]>/);
+  assert.match(source, /是否已确认官方公告\(id: string\): Promise<boolean>/);
+  assert.match(source, /标记已确认官方公告\(id: string\): Promise<boolean>/);
+  assert.match(source, /追加已确认官方公告ID/);
+  assert.match(source, /await store\.flush\(\);\s*return true;/);
+  assert.match(source, /catch \(error\) \{\s*return false;/);
+});
+
+test('announcement hosting has one public URL and no management credential', () => {
+  const source = read('../../entry/src/main/ets/model/官方公告配置.ts');
+  assert.match(source, /https:\/\/4001784660\.cdn\.123clouddisk\.com\/4001784660\/CET%E5%9B%9B%E5%85%AD%E7%BA%A7\/announcement\.json/);
+  assert.doesNotMatch(source, /(clientSecret|clientID|accessToken|refreshToken|password|管理密钥)/i);
+});
+
+test('announcement service performs one uncached GET under a hard two-second deadline', () => {
+  const source = read('../../entry/src/main/ets/backend/官方公告服务.ets');
+  assert.match(source, /from '@kit\.NetworkKit'/);
+  assert.match(source, /构建官方公告请求地址/);
+  assert.match(source, /http\.RequestMethod\.GET/);
+  assert.match(source, /http\.HttpDataType\.STRING/);
+  assert.match(source, /usingCache: false/);
+  assert.match(source, /connectTimeout: 2000/);
+  assert.match(source, /readTimeout: 2000/);
+  assert.match(source, /官方公告截止剩余毫秒/);
+  assert.match(source, /Promise\.race/);
+  assert.match(source, /setTimeout\(/);
+  assert.match(source, /clearTimeout\(timerId\);[\s\S]*?client\.destroy\(\);/);
+  assert.match(source, /解析可展示官方公告/);
+  assert.doesNotMatch(source, /retry|ClientSecret|accessToken/i);
+});
+
+test('announcement modal is native, themed, scrollable and non-dismissible', () => {
+  const source = read('../../entry/src/main/ets/components/官方公告弹窗.ets');
+  assert.match(source, /官方公告展示项/);
+  assert.match(source, /announcement\.title/);
+  assert.match(source, /announcement\.content/);
+  assert.match(source, /official_announcement_published_at/);
+  assert.match(source, /official_announcement_acknowledge/);
+  assert.match(source, /official_announcement_details/);
+  assert.match(source, /onAcknowledge/);
+  assert.match(source, /onOpenDetails/);
+  assert.match(source, /backgroundBlurStyle\(BlurStyle\.Thin/);
+  assert.match(source, /取全屏转场/);
+  assert.match(source, /edgeEffect\(EdgeEffect\.Spring\)/);
+  assert.doesNotMatch(source, /Web\(|RichText\(|onClose|\.onClick\(\(\) => this\.onAcknowledge/);
+});
+
+test('announcement fixed strings are aligned and translated', () => {
+  const zh = JSON.parse(read('../../entry/src/main/resources/base/element/string.json')).string;
+  const en = JSON.parse(read('../../entry/src/main/resources/en_US/element/string.json')).string;
+  const zhMap = new Map(zh.map((item) => [item.name, item.value]));
+  const enMap = new Map(en.map((item) => [item.name, item.value]));
+  const keys = [
+    'official_announcement_published_at',
+    'official_announcement_acknowledge',
+    'official_announcement_details',
+    'official_announcement_open_failed',
+    'official_announcement_save_failed',
+  ];
+  for (const key of keys) {
+    assert.ok(zhMap.has(key));
+    assert.ok(enMap.has(key));
+    assert.doesNotMatch(enMap.get(key), /[\u3400-\u9fff]/);
+  }
+});
+
+test('home sequences official announcement before cloud onboarding and welcome', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  assert.match(source, /官方公告服务实例/);
+  assert.match(source, /bundleManager\.getBundleInfoForSelf/);
+  assert.match(source, /当前语言模式\(\)/);
+  assert.match(source, /是否已确认官方公告/);
+  assert.match(source, /标记已确认官方公告/);
+  const sequence = source.match(/private async 显示首次弹窗序列\(\)[\s\S]*?private async 显示欢迎弹窗一次/)?.[0] ?? '';
+  assert.ok(sequence.indexOf('尝试显示官方公告') < sequence.indexOf('是否已完成云端牌组引导'));
+  assert.ok(sequence.indexOf('是否已完成云端牌组引导') < sequence.indexOf('显示欢迎弹窗一次'));
+  assert.match(source, /if \(this\.显示官方公告\) \{\s*return true;/);
+  assert.match(source, /onAcknowledge:[\s\S]*确认官方公告\(\)/);
+  assert.match(source, /onOpenDetails:[\s\S]*打开官方公告详情\(\)/);
+});
+
+test('home coordinates one delayed ten-minute announcement check without polling', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  assert.match(source, /官方公告检查延迟毫秒/);
+  assert.match(source, /private 上次官方公告检查开始时间: number = 0/);
+  assert.match(source, /private 官方公告检查中: boolean = false/);
+  assert.match(source, /private 官方公告延迟检查任务: number = -1/);
+  assert.match(source, /private 主页允许公告检查: boolean = true/);
+  assert.match(source, /private 主页公告检查已激活: boolean = false/);
+  assert.match(source, /private 待展示官方公告数据: 官方公告展示项 \| null = null/);
+  assert.match(source, /private 请求主页官方公告检查\(\): void/);
+  assert.match(source, /官方公告检查延迟毫秒\(this\.上次官方公告检查开始时间, Date\.now\(\)\)/);
+  assert.match(source, /this\.官方公告延迟检查任务 = setTimeout/);
+  assert.match(source, /clearTimeout\(this\.官方公告延迟检查任务\)/);
+  assert.doesNotMatch(source, /setInterval\(/);
+});
+
+test('every real home return enters the shared refresh and announcement path', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  assert.match(source, /onPageShow\(\): void \{\s*this\.返回主页后刷新\(\);/);
+  assert.match(source, /onPageHide\(\): void \{\s*this\.暂停主页官方公告检查\(\);/);
+  assert.match(source, /name: 'StudyPage'[\s\S]*?onPop:[\s\S]*?返回主页后刷新/);
+  assert.match(source, /name: 'StatsPage'[\s\S]*?onPop:[\s\S]*?返回主页后刷新/);
+  assert.match(source, /name: 'SettingsPage'[\s\S]*?onPop:[\s\S]*?返回主页后刷新/);
+  assert.match(source, /name: 'ReminderPage'[\s\S]*?onPop:[\s\S]*?返回主页后刷新/);
+  assert.ok((source.match(/this\.返回主页后刷新\(\)/g) ?? []).length >= 8);
+});
+
+test('acknowledgement suppresses the same id immediately in the current process', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  assert.match(source, /private 当前进程已确认官方公告ID集合: Set<string> = new Set<string>\(\)/);
+  const load = source.match(/private async 尝试显示官方公告\(\)[\s\S]*?\n  private /)?.[0] ?? '';
+  assert.match(load, /当前进程已确认官方公告ID集合\.has\(announcement\.id\)/);
+  const acknowledge = source.match(/private async 确认官方公告\(\)[\s\S]*?\n  private /)?.[0] ?? '';
+  assert.match(acknowledge, /当前进程已确认官方公告ID集合\.add\(id\)/);
+  assert.ok(acknowledge.indexOf('当前进程已确认官方公告ID集合.add(id)') <
+    acknowledge.indexOf('await 标记已确认官方公告(id)'));
+});
+
+test('home closes and continues even when acknowledgement persistence fails', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  const method = source.match(/private async 确认官方公告\(\)[\s\S]*?\n  private /)?.[0] ?? '';
+  assert.match(method, /await 标记已确认官方公告/);
+  assert.match(method, /official_announcement_save_failed/);
+  assert.match(method, /this\.显示官方公告 = false/);
+  assert.match(method, /await this\.继续首次弹窗序列\(\)/);
+});
+
+test('hosted announcement manifest publishes the v2.3.3 release notice under 5 KiB', () => {
+  const text = read('../../hosting/announcement.json');
+  const manifest = JSON.parse(text);
+  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.announcement.enabled, true);
+  assert.equal(manifest.announcement.id, '20260829-v2.3.3-release');
+  assert.match(manifest.announcement.contentZh, /首次加入云端牌组下载/);
+  assert.match(manifest.announcement.contentZh, /726837065/);
+  assert.match(manifest.announcement.contentZh, /AnkiWeb/);
+  assert.match(manifest.announcement.contentZh, /图片遮罩/);
+  assert.doesNotMatch(manifest.announcement.contentZh, /提升大型牌组下载和导入的稳定性/);
+  assert.match(manifest.announcement.contentEn, /Cloud deck downloads are here for the first time/);
+  assert.equal(manifest.announcement.minimumAppVersion, '2.3.3');
+  assert.equal(manifest.announcement.maximumAppVersion, '2.3.3');
+  assert.equal(manifest.announcement.actionUrl, '');
+  assert.ok(Buffer.byteLength(text, 'utf8') <= 5 * 1024);
+});
+
+test('hosting guide requires an actual stable long link and ten-minute delivery window', () => {
+  const guide = read('../../docs/official-announcement-hosting.md');
+  assert.match(guide, /实际生成的 HTTPS 长链/);
+  assert.match(guide, /同名替换/);
+  assert.match(guide, /原长链仍返回新内容/);
+  assert.match(guide, /10 分钟/);
+  assert.match(guide, /5 KiB/);
+  assert.match(guide, /不得.*自行拼接/);
+});

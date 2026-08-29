@@ -70,7 +70,9 @@ test('tablet shell shares one selection state and avoids high-cost visual effect
   assert.match(page, /columns:\s*\{\s*xs:\s*4,\s*sm:\s*8,\s*md:\s*12\s*\}/);
   assert.match(page, /span:\s*\{\s*xs:\s*4,\s*sm:\s*5,\s*md:\s*8\s*\}/);
   assert.match(page, /当前断点\s*===\s*'xs'/);
-  assert.doesNotMatch(page, /setInterval|setTimeout|blur\(|backdropBlur|linearGradient/);
+  // 官方公告协调器允许首页持有唯一一个 setTimeout 延迟任务（单发、可取消，official-announcement-flow-contract 另行锁定）；
+  // 仍禁止持续轮询与高开销视觉动效。
+  assert.doesNotMatch(page, /setInterval|blur\(|backdropBlur|linearGradient/);
 });
 
 test('large deck lists create rows lazily', () => {

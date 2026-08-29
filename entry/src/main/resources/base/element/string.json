@@ -1635,6 +1635,11 @@
     { "name": "cloud_deck_status_failed", "value": "失败" },
     { "name": "cloud_deck_install_complete", "value": "云端牌组已导入" },
     { "name": "cloud_deck_install_partial", "value": "部分牌组导入失败，可重新选择重试" },
-    { "name": "cloud_deck_save_failed", "value": "暂时无法保存完成状态，请重试" }
+    { "name": "cloud_deck_save_failed", "value": "暂时无法保存完成状态，请重试" },
+    { "name": "official_announcement_published_at", "value": "发布于 %s" },
+    { "name": "official_announcement_acknowledge", "value": "我知道了" },
+    { "name": "official_announcement_details", "value": "查看详情" },
+    { "name": "official_announcement_open_failed", "value": "无法打开公告详情，请稍后重试" },
+    { "name": "official_announcement_save_failed", "value": "未能保存已读状态，下次启动可能再次显示" }
   ]
 }

@@ -64,6 +64,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 统计图表组件 | `entry/src/main/ets/components/stats/*.ets` | 纯展示层；@Prop 数据 + @StorageProp 主题色；**build 方法必须单根 Column**（if/else 分支 + @Builder 渲染内容）；@Builder 内不能写 const/let，数据通过参数传入；颜色/分箱走 `model/统计色板.ets`（d3 色带插值）与 `model/统计分箱.ets`（d3 ticks/nice/分位）纯函数 |
 | 媒体管理面板 | `entry/src/main/ets/components/settings/媒体管理面板.ets` | Stack 遮罩+面板；持有 媒体服务 实例直接调后端；检查中/处理中防重入；清空回收站需二次确认 |
 | 云端牌组下载 | `model/{云端牌组模型,云端牌组配置,云端牌组引导存储}.*` + `backend/云端牌组服务.ets` + `components/云端牌组弹窗.ets` + `pages/首页.ets` | 新用户及首次升级用户仅展示一次强制引导；至少成功导入一个牌组后才落盘固定代际标记并进入首页；系统下载代理先写 `filesDir/cloud-decks/*.part`，校验后改名并在导入后清理；后续“导入牌组”只走本地文件选择器 |
+| 官方启动公告 | `model/{官方公告模型.ts,官方公告配置.ts,官方公告存储.ets}` + `backend/官方公告服务.ets` + `components/官方公告弹窗.ets` + `pages/首页.ets` | 纯模型负责协议校验/时间窗/版本范围/语言回退；NetworkKit 匿名 GET 使用 10 分钟 CDN 时间桶和独立 2 秒墙钟截止（`Promise.race` 总截止，connect/read 各 2s 兜底）；冷启动立即检查，回到前台或各导航目标返回主页时进入单请求/单延迟任务协调器（`返回主页后刷新`），10 分钟内不重复请求且不持续轮询；请求期间离开主页时暂存结果，返回主页后展示；Preferences `official_announcement_acknowledged_ids_v1` 保存最近 32 个已确认 ID，当前进程内存即时抑制已确认 ID，仅「我知道了」写入并 `flush()`；原生弹窗返回键与遮罩不可关闭；启动顺序固定 公告→云端牌组引导→版本欢迎；公开地址必须来自 123 实际生成且经同名替换验证的稳定 HTTPS 长链，不得自行拼接；客户端代码永远不含 123 云盘管理凭据 |
 | 卡片预览页 | `entry/src/main/ets/components/browser/卡片预览页.ets` | Web 组件复用 卡片渲染服务；支持翻面 + 左右滑切上下张；底部"编辑字段"进浏览编辑区 |
 
 ## 常见任务路由
@@ -96,6 +97,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 
 ## 关键设计决策
 
+- **2.3.3 起版本更新改用云端官方公告**（2026-08-29）：旧欢迎弹窗保持静默，版本更新内容由 `hosting/announcement.json` 下发；弹窗沿用旧版磨砂背景、圆角卡片、淡入动画和 `【新增】/【优化】/【修复】` 文案格式，但只能点击“我知道了”确认关闭，同一公告 ID 不再重复显示。每个版本必须使用新 ID；2.3.3 首次发布云端牌组下载，更多、更全的牌组引导至官方 QQ 群 `726837065`
 - **语言切换**用 startAbility + terminateSelf 重启（`setAppPreferredLanguage` 全局重渲染会卡 UI）
 - **ThemeMode 与 ColorTheme 正交**（独立选择）
 - **countNew/Learning/Review 固定交通灯色**（保证主题切换下一致）
@@ -123,6 +125,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 新增设置入口（应用内系统弹窗） | `components/设置面板.ets` aboutGroupContent 内加行 + 对应私有方法 | `处理好评()` 调 `commentManager.showCommentDialog`（@kit.AppGalleryKit）+ Deep Linking 降级；按错误码分支处理（1021500006-9）；**不要用 promptAction.showDialog** |
 | 新增"首次完成 X 触发弹窗"引导 | 三件套：`components/<X>引导对话框.ets`(磨砂遮罩+surface_card) + `model/<X>引导存储.ets`(preferences「只弹一次」) + 触发点写 AppStorage 标记 + 首页 onPop 检查标记 | `AnkiWeb引导对话框`(首次启动)：参考 `显示AnkiWeb引导一次` 的「先标记再弹窗」模式。**好评引导已改用系统 commentManager.showCommentDialog 弹窗，不再走自定义对话框模式**（见上「升级好评引导」行） |
 | 新增云端牌组字段/托管方 | `model/云端牌组模型.ts` + `backend/云端牌组服务.ets` + `docs/cloud-deck-hosting.md` | model 保持纯 TS；大文件必须走 `request.agent`，不得用 HTTP response 一次性载入内存；仍只接受 HTTPS `.apkg` |
+| 发布/停用官方公告 | `model/官方公告模型.ts`（协议）+ `model/官方公告配置.ts`（唯一公开 URL）+ `backend/官方公告服务.ets` + `docs/official-announcement-hosting.md`（直链稳定性验证 + 发布/回滚流程） | 客户端只读公开 JSON，不存 123 云盘管理凭据；地址只允许 123 控制台实际生成、经同名替换验证后原长链仍返回新内容的稳定 HTTPS 长链，不得自行拼接；正式 manifest 目标 ≤5 KiB；每条新公告必须用新 ID；停用发布 `announcement: null`；不建公告中心/历史/角标/推送 |
 | 新增 NavDestination 自定义转场 | (1) `pages/<X>页.ets` 的 NavDestination 加 `@State 转场透明度: number = 1` + `.opacity(this.转场透明度)` (2) `aboutToAppear` 调 `CustomTransition.getInstance().注册NavParam('<PageName>', 起点回调, 终点回调)`（起点设 opacity=0 进入/1 退出，终点设目标值）(3) `aboutToDisappear` 调 `注销NavParam('<PageName>')` (4) `pages/首页.ets` 的 `自定义转场回调` 已统一处理，无需改 | `pages/学习页.ets`('StudyPage') / `pages/添加笔记页.ets`('AddNotePage')：参考其 aboutToAppear 注册 + aboutToDisappear 注销模式；**key 必须与 NavPathStack pushPath 时的 name 一致**（首页.ets:1555 用 `from.name ?? ''` 查找） |
 | 新增全屏弹窗/面板 | `components/<X>面板.ets` 内 `Stack` 的遮罩 Column 与主面板 Column 都加 `.transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))`；如需 scale 入场用 `TransitionEffect.asymmetric` + `.combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))` | `components/AnkiWeb引导对话框.ets`（OPACITY + scale 0.96）/ `components/牌组定制面板.ets`（纯 OPACITY）：禁止左右平移/上下位移/单帧切换 |
 | 新增浏览页侧边栏节点 | `components/browser/浏览侧边栏.ets`（阶段 4 T6）+ `搜索服务.连接搜索节点` / `搜索服务.替换搜索节点` | 树形展示牌组/标签/已保存搜索；点击节点触发 onSearchWithNode；长按切追加 AND/OR 语义 |
