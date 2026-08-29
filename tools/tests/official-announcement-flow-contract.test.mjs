@@ -21,7 +21,7 @@ test('announcement hosting has one public URL and no management credential', () 
   assert.doesNotMatch(source, /(clientSecret|clientID|accessToken|refreshToken|password|管理密钥)/i);
 });
 
-test('announcement service performs one uncached two-second GET and always destroys the client', () => {
+test('announcement service performs one uncached GET under a hard two-second deadline', () => {
   const source = read('../../entry/src/main/ets/backend/官方公告服务.ets');
   assert.match(source, /from '@kit\.NetworkKit'/);
   assert.match(source, /构建官方公告请求地址/);
@@ -30,9 +30,12 @@ test('announcement service performs one uncached two-second GET and always destr
   assert.match(source, /usingCache: false/);
   assert.match(source, /connectTimeout: 2000/);
   assert.match(source, /readTimeout: 2000/);
+  assert.match(source, /官方公告截止剩余毫秒/);
+  assert.match(source, /Promise\.race/);
+  assert.match(source, /setTimeout\(/);
+  assert.match(source, /clearTimeout\(timerId\);[\s\S]*?client\.destroy\(\);/);
   assert.match(source, /解析可展示官方公告/);
-  assert.match(source, /finally \{\s*client\.destroy\(\);/);
-  assert.doesNotMatch(source, /setTimeout|retry|ClientSecret|accessToken/i);
+  assert.doesNotMatch(source, /retry|ClientSecret|accessToken/i);
 });
 
 test('announcement modal is native, themed, scrollable and non-dismissible', () => {

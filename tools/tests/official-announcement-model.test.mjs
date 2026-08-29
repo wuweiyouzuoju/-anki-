@@ -5,6 +5,7 @@ import {
   解析可展示官方公告,
   构建官方公告请求地址,
   追加已确认官方公告ID,
+  官方公告截止剩余毫秒,
 } from '../../entry/src/main/ets/model/官方公告模型.ts';
 
 const documentOf = (announcement) => JSON.stringify({ schemaVersion: 1, announcement });
@@ -61,6 +62,27 @@ test('rejects malformed and unsafe protocol data', () => {
   assert.throws(() => 解析可展示官方公告(documentOf({ ...active, expiresAt: active.startsAt }), '2.3.3', now, 'zh-Hans'));
   assert.throws(() => 解析可展示官方公告(documentOf({ ...active, titleZh: 'x'.repeat(81) }), '2.3.3', now, 'zh-Hans'));
   assert.throws(() => 解析可展示官方公告('你'.repeat(22000), '2.3.3', now, 'zh-Hans'), /64 KiB/);
+});
+
+test('rejects detail URLs without a valid HTTPS host', () => {
+  const now = Date.parse('2026-08-30T00:00:00+08:00');
+  for (const badUrl of ['https://?', 'https:///path', 'https://', 'http://example.com']) {
+    assert.throws(() => 解析可展示官方公告(documentOf({ ...active, actionUrl: badUrl }), '2.3.3', now, 'zh-Hans'));
+  }
+  const bare = 解析可展示官方公告(documentOf({ ...active, actionUrl: '' }), '2.3.3', now, 'zh-Hans');
+  assert.equal(bare?.actionUrl, '');
+  const hostOnly = 解析可展示官方公告(documentOf({ ...active, actionUrl: 'https://example.com' }), '2.3.3', now, 'zh-Hans');
+  assert.equal(hostOnly?.actionUrl, 'https://example.com');
+  const withPort = 解析可展示官方公告(documentOf({ ...active, actionUrl: 'https://example.com:8443/a.html' }), '2.3.3', now, 'zh-Hans');
+  assert.equal(withPort?.actionUrl, 'https://example.com:8443/a.html');
+});
+
+test('request deadline clamps elapsed time into the two-second budget', () => {
+  const start = 1000000;
+  assert.equal(官方公告截止剩余毫秒(start, start), 2000);
+  assert.equal(官方公告截止剩余毫秒(start, start + 500), 1500);
+  assert.equal(官方公告截止剩余毫秒(start, start + 2000), 0);
+  assert.equal(官方公告截止剩余毫秒(start, start + 9000), 0);
 });
 
 test('builds a stable five-minute cache key', () => {

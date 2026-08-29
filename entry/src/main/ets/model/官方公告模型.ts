@@ -32,6 +32,7 @@ interface 原始官方公告文档 {
 
 const 最大响应字节数: number = 65536;
 const 最多已确认ID数: number = 32;
+const 总截止毫秒: number = 2000;
 
 function UTF8字节数(value: string): number {
   let bytes: number = 0;
@@ -57,7 +58,11 @@ export function 官方公告ID有效(id: string): boolean {
 }
 
 function HTTPS地址有效(url: string): boolean {
-  return url.length === 0 || /^https:\/\/[^\s]+$/i.test(url);
+  if (url.length === 0) return true;
+  const rest: string = url.replace(/^https:\/\//i, '');
+  if (rest.length === url.length) return false;
+  const host: string = rest.split('/')[0].split('?')[0].split('#')[0];
+  return /^[A-Za-z0-9._~-]+(?::\d{1,5})?$/.test(host);
 }
 
 function 版本有效(version: string): boolean {
@@ -153,4 +158,10 @@ export function 追加已确认官方公告ID(ids: string[], id: string): string
   const next: string[] = ids.filter((item: string): boolean => 官方公告ID有效(item) && item !== id);
   if (官方公告ID有效(id)) next.push(id);
   return next.length <= 最多已确认ID数 ? next : next.slice(next.length - 最多已确认ID数);
+}
+
+/** 公告请求的总截止预算：返回距离 2 秒硬截止还剩多少毫秒，超时钳为 0。 */
+export function 官方公告截止剩余毫秒(startMs: number, nowMs: number): number {
+  const remaining: number = 总截止毫秒 - (nowMs - startMs);
+  return remaining > 0 ? remaining : 0;
 }

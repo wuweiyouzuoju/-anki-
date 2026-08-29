@@ -4,6 +4,7 @@ import { http } from '@kit.NetworkKit';
 import { 官方公告地址 } from '../model/官方公告配置';
 import {
   构建官方公告请求地址,
+  官方公告截止剩余毫秒,
   解析可展示官方公告
 } from '../model/官方公告模型';
 import type { 官方公告语言, 官方公告展示项 } from '../model/官方公告模型';
@@ -11,6 +12,8 @@ import type { 官方公告语言, 官方公告展示项 } from '../model/官方�
 function HTTPS地址有效(url: string): boolean {
   return /^https:\/\/[^\s]+$/i.test(url);
 }
+
+const 总截止毫秒: number = 2000;
 
 export class 官方公告服务 {
   private readonly manifestUrl: string;
@@ -25,6 +28,7 @@ export class 官方公告服务 {
     nowMs: number = Date.now()
   ): Promise<官方公告展示项 | null> {
     if (!HTTPS地址有效(this.manifestUrl)) return null;
+    const startMs: number = Date.now();
     const client: http.HttpRequest = http.createHttp();
     const options: http.HttpRequestOptions = {
       method: http.RequestMethod.GET,
@@ -33,9 +37,22 @@ export class 官方公告服务 {
       connectTimeout: 2000,
       readTimeout: 2000
     };
+    let timerId: number = -1;
     try {
       const url: string = 构建官方公告请求地址(this.manifestUrl, nowMs);
-      const response: http.HttpResponse = await client.request(url, options);
+      const requestPromise: Promise<http.HttpResponse> = client.request(url, options);
+      // 迟到的请求结果直接忽略，避免截止后 destroy 引发未处理拒绝
+      requestPromise.catch((_error: Error): void => {});
+      const winner: http.HttpResponse | null = await Promise.race([
+        requestPromise,
+        new Promise<http.HttpResponse | null>((
+          resolve: (value: http.HttpResponse | null) => void
+        ): void => {
+          timerId = setTimeout(resolve, Math.min(官方公告截止剩余毫秒(startMs, Date.now()), 总截止毫秒));
+        })
+      ]);
+      if (winner === null) return null;
+      const response: http.HttpResponse = winner;
       if (response.responseCode < 200 || response.responseCode >= 300 || typeof response.result !== 'string') {
         return null;
       }
@@ -43,6 +60,9 @@ export class 官方公告服务 {
     } catch (error) {
       return null;
     } finally {
+      if (timerId >= 0) {
+        clearTimeout(timerId);
+      }
       client.destroy();
     }
   }
