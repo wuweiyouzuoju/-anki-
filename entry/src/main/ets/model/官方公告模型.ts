@@ -34,6 +34,9 @@ const 最大响应字节数: number = 65536;
 const 最多已确认ID数: number = 32;
 const 总截止毫秒: number = 2000;
 
+/** 主页返回检查窗口与 CDN 时间桶共用：10 分钟。 */
+export const 官方公告检查窗口毫秒: number = 10 * 60 * 1000;
+
 function UTF8字节数(value: string): number {
   let bytes: number = 0;
   for (let index: number = 0; index < value.length; index++) {
@@ -147,11 +150,20 @@ function 两位(value: number): string {
 }
 
 export function 构建官方公告请求地址(baseUrl: string, nowMs: number): string {
-  const bucketMs: number = Math.floor(nowMs / 300000) * 300000;
+  const bucketMs: number = Math.floor(nowMs / 官方公告检查窗口毫秒) * 官方公告检查窗口毫秒;
   const date: Date = new Date(bucketMs);
   const key: string = `${date.getUTCFullYear()}${两位(date.getUTCMonth() + 1)}${两位(date.getUTCDate())}` +
     `${两位(date.getUTCHours())}${两位(date.getUTCMinutes())}`;
   return `${baseUrl}${baseUrl.indexOf('?') >= 0 ? '&' : '?'}v=${key}`;
+}
+
+/** 返回主页后距离下一次允许检查还剩多少毫秒；0 表示现在即可检查。 */
+export function 官方公告检查延迟毫秒(lastCheckStartedAtMs: number, nowMs: number): number {
+  if (lastCheckStartedAtMs <= 0) return 0;
+  const elapsed: number = nowMs - lastCheckStartedAtMs;
+  if (elapsed < 0) return 官方公告检查窗口毫秒;
+  if (elapsed >= 官方公告检查窗口毫秒) return 0;
+  return 官方公告检查窗口毫秒 - elapsed;
 }
 
 export function 追加已确认官方公告ID(ids: string[], id: string): string[] {

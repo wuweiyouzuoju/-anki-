@@ -6,6 +6,8 @@ import {
   构建官方公告请求地址,
   追加已确认官方公告ID,
   官方公告截止剩余毫秒,
+  官方公告检查窗口毫秒,
+  官方公告检查延迟毫秒,
 } from '../../entry/src/main/ets/model/官方公告模型.ts';
 
 const documentOf = (announcement) => JSON.stringify({ schemaVersion: 1, announcement });
@@ -85,13 +87,27 @@ test('request deadline clamps elapsed time into the two-second budget', () => {
   assert.equal(官方公告截止剩余毫秒(start, start + 9000), 0);
 });
 
-test('builds a stable five-minute cache key', () => {
-  const a = 构建官方公告请求地址('https://example.com/announcement.json', Date.parse('2026-08-29T18:03:01Z'));
-  const b = 构建官方公告请求地址('https://example.com/announcement.json', Date.parse('2026-08-29T18:04:59Z'));
-  const c = 构建官方公告请求地址('https://example.com/announcement.json?channel=stable', Date.parse('2026-08-29T18:05:00Z'));
+test('builds a stable ten-minute cache key', () => {
+  const a = 构建官方公告请求地址(
+    'https://example.com/announcement.json', Date.parse('2026-08-29T18:03:01Z'));
+  const b = 构建官方公告请求地址(
+    'https://example.com/announcement.json', Date.parse('2026-08-29T18:09:59Z'));
+  const c = 构建官方公告请求地址(
+    'https://example.com/announcement.json?channel=stable', Date.parse('2026-08-29T18:10:00Z'));
   assert.equal(a, b);
   assert.match(a, /\?v=202608291800$/);
-  assert.match(c, /&v=202608291805$/);
+  assert.match(c, /&v=202608291810$/);
+});
+
+test('home check delay is immediate initially and otherwise bounded by ten minutes', () => {
+  const start = 1000000;
+  assert.equal(官方公告检查窗口毫秒, 600000);
+  assert.equal(官方公告检查延迟毫秒(0, start), 0);
+  assert.equal(官方公告检查延迟毫秒(start, start), 600000);
+  assert.equal(官方公告检查延迟毫秒(start, start + 9 * 60 * 1000), 60000);
+  assert.equal(官方公告检查延迟毫秒(start, start + 10 * 60 * 1000), 0);
+  assert.equal(官方公告检查延迟毫秒(start, start + 60 * 60 * 1000), 0);
+  assert.equal(官方公告检查延迟毫秒(start + 1000, start), 600000);
 });
 
 test('acknowledged ids are unique and bounded to the latest 32', () => {
