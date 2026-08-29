@@ -17,7 +17,7 @@ test('announcement acknowledgements use one bounded Preferences record', () => {
 
 test('announcement hosting has one public URL and no management credential', () => {
   const source = read('../../entry/src/main/ets/model/官方公告配置.ts');
-  assert.match(source, /https:\/\/4001784660\.cdn\.123clouddisk\.com\/4001784660\/jidecards\/announcement\.json/);
+  assert.match(source, /https:\/\/4001784660\.cdn\.123clouddisk\.com\/4001784660\/CET%E5%9B%9B%E5%85%AD%E7%BA%A7\/announcement\.json/);
   assert.doesNotMatch(source, /(clientSecret|clientID|accessToken|refreshToken|password|管理密钥)/i);
 });
 
