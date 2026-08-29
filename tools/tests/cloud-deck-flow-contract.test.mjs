@@ -115,7 +115,13 @@ test('cloud deck modal presents selectable public decks, locked future decks and
   assert.match(source, /cloud_deck_retry/);
   assert.match(source, /ProgressType\.Linear/);
   assert.match(source, /onDownload/);
+  assert.match(source, /onEnter/);
+  assert.match(source, /deck\.cardCount/);
+  assert.match(source, /cloud_deck_enter/);
   assert.match(source, /backgroundBlurStyle\(BlurStyle\.Thin/);
+  assert.doesNotMatch(source, /cloud_deck_skip/);
+  assert.doesNotMatch(source, /cloud_deck_manual_message/);
+  assert.doesNotMatch(source, /onClose/);
 });
 
 test('each cloud deck tap uses exactly one toggle path', () => {
@@ -132,16 +138,21 @@ test('cloud deck and import source strings are aligned and translated', () => {
   const zhMap = new Map(zh.map((item) => [item.name, item.value]));
   const enMap = new Map(en.map((item) => [item.name, item.value]));
   const required = [
-    'import_source_title', 'import_source_local_title', 'import_source_cloud_title',
     'cloud_deck_title', 'cloud_deck_loading', 'cloud_deck_not_configured',
     'cloud_deck_empty', 'cloud_deck_retry', 'cloud_deck_download',
     'cloud_deck_locked_badge', 'cloud_deck_status_success', 'cloud_deck_status_failed',
+    'cloud_deck_enter', 'cloud_deck_meta_cards', 'cloud_deck_meta_cards_unknown_size',
   ];
   for (const key of required) {
     assert.ok(zhMap.has(key), `missing base key ${key}`);
     assert.ok(enMap.has(key), `missing en_US key ${key}`);
     assert.doesNotMatch(enMap.get(key), /[\u3400-\u9fff]/, `${key} is not translated`);
   }
+  assert.equal(
+    zhMap.get('cloud_deck_onboarding_message'),
+    '首次进入可自由选择所需牌组，至少选择 1 个，下载后将自动导入。本次选择机会仅有一次，请按需选择。更多最新牌组请加入官方 QQ 群：726837065。',
+  );
+  assert.doesNotMatch(enMap.get('cloud_deck_onboarding_message'), /安装|导入|牌组|QQ群/);
   assert.deepEqual([...zhMap.keys()].sort(), [...enMap.keys()].sort());
 });
 

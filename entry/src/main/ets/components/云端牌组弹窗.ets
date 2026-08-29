@@ -9,7 +9,6 @@ import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时
 @Component
 export struct 云端牌组弹窗 {
   @Prop isDark: boolean = false;
-  @Prop onboarding: boolean = false;
   @Prop loading: boolean = false;
   @Prop busy: boolean = false;
   @Prop errorMessage: string = '';
@@ -25,7 +24,7 @@ export struct 云端牌组弹窗 {
   onToggle: (deckId: string) => void = (deckId: string): void => {};
   onRetry: () => void = (): void => {};
   onDownload: () => void = (): void => {};
-  onClose: () => void = (): void => {};
+  onEnter: () => void = (): void => {};
 
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景: string = '#2F5FD0';
@@ -91,12 +90,22 @@ export struct 云端牌组弹窗 {
             .width('100%')
         }
 
-        Text(格式化云端牌组大小(deck.size).length > 0 ?
-          $r('app.string.cloud_deck_meta', deck.version, 格式化云端牌组大小(deck.size)) :
-          $r('app.string.cloud_deck_meta_unknown', deck.version))
-          .fontSize(应用尺寸.字号_说明)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
+        if (deck.cardCount !== undefined) {
+          Text(格式化云端牌组大小(deck.size).length > 0 ?
+            $r('app.string.cloud_deck_meta_cards', deck.cardCount, deck.version,
+              格式化云端牌组大小(deck.size)) :
+            $r('app.string.cloud_deck_meta_cards_unknown_size', deck.cardCount, deck.version))
+            .fontSize(应用尺寸.字号_说明)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+        } else {
+          Text(格式化云端牌组大小(deck.size).length > 0 ?
+            $r('app.string.cloud_deck_meta', deck.version, 格式化云端牌组大小(deck.size)) :
+            $r('app.string.cloud_deck_meta_unknown', deck.version))
+            .fontSize(应用尺寸.字号_说明)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+        }
       }
       .layoutWeight(1)
     }
@@ -126,9 +135,6 @@ export struct 云端牌组弹窗 {
           adaptiveColor: AdaptiveColor.DEFAULT
         })
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-        .onClick((): void => {
-          if (!this.busy) this.onClose();
-        })
         .transition(TransitionEffect.OPACITY.animation({
           curve: 取全屏转场曲线(), duration: 取全屏转场时长()
         }))
@@ -140,8 +146,7 @@ export struct 云端牌组弹窗 {
           .fontColor($r('app.color.text_primary'))
           .width('100%')
 
-        Text(this.onboarding ? $r('app.string.cloud_deck_onboarding_message') :
-          $r('app.string.cloud_deck_manual_message'))
+        Text($r('app.string.cloud_deck_onboarding_message'))
           .fontSize(应用尺寸.字号_正文_小)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
@@ -215,18 +220,6 @@ export struct 云端牌组弹窗 {
         }
 
         Row({ space: 应用尺寸.间距_12 }) {
-          Button(this.onboarding ? $r('app.string.cloud_deck_skip') : $r('app.string.cloud_deck_close'))
-            .type(ButtonType.Normal)
-            .layoutWeight(1)
-            .height(应用尺寸.按钮高度)
-            .fontSize(应用尺寸.字号_正文)
-            .fontColor($r('app.color.text_primary'))
-            .backgroundColor($r('app.color.surface_page'))
-            .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-            .borderRadius(应用尺寸.圆角_面板)
-            .enabled(!this.busy)
-            .onClick((): void => { this.onClose(); })
-
           Button($r('app.string.cloud_deck_download', this.selectedIds.length))
             .type(ButtonType.Normal)
             .layoutWeight(1)
@@ -237,6 +230,19 @@ export struct 云端牌组弹窗 {
             .borderRadius(应用尺寸.圆角_面板)
             .enabled(!this.busy && !this.loading && this.errorMessage.length === 0 && this.selectedIds.length > 0)
             .onClick((): void => { this.onDownload(); })
+
+          if (this.successIds.length > 0) {
+            Button($r('app.string.cloud_deck_enter'))
+              .type(ButtonType.Normal)
+              .layoutWeight(1)
+              .height(应用尺寸.按钮高度)
+              .fontSize(应用尺寸.字号_正文)
+              .fontColor($r('app.color.action_on_primary'))
+              .backgroundColor(this.主色按钮背景)
+              .borderRadius(应用尺寸.圆角_面板)
+              .enabled(!this.busy)
+              .onClick((): void => { this.onEnter(); })
+          }
         }
         .width('100%')
       }
