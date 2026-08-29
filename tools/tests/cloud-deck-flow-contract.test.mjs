@@ -16,10 +16,13 @@ test('cloud deck hosting has one replaceable catalog URL and no management crede
 
 test('first-launch cloud deck onboarding is persisted independently', () => {
   const source = read('../../entry/src/main/ets/model/云端牌组引导存储.ets');
-  assert.match(source, /cloud_deck_onboarding_completed_v1/);
-  assert.doesNotMatch(source, /'cloud_deck_onboarding_completed'/);
+  assert.match(source, /cloud_deck_required_onboarding_completed_v1/);
+  assert.doesNotMatch(source, /cloud_deck_onboarding_completed_v1/);
   assert.match(source, /是否已完成云端牌组引导/);
   assert.match(source, /标记已完成云端牌组引导/);
+  assert.match(source, /标记已完成云端牌组引导\(\): Promise<boolean>/);
+  assert.match(source, /await store\.flush\(\);\s*return true;/);
+  assert.match(source, /catch \(error\) \{\s*return false;/);
   assert.match(source, /preferences\.getPreferences/);
   assert.match(source, /\.flush\(\)/);
 });
@@ -51,6 +54,17 @@ test('cloud deck service streams APKG files to a sandbox directory with progress
   assert.match(source, /readSync/);
   assert.match(source, /unlinkSync/);
   assert.doesNotMatch(source, /!\/\\\.apkg\(\?:\[\?\#\]\|\$\)\/i\.test\(deck\.downloadUrl\)/);
+});
+
+test('cloud deck service stages downloads and removes interrupted private files', () => {
+  const source = read('../../entry/src/main/ets/backend/云端牌组服务.ets');
+  assert.match(source, /const partPath: string = `\$\{downloadDir\}\/\$\{safeId\}\.part`/);
+  assert.match(source, /saveas: partPath/);
+  assert.match(source, /校验下载文件\(partPath, deck\.size\)/);
+  assert.match(source, /fs\.renameSync\(partPath, outputPath\)/);
+  assert.match(source, /清理残留下载\(filesDir: string\): void/);
+  assert.match(source, /name\.endsWith\('\.part'\)/);
+  assert.match(source, /name\.endsWith\('\.apkg'\)/);
 });
 
 test('cloud deck service cannot strand a download promise when listener cleanup throws', () => {

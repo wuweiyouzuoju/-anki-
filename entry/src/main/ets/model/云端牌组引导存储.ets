@@ -4,8 +4,8 @@ import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 
 const 存储名: string = 'jidecards_settings';
-// v1 表示正式五牌组目录首次启用；避免沿用预配置测试包留下的完成标记。
-const 引导完成键: string = 'cloud_deck_onboarding_completed_v1';
+// 固定代际键：后续普通版本升级不得再次触发本次强制引导。
+const 引导完成键: string = 'cloud_deck_required_onboarding_completed_v1';
 const 上下文键: string = 'abilityContext';
 
 function 取能力上下文(): common.UIAbilityContext | null {
@@ -29,17 +29,18 @@ export async function 是否已完成云端牌组引导(): Promise<boolean> {
   }
 }
 
-/** 标记首次云端牌组引导已完成；持久化失败不阻断首页。 */
-export async function 标记已完成云端牌组引导(): Promise<void> {
+/** 标记首次云端牌组引导已完成；只有真正落盘后才允许进入软件。 */
+export async function 标记已完成云端牌组引导(): Promise<boolean> {
   const context: common.UIAbilityContext | null = 取能力上下文();
   if (context === null) {
-    return;
+    return false;
   }
   try {
     const store: preferences.Preferences = await preferences.getPreferences(context, 存储名);
     await store.put(引导完成键, true);
     await store.flush();
+    return true;
   } catch (error) {
-    // 偏好存储不可用时静默降级，避免阻断核心牌组功能。
+    return false;
   }
 }

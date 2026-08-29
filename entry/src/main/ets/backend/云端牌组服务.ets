@@ -80,6 +80,31 @@ export class 云端牌组服务 {
     this.catalogUrl = catalogUrl.trim();
   }
 
+  /** 清除上次被系统终止后可能留在私有下载目录里的中间文件。 */
+  清理残留下载(filesDir: string): void {
+    const downloadDir: string = `${filesDir}/cloud-decks`;
+    if (!fs.accessSync(downloadDir)) {
+      return;
+    }
+    try {
+      for (const name of fs.listFileSync(downloadDir)) {
+        if (!name.endsWith('.part') && !name.endsWith('.apkg')) {
+          continue;
+        }
+        const path: string = `${downloadDir}/${name}`;
+        try {
+          if (!fs.statSync(path).isDirectory()) {
+            静默删除(path);
+          }
+        } catch (error) {
+          // 单个残留文件异常不阻断其余文件清理。
+        }
+      }
+    } catch (error) {
+      // 下载目录暂时不可读时，后续下载仍会按牌组 ID 清理自身文件。
+    }
+  }
+
   /** 获取并校验云端 JSON 目录。 */
   async 加载目录(): Promise<云端牌组目录> {
     if (this.catalogUrl.length === 0) {
@@ -137,7 +162,9 @@ export class 云端牌组服务 {
     确保目录存在(downloadDir);
     const safeId: string = deck.id.replace(/[^A-Za-z0-9._-]/g, '_');
     const outputPath: string = `${downloadDir}/${safeId}.apkg`;
+    const partPath: string = `${downloadDir}/${safeId}.part`;
     静默删除(outputPath);
+    静默删除(partPath);
 
     const config: request.agent.Config = {
       action: request.agent.Action.DOWNLOAD,
@@ -147,7 +174,7 @@ export class 云端牌组服务 {
       mode: request.agent.Mode.FOREGROUND,
       overwrite: true,
       method: 'GET',
-      saveas: outputPath,
+      saveas: partPath,
       network: request.agent.Network.ANY,
       metered: true
     };
@@ -208,18 +235,18 @@ export class 云端牌组服务 {
         if (settled) return;
         settled = true;
         removeListeners();
-        静默删除(outputPath);
+        静默删除(partPath);
         reject(new Error(message));
       };
       const removeTask = (): void => {
         try {
           request.agent.remove(task.tid).then((): void => {
-            静默删除(outputPath);
+            静默删除(partPath);
           }).catch((): void => {
-            静默删除(outputPath);
+            静默删除(partPath);
           });
         } catch (error) {
-          静默删除(outputPath);
+          静默删除(partPath);
         }
       };
       const resetIdleTimeout = (): void => {
@@ -235,7 +262,9 @@ export class 云端牌组服务 {
         if (settled) return;
         try {
           progressCallback(progress);
-          校验下载文件(outputPath, deck.size);
+          校验下载文件(partPath, deck.size);
+          静默删除(outputPath);
+          fs.renameSync(partPath, outputPath);
           settled = true;
           removeListeners();
           resolve(outputPath);
