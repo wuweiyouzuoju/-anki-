@@ -241,8 +241,8 @@ test('study page is registered and reachable from home', () => {
   assert.match(index, /deckId: this\.选中的牌组ID/);
   assert.match(index, /deckName: 牌组显示名\(this\.选中牌组\(\)\)/,
     'deckName follows UI display name (covers user-customized aliases)');
-  assert.match(index, /onPop[\s\S]{0,120}?加载主页数据\(\)/,
-    'home refreshes after returning from study');
+  assert.match(index, /onPop[\s\S]{0,120}?返回主页后刷新\(\)/,
+    'home refreshes after returning from study (返回主页后刷新 internally calls 加载主页数据)');
   assert.doesNotMatch(index, /router\.pushUrl/, 'deprecated router must be gone');
 });
 

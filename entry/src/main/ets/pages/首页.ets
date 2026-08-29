@@ -16,6 +16,7 @@ import { 主页操作面板 } from '../components/主页操作面板';
 import { 云端牌组弹窗 } from '../components/云端牌组弹窗';
 import { 官方公告弹窗 } from '../components/官方公告弹窗';
 import { 官方公告服务 } from '../backend/官方公告服务';
+import { 官方公告检查延迟毫秒 } from '../model/官方公告模型';
 import type { 官方公告展示项 } from '../model/官方公告模型';
 import { 是否已确认官方公告, 标记已确认官方公告 } from '../model/官方公告存储';
 import { 牌组定制面板, 牌组定制结果 } from '../components/牌组定制面板';
@@ -105,6 +106,13 @@ struct 首页 {
   @State private 显示官方公告: boolean = false;
   @State private 官方公告数据: 官方公告展示项 | null = null;
   @State private 官方公告确认中: boolean = false;
+  private 主页公告检查已激活: boolean = false;
+  private 主页允许公告检查: boolean = true;
+  private 上次官方公告检查开始时间: number = 0;
+  private 官方公告检查中: boolean = false;
+  private 官方公告延迟检查任务: number = -1;
+  private 当前进程已确认官方公告ID集合: Set<string> = new Set<string>();
+  private 待展示官方公告数据: 官方公告展示项 | null = null;
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
   // 笔记添加广播：添加笔记页保存成功后写 noteAddedTick = Date.now()，
   // 这里 @Watch 监听变化触发 加载主页数据，绕开 NavPathStack.onPop 偶发不触发的问题，
@@ -234,23 +242,83 @@ struct 首页 {
     this.首次弹窗序列已启动 = true;
     const displayed: boolean = await this.尝试显示官方公告();
     if (displayed) return;
+    this.主页公告检查已激活 = true;
     await this.继续首次弹窗序列();
   }
 
-  /** 拉取并判断官方公告；任何网络/协议/读档失败都静默跳过，最多阻塞启动约 2 秒。 */
+  /** 执行一次真实网络检查；所有入口共用本方法，禁止并发。 */
   private async 尝试显示官方公告(): Promise<boolean> {
+    if (this.官方公告检查中) return false;
+    this.官方公告检查中 = true;
+    this.上次官方公告检查开始时间 = Date.now();
     try {
       const info: bundleManager.BundleInfo = await bundleManager.getBundleInfoForSelf(
         bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
       const announcement: 官方公告展示项 | null = await this.官方公告服务实例.加载公告(
         info.versionName, 当前语言模式(), Date.now());
-      if (announcement === null || await 是否已确认官方公告(announcement.id)) return false;
+      if (announcement === null || this.当前进程已确认官方公告ID集合.has(announcement.id) ||
+        await 是否已确认官方公告(announcement.id)) return false;
+      if (!this.主页允许公告检查 || this.显示云端牌组弹窗 || this.显示欢迎弹窗) {
+        this.待展示官方公告数据 = announcement;
+        return true;
+      }
       this.官方公告数据 = announcement;
       this.显示官方公告 = true;
       return true;
     } catch (error) {
       return false;
+    } finally {
+      this.官方公告检查中 = false;
     }
+  }
+
+  /** 请求结束时若主页不可安全展示，返回主页后先消费这个待展示结果。 */
+  private 尝试展示待展示官方公告(): boolean {
+    if (!this.主页允许公告检查 || this.待展示官方公告数据 === null || this.显示官方公告 ||
+      this.显示云端牌组弹窗 || this.显示欢迎弹窗) return false;
+    if (this.当前进程已确认官方公告ID集合.has(this.待展示官方公告数据.id)) {
+      this.待展示官方公告数据 = null;
+      return false;
+    }
+    this.官方公告数据 = this.待展示官方公告数据;
+    this.待展示官方公告数据 = null;
+    this.显示官方公告 = true;
+    return true;
+  }
+
+  /** 返回主页时按十分钟窗口立即检查或只安排一个延迟检查。 */
+  private 请求主页官方公告检查(): void {
+    if (this.尝试展示待展示官方公告()) return;
+    if (!this.主页公告检查已激活 || !this.主页允许公告检查 || this.官方公告检查中 ||
+      this.显示官方公告 || this.显示云端牌组弹窗 || this.显示欢迎弹窗) return;
+    if (this.官方公告延迟检查任务 >= 0) return;
+    const delayMs: number = 官方公告检查延迟毫秒(this.上次官方公告检查开始时间, Date.now());
+    if (delayMs === 0) {
+      this.尝试显示官方公告().catch((): void => {});
+      return;
+    }
+    this.官方公告延迟检查任务 = setTimeout((): void => {
+      this.官方公告延迟检查任务 = -1;
+      if (!this.主页允许公告检查 || this.显示官方公告 || this.显示云端牌组弹窗 ||
+        this.显示欢迎弹窗) return;
+      this.尝试显示官方公告().catch((): void => {});
+    }, delayMs);
+  }
+
+  /** 离开主页或进入后台时取消尚未执行的延迟检查。 */
+  private 暂停主页官方公告检查(): void {
+    this.主页允许公告检查 = false;
+    if (this.官方公告延迟检查任务 >= 0) {
+      clearTimeout(this.官方公告延迟检查任务);
+      this.官方公告延迟检查任务 = -1;
+    }
+  }
+
+  /** 所有真正返回主页的入口都调用这里，避免遗漏公告检查。 */
+  private 返回主页后刷新(): void {
+    this.主页允许公告检查 = true;
+    this.加载主页数据();
+    this.请求主页官方公告检查();
   }
 
   private async 继续首次弹窗序列(): Promise<void> {
@@ -262,11 +330,13 @@ struct 首页 {
     await this.显示欢迎弹窗一次();
   }
 
-  /** 只有「我知道了」写入已读并关闭；持久化失败仅提示，仍关闭并继续原启动序列。 */
+  /** 只有「我知道了」写入已读并关闭；先在当前进程内存抑制该 ID，持久化失败仅提示，仍关闭并继续原启动序列。 */
   private async 确认官方公告(): Promise<void> {
     if (this.官方公告确认中 || this.官方公告数据 === null) return;
     this.官方公告确认中 = true;
-    const saved: boolean = await 标记已确认官方公告(this.官方公告数据.id);
+    const id: string = this.官方公告数据.id;
+    this.当前进程已确认官方公告ID集合.add(id);
+    const saved: boolean = await 标记已确认官方公告(id);
     if (!saved) {
       this.getUIContext().getPromptAction().showToast({
         message: $r('app.string.official_announcement_save_failed')
@@ -275,6 +345,7 @@ struct 首页 {
     this.显示官方公告 = false;
     this.官方公告数据 = null;
     this.官方公告确认中 = false;
+    this.主页公告检查已激活 = true;
     await this.继续首次弹窗序列();
   }
 
@@ -322,7 +393,12 @@ struct 首页 {
 
   /** 页面每次可见都刷新（含从复习页返回），保证今日计数与队列状态同步。 */
   onPageShow(): void {
-    this.加载主页数据();
+    this.返回主页后刷新();
+  }
+
+  /** 进入后台：取消尚未执行的公告延迟检查，返回前台由 onPageShow 重新协调。 */
+  onPageHide(): void {
+    this.暂停主页官方公告检查();
   }
 
   /**
@@ -866,11 +942,12 @@ struct 首页 {
       deckId: this.选中的牌组ID,
       deckName: 牌组显示名(this.选中牌组())
     };
+    this.暂停主页官方公告检查();
     this.页面栈.pushPath({
       name: 'StudyPage',
       param: params,
       onPop: (): void => {
-        this.加载主页数据();
+        this.返回主页后刷新();
       }
     });
   }
@@ -878,11 +955,12 @@ struct 首页 {
   /** 打开浏览页（全库浏览，不限定牌组）。浏览页可改卡/删卡/改到期，pop 回主页必须刷新。 */
   private 打开浏览页(): void {
     const params: 浏览页参数 = {};
+    this.暂停主页官方公告检查();
     this.页面栈.pushPath({
       name: 'BrowserPage',
       param: params,
       onPop: (): void => {
-        this.加载主页数据();
+        this.返回主页后刷新();
       }
     });
   }
@@ -890,11 +968,12 @@ struct 首页 {
   /** 打开浏览页并预填搜索串（查找重复对话框跳转用）。 */
   private 打开带搜索浏览页(搜索串: string): void {
     const params: 浏览页参数 = { initialSearch: 搜索串 };
+    this.暂停主页官方公告检查();
     this.页面栈.pushPath({
       name: 'BrowserPage',
       param: params,
       onPop: (): void => {
-        this.加载主页数据();
+        this.返回主页后刷新();
       }
     });
   }
@@ -902,13 +981,14 @@ struct 首页 {
   /** 打开统计页（全库统计图表）。'StatsPage' 是 NavPathStack 跨页面寻址协议，保留英文。 */
   private 打开统计页(): void {
     const params: 统计页参数 = {};
+    this.暂停主页官方公告检查();
     this.页面栈.pushPath({
       name: 'StatsPage',
       param: params,
       // Navigation push/pop 不触发 @Entry 的 onPageShow，不挂 onPop 的话
       // 从统计页返回主页永远不刷新（用户报告的“打开统计不能主动刷新”根因）。
       onPop: (): void => {
-        this.加载主页数据();
+        this.返回主页后刷新();
       }
     });
   }
@@ -1571,11 +1651,12 @@ struct 首页 {
       deckName: 牌组显示名(this.选中牌组()),
       deckOptions: this.添加笔记的牌组选项()
     };
+    this.暂停主页官方公告检查();
     this.页面栈.pushPath({
       name: 'AddNotePage',
       param: params,
       onPop: (): void => {
-        this.加载主页数据();
+        this.返回主页后刷新();
       }
     });
   }
@@ -2120,7 +2201,11 @@ struct 首页 {
           主页更多面板({
             设置回调: (): void => {
               this.显示更多菜单 = false;
-              this.页面栈.pushPath({ name: 'SettingsPage' });
+              this.暂停主页官方公告检查();
+              this.页面栈.pushPath({
+                name: 'SettingsPage',
+                onPop: (): void => { this.返回主页后刷新(); }
+              });
             },
             浏览回调: (): void => {
               this.显示更多菜单 = false;
@@ -2132,7 +2217,11 @@ struct 首页 {
             },
             提醒回调: (): void => {
               this.显示更多菜单 = false;
-              this.页面栈.pushPath({ name: 'ReminderPage' });
+              this.暂停主页官方公告检查();
+              this.页面栈.pushPath({
+                name: 'ReminderPage',
+                onPop: (): void => { this.返回主页后刷新(); }
+              });
             },
             关闭回调: (): void => {
               this.显示更多菜单 = false;
