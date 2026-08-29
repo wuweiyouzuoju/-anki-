@@ -7,7 +7,10 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 test('cloud deck hosting has one replaceable catalog URL and no management credential', () => {
   const source = read('../../entry/src/main/ets/model/云端牌组配置.ts');
   assert.match(source, /云端牌组目录地址/);
-  assert.match(source, /export const 云端牌组目录地址: string = ''/);
+  assert.match(
+    source,
+    /export const 云端牌组目录地址: string =\s*\n?\s*'https:\/\/4001784660\.cdn\.123clouddisk\.com\/4001784660\/CET%E5%9B%9B%E5%85%AD%E7%BA%A7\/cloud-decks\.json'/,
+  );
   assert.doesNotMatch(source, /(accessKey|secretKey|clientSecret|管理密钥)/i);
 });
 
