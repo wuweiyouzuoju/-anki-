@@ -94,3 +94,9 @@ test('home closes and continues even when acknowledgement persistence fails', ()
   assert.match(method, /this\.显示官方公告 = false/);
   assert.match(method, /await this\.继续首次弹窗序列\(\)/);
 });
+
+test('hosted announcement manifest starts disabled and matches schema v1', () => {
+  const manifest = JSON.parse(read('../../hosting/announcement.json'));
+  assert.equal(manifest.schemaVersion, 1);
+  assert.equal(manifest.announcement, null);
+});
