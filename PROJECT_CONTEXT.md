@@ -97,6 +97,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 
 ## 关键设计决策
 
+- **2.3.3 起版本更新改用云端官方公告**（2026-08-29）：旧欢迎弹窗保持静默，版本更新内容由 `hosting/announcement.json` 下发；弹窗沿用旧版磨砂背景、圆角卡片、淡入动画和 `【新增】/【优化】/【修复】` 文案格式，但只能点击“我知道了”确认关闭，同一公告 ID 不再重复显示。每个版本必须使用新 ID；2.3.3 首次发布云端牌组下载，更多、更全的牌组引导至官方 QQ 群 `726837065`
 - **语言切换**用 startAbility + terminateSelf 重启（`setAppPreferredLanguage` 全局重渲染会卡 UI）
 - **ThemeMode 与 ColorTheme 正交**（独立选择）
 - **countNew/Learning/Review 固定交通灯色**（保证主题切换下一致）

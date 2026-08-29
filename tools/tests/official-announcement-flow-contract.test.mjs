@@ -135,11 +135,21 @@ test('home closes and continues even when acknowledgement persistence fails', ()
   assert.match(method, /await this\.继续首次弹窗序列\(\)/);
 });
 
-test('hosted announcement manifest starts disabled, is small, and matches schema v1', () => {
+test('hosted announcement manifest publishes the v2.3.3 release notice under 5 KiB', () => {
   const text = read('../../hosting/announcement.json');
   const manifest = JSON.parse(text);
   assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.announcement, null);
+  assert.equal(manifest.announcement.enabled, true);
+  assert.equal(manifest.announcement.id, '20260829-v2.3.3-release');
+  assert.match(manifest.announcement.contentZh, /首次加入云端牌组下载/);
+  assert.match(manifest.announcement.contentZh, /726837065/);
+  assert.match(manifest.announcement.contentZh, /AnkiWeb/);
+  assert.match(manifest.announcement.contentZh, /图片遮罩/);
+  assert.doesNotMatch(manifest.announcement.contentZh, /提升大型牌组下载和导入的稳定性/);
+  assert.match(manifest.announcement.contentEn, /Cloud deck downloads are here for the first time/);
+  assert.equal(manifest.announcement.minimumAppVersion, '2.3.3');
+  assert.equal(manifest.announcement.maximumAppVersion, '2.3.3');
+  assert.equal(manifest.announcement.actionUrl, '');
   assert.ok(Buffer.byteLength(text, 'utf8') <= 5 * 1024);
 });
 
