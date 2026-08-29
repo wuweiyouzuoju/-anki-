@@ -1614,13 +1614,6 @@
     { "name": "find_dupes_notes_in_group", "value": "%d 张笔记" },
     { "name": "find_dupes_too_many", "value": "笔记过多（超过1000张），请缩小范围" },
     { "name": "find_dupes_all_notetypes", "value": "全部笔记类型" },
-    { "name": "import_source_title", "value": "导入牌组" },
-    { "name": "import_source_message", "value": "选择牌组的来源" },
-    { "name": "import_source_local_title", "value": "从本地导入" },
-    { "name": "import_source_local_description", "value": "选择设备上的 .apkg 文件" },
-    { "name": "import_source_cloud_title", "value": "软件云端牌组" },
-    { "name": "import_source_cloud_description", "value": "浏览、下载并自动安装作者提供的牌组" },
-    { "name": "import_source_cancel", "value": "取消" },
     { "name": "cloud_deck_title", "value": "获取云端牌组" },
     { "name": "cloud_deck_onboarding_message", "value": "首次进入可自由选择所需牌组，至少选择 1 个，下载后将自动导入。本次选择机会仅有一次，请按需选择。更多最新牌组请加入官方 QQ 群：726837065。" },
     { "name": "cloud_deck_loading", "value": "正在加载牌组目录…" },
@@ -1642,6 +1635,7 @@
     { "name": "cloud_deck_status_success", "value": "已导入" },
     { "name": "cloud_deck_status_failed", "value": "失败" },
     { "name": "cloud_deck_install_complete", "value": "云端牌组已导入" },
-    { "name": "cloud_deck_install_partial", "value": "部分牌组导入失败，可重新选择重试" }
+    { "name": "cloud_deck_install_partial", "value": "部分牌组导入失败，可重新选择重试" },
+    { "name": "cloud_deck_save_failed", "value": "暂时无法保存完成状态，请重试" }
   ]
 }

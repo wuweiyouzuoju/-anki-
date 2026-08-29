@@ -97,26 +97,6 @@ test('cloud deck service times out waiting or retrying tasks that make no byte p
   assert.match(source, /request\.agent\.remove\(task\.tid\)/);
 });
 
-test('import source modal offers local and software-cloud choices on the shared frosted surface', () => {
-  const source = read('../../entry/src/main/ets/components/导入来源弹窗.ets');
-  assert.match(source, /import_source_local_title/);
-  assert.match(source, /import_source_cloud_title/);
-  assert.match(source, /onLocal/);
-  assert.match(source, /onCloud/);
-  assert.match(source, /backgroundBlurStyle\(BlurStyle\.Thin/);
-  assert.match(source, /surface_card/);
-  assert.match(source, /取全屏转场时长/);
-});
-
-test('import source choices start neutral and only highlight while pressed', () => {
-  const source = read('../../entry/src/main/ets/components/导入来源弹窗.ets');
-  assert.match(source, /@State private 按下来源: number = 0/);
-  assert.match(source, /按下来源 === 1 \? this\.选中背景色 : \$r\('app\.color\.surface_page'\)/);
-  assert.match(source, /按下来源 === 2 \? this\.选中背景色 : \$r\('app\.color\.surface_page'\)/);
-  assert.match(source, /TouchType\.Down/);
-  assert.match(source, /TouchType\.Up \|\| event\.type === TouchType\.Cancel/);
-});
-
 test('cloud deck modal presents selectable public decks, locked future decks and download progress', () => {
   const source = read('../../entry/src/main/ets/components/云端牌组弹窗.ets');
   assert.match(source, /云端牌组目录项/);
@@ -170,24 +150,25 @@ test('cloud deck and import source strings are aligned and translated', () => {
   assert.deepEqual([...zhMap.keys()].sort(), [...enMap.keys()].sort());
 });
 
-test('home routes Import Deck through source selection and preserves the local picker flow', () => {
+test('later Import Deck directly opens the local picker and exposes no cloud route', () => {
   const source = read('../../entry/src/main/ets/pages/首页.ets');
-  assert.match(source, /导入来源弹窗/);
-  assert.match(source, /显示导入来源弹窗 = true/);
-  assert.match(source, /onLocal:[\s\S]*从选择器导入牌组\(\)/);
-  assert.match(source, /onCloud:[\s\S]*打开云端牌组弹窗\(false\)/);
+  assert.doesNotMatch(source, /导入来源弹窗/);
+  assert.doesNotMatch(source, /显示导入来源弹窗/);
+  assert.doesNotMatch(source, /onCloud/);
+  assert.match(source, /导入牌组回调:[\s\S]*this\.从选择器导入牌组\(\)/);
   assert.match(source, /选取数据文件\(context, \['\.apkg'\]\)/);
 });
 
-test('home sequences cloud onboarding before welcome and persists skip or completion', () => {
+test('home sequences the non-dismissible cloud onboarding before welcome', () => {
   const source = read('../../entry/src/main/ets/pages/首页.ets');
   assert.match(source, /是否已完成云端牌组引导/);
   assert.match(source, /显示首次弹窗序列/);
-  assert.match(source, /打开云端牌组弹窗\(true\)/);
+  assert.match(source, /打开云端牌组弹窗\(\)/);
   assert.match(source, /标记已完成云端牌组引导/);
   assert.match(source, /显示欢迎弹窗一次\(\)/);
   assert.match(source, /if \(this\.显示云端牌组弹窗\)/);
-  assert.match(source, /if \(this\.云端牌组忙碌\) return true/);
+  assert.match(source, /if \(this\.显示云端牌组弹窗\) \{\s*return true;/);
+  assert.doesNotMatch(source, /关闭云端牌组弹窗/);
 });
 
 test('home downloads and imports selected cloud decks sequentially through the existing backend', () => {
@@ -201,13 +182,23 @@ test('home downloads and imports selected cloud decks sequentially through the e
   assert.match(source, /failedIds/);
 });
 
-test('starting an onboarding download is persisted before the long-running import', () => {
+test('home cleans interrupted files before catalog loading and only completes after a successful import', () => {
   const source = read('../../entry/src/main/ets/pages/首页.ets');
   const downloadMethod = source.match(/private async 下载选中云端牌组\(\)[\s\S]*?\n  private async 从选择器导入牌组/)?.[0] ?? '';
-  const persistedAt = downloadMethod.indexOf('await 标记已完成云端牌组引导()');
-  const busyAt = downloadMethod.indexOf('this.云端牌组忙碌 = true');
-  const importAt = downloadMethod.indexOf('await 执行牌组导入(downloadedPath)');
-  assert.ok(persistedAt >= 0, 'onboarding choice should be persisted');
-  assert.ok(persistedAt < busyAt, 'persist before starting the long-running task');
-  assert.ok(persistedAt < importAt, 'persist before native import can terminate the process');
+  assert.doesNotMatch(downloadMethod, /标记已完成云端牌组引导/);
+  assert.match(source, /云端牌组服务实例\.清理残留下载\(context\.filesDir\)/);
+  assert.match(source, /private async 完成云端牌组首次引导\(\): Promise<void>/);
+  assert.match(source, /if \(this\.云端牌组成功ID列表\.length === 0/);
+  assert.match(source, /const 已保存: boolean = await 标记已完成云端牌组引导\(\)/);
+  assert.match(source, /if \(!已保存\)/);
+  assert.match(source, /this\.显示云端牌组弹窗 = false/);
+  assert.match(source, /onEnter:[\s\S]*完成云端牌组首次引导\(\)/);
+});
+
+test('cloud deck retries preserve earlier successful imports and select only failures', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  const downloadMethod = source.match(/private async 下载选中云端牌组\(\)[\s\S]*?\n  private async 从选择器导入牌组/)?.[0] ?? '';
+  assert.match(downloadMethod, /const successIds: string\[\] = this\.云端牌组成功ID列表\.concat\(\[\]\)/);
+  assert.match(downloadMethod, /if \(successIds\.indexOf\(deck\.id\) < 0\) \{/);
+  assert.match(downloadMethod, /this\.云端牌组选中ID列表 = failedIds\.concat\(\[\]\)/);
 });

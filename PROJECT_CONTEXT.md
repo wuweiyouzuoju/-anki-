@@ -63,7 +63,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 统计页 | `entry/src/main/ets/pages/统计页.ets` + `entry/src/main/ets/components/stats/` | NavDestination；阶段状态机 loading→data/error（切换牌组重载时保留旧图表不闪空）；13 个图表分区对齐 Anki 14 图（难度/难度系数互斥合一，稳定度/记忆率仅 FSRS 显示）；顶部条内嵌牌组选择下拉（全库=空搜索串，选中牌组传 `deck:"全名"`）；桌面卡片快照仅全库口径刷新 |
 | 统计图表组件 | `entry/src/main/ets/components/stats/*.ets` | 纯展示层；@Prop 数据 + @StorageProp 主题色；**build 方法必须单根 Column**（if/else 分支 + @Builder 渲染内容）；@Builder 内不能写 const/let，数据通过参数传入；颜色/分箱走 `model/统计色板.ets`（d3 色带插值）与 `model/统计分箱.ets`（d3 ticks/nice/分位）纯函数 |
 | 媒体管理面板 | `entry/src/main/ets/components/settings/媒体管理面板.ets` | Stack 遮罩+面板；持有 媒体服务 实例直接调后端；检查中/处理中防重入；清空回收站需二次确认 |
-| 云端牌组下载 | `model/{云端牌组模型,云端牌组配置,云端牌组引导存储}.*` + `backend/云端牌组服务.ets` + `components/{导入来源弹窗,云端牌组弹窗}.ets` + `pages/首页.ets` | 公开 HTTPS JSON 目录；系统下载代理直写 `filesDir/cloud-decks`；首页串行下载后复用 `执行牌组导入` 自动安装；目录地址为空时友好降级，不影响本地导入 |
+| 云端牌组下载 | `model/{云端牌组模型,云端牌组配置,云端牌组引导存储}.*` + `backend/云端牌组服务.ets` + `components/云端牌组弹窗.ets` + `pages/首页.ets` | 新用户及首次升级用户仅展示一次强制引导；至少成功导入一个牌组后才落盘固定代际标记并进入首页；系统下载代理先写 `filesDir/cloud-decks/*.part`，校验后改名并在导入后清理；后续“导入牌组”只走本地文件选择器 |
 | 卡片预览页 | `entry/src/main/ets/components/browser/卡片预览页.ets` | Web 组件复用 卡片渲染服务；支持翻面 + 左右滑切上下张；底部"编辑字段"进浏览编辑区 |
 
 ## 常见任务路由

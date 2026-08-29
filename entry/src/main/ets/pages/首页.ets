@@ -12,7 +12,6 @@ import { 设置面板 } from '../components/设置面板';
 import { 牌组详情面板 } from '../components/牌组详情面板';
 import { 许可证面板 } from '../components/许可证面板';
 import { 主页操作面板 } from '../components/主页操作面板';
-import { 导入来源弹窗 } from '../components/导入来源弹窗';
 import { 云端牌组弹窗 } from '../components/云端牌组弹窗';
 import { 牌组定制面板, 牌组定制结果 } from '../components/牌组定制面板';
 import { 添加笔记页, 添加笔记页参数, 添加笔记牌组选项 } from './添加笔记页';
@@ -192,9 +191,7 @@ struct 首页 {
   private 上次牌组已恢复: boolean = false;
   // 首次启动欢迎弹窗：介绍基础操作/个性设置/作者的话，由 aboutToAppear → 显示欢迎弹窗一次 触发
   @State private 显示欢迎弹窗: boolean = false;
-  @State private 显示导入来源弹窗: boolean = false;
   @State private 显示云端牌组弹窗: boolean = false;
-  @State private 云端牌组首次引导: boolean = false;
   @State private 云端牌组加载中: boolean = false;
   @State private 云端牌组忙碌: boolean = false;
   @State private 云端牌组错误: string = '';
@@ -216,7 +213,7 @@ struct 首页 {
     this.恢复主题();
     this.恢复颜色主题();
     this.恢复今日进度卡开关();
-    // 新安装先提供可直接安装的云端牌组，再展示版本欢迎内容，避免两个全屏弹窗叠加。
+    // 首次进入先完成云端牌组选择与导入，再展示版本欢迎内容，避免两个全屏弹窗叠加。
     this.显示首次弹窗序列();
   }
 
@@ -224,7 +221,7 @@ struct 首页 {
   private async 显示首次弹窗序列(): Promise<void> {
     const 已完成: boolean = await 是否已完成云端牌组引导();
     if (!已完成) {
-      this.打开云端牌组弹窗(true);
+      this.打开云端牌组弹窗();
       return;
     }
     await this.显示欢迎弹窗一次();
@@ -277,11 +274,8 @@ struct 首页 {
     if (this.显示牌组选项) { this.显示牌组选项 = false; return true; }
     if (this.显示创建牌组) { this.显示创建牌组 = false; return true; }
     if (this.显示云端牌组弹窗) {
-      if (this.云端牌组忙碌) return true;
-      this.关闭云端牌组弹窗();
       return true;
     }
-    if (this.显示导入来源弹窗) { this.显示导入来源弹窗 = false; return true; }
     if (this.显示主页操作) { this.显示主页操作 = false; return true; }
     if (this.显示更多菜单) { this.显示更多菜单 = false; return true; }
     if (this.显示节流奖励) { this.显示节流奖励 = false; return true; }
@@ -1239,9 +1233,8 @@ struct 首页 {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(resource.id);
   }
 
-  /** 打开可复用的云端牌组弹窗，并重置上一次临时任务状态。 */
-  private 打开云端牌组弹窗(onboarding: boolean): void {
-    this.云端牌组首次引导 = onboarding;
+  /** 打开一次性云端牌组引导，并重置上一次临时任务状态。 */
+  private 打开云端牌组弹窗(): void {
     this.显示云端牌组弹窗 = true;
     this.云端牌组选中ID列表 = [];
     this.云端牌组成功ID列表 = [];
@@ -1259,6 +1252,10 @@ struct 首页 {
     this.云端牌组加载中 = true;
     this.云端牌组错误 = '';
     try {
+      const context: common.UIAbilityContext | null = this.取能力上下文();
+      if (context !== null) {
+        this.云端牌组服务实例.清理残留下载(context.filesDir);
+      }
       const catalog: 云端牌组目录 = await this.云端牌组服务实例.加载目录();
       this.云端牌组列表 = catalog.decks;
     } catch (error) {
@@ -1270,16 +1267,17 @@ struct 首页 {
     }
   }
 
-  /** 关闭首次引导时落盘，并继续尚未展示的版本欢迎弹窗。 */
-  private async 关闭云端牌组弹窗(): Promise<void> {
+  /** 至少一个牌组成功导入且完成标记落盘后，才允许进入首页。 */
+  private async 完成云端牌组首次引导(): Promise<void> {
     if (this.云端牌组忙碌) return;
-    const wasOnboarding: boolean = this.云端牌组首次引导;
-    this.显示云端牌组弹窗 = false;
-    this.云端牌组首次引导 = false;
-    if (wasOnboarding) {
-      await 标记已完成云端牌组引导();
-      await this.显示欢迎弹窗一次();
+    if (this.云端牌组成功ID列表.length === 0) return;
+    const 已保存: boolean = await 标记已完成云端牌组引导();
+    if (!已保存) {
+      this.显示提示($r('app.string.cloud_deck_save_failed'));
+      return;
     }
+    this.显示云端牌组弹窗 = false;
+    await this.显示欢迎弹窗一次();
   }
 
   private 切换云端牌组选择(deckId: string): void {
@@ -1322,19 +1320,13 @@ struct 首页 {
     }
     if (selectedDecks.length === 0) return;
 
-    // 用户已在首次引导中主动开始安装；先持久化选择，避免超大牌组导入期间进程退出后再次阻塞在引导页。
-    if (this.云端牌组首次引导) {
-      await 标记已完成云端牌组引导();
-    }
-
     const oldDeckIds: Set<string> = new Set(this.主页快照数据.decks.map(
       (deck: 牌组汇总): string => deck.id));
-    const successIds: string[] = [];
+    const successIds: string[] = this.云端牌组成功ID列表.concat([]);
     const failedIds: string[] = [];
     this.云端牌组忙碌 = true;
     this.云端牌组任务数 = selectedDecks.length;
     this.云端牌组已处理数 = 0;
-    this.云端牌组成功ID列表 = [];
     this.云端牌组失败ID列表 = [];
 
     try {
@@ -1354,7 +1346,9 @@ struct 首页 {
           this.云端牌组当前阶段 = 'importing';
           this.云端牌组进度 = 100;
           await 执行牌组导入(downloadedPath);
-          successIds.push(deck.id);
+          if (successIds.indexOf(deck.id) < 0) {
+            successIds.push(deck.id);
+          }
           this.云端牌组成功ID列表 = successIds.concat([]);
         } catch (error) {
           failedIds.push(deck.id);
@@ -1378,9 +1372,7 @@ struct 首页 {
       this.云端牌组忙碌 = false;
       this.云端牌组当前阶段 = '';
       this.云端牌组选中ID列表 = failedIds.concat([]);
-      if (this.云端牌组首次引导) {
-        await 标记已完成云端牌组引导();
-      }
+      this.云端牌组服务实例.清理残留下载(context.filesDir);
       this.显示提示(failedIds.length > 0 ?
         $r('app.string.cloud_deck_install_partial') : $r('app.string.cloud_deck_install_complete'));
     }
@@ -2034,7 +2026,7 @@ struct 首页 {
             },
             导入牌组回调: (): void => {
               this.显示主页操作 = false;
-              this.显示导入来源弹窗 = true;
+              this.从选择器导入牌组();
             },
             关闭回调: (): void => {
               this.显示主页操作 = false;
@@ -2227,28 +2219,9 @@ struct 首页 {
           })
         }
 
-        if (this.显示导入来源弹窗) {
-          导入来源弹窗({
-            isDark: this.是否深色(),
-            busy: false,
-            onLocal: (): void => {
-              this.显示导入来源弹窗 = false;
-              this.从选择器导入牌组();
-            },
-            onCloud: (): void => {
-              this.显示导入来源弹窗 = false;
-              this.打开云端牌组弹窗(false);
-            },
-            onClose: (): void => {
-              this.显示导入来源弹窗 = false;
-            }
-          })
-        }
-
         if (this.显示云端牌组弹窗) {
           云端牌组弹窗({
             isDark: this.是否深色(),
-            onboarding: this.云端牌组首次引导,
             loading: this.云端牌组加载中,
             busy: this.云端牌组忙碌,
             errorMessage: this.云端牌组错误,
@@ -2270,8 +2243,8 @@ struct 首页 {
             onDownload: (): void => {
               this.下载选中云端牌组();
             },
-            onClose: (): void => {
-              this.关闭云端牌组弹窗();
+            onEnter: (): void => {
+              this.完成云端牌组首次引导();
             }
           })
         }
