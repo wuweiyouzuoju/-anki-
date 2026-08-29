@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { common } from '@kit.AbilityKit';
+import { bundleManager, common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -14,6 +14,10 @@ import { 牌组详情面板 } from '../components/牌组详情面板';
 import { 许可证面板 } from '../components/许可证面板';
 import { 主页操作面板 } from '../components/主页操作面板';
 import { 云端牌组弹窗 } from '../components/云端牌组弹窗';
+import { 官方公告弹窗 } from '../components/官方公告弹窗';
+import { 官方公告服务 } from '../backend/官方公告服务';
+import type { 官方公告展示项 } from '../model/官方公告模型';
+import { 是否已确认官方公告, 标记已确认官方公告 } from '../model/官方公告存储';
 import { 牌组定制面板, 牌组定制结果 } from '../components/牌组定制面板';
 import { 添加笔记页, 添加笔记页参数, 添加笔记牌组选项 } from './添加笔记页';
 import { 数据迁移意图, 数据迁移模式, 导出牌组选项 } from '../components/数据迁移面板';
@@ -79,6 +83,7 @@ import { 是否已完成云端牌组引导, 标记已完成云端牌组引导 } 
 import { 云端牌组目录, 云端牌组目录项 } from '../model/云端牌组模型';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { CustomTransition } from '../utils/自定义转场';
+import { 当前语言模式 } from '../model/语言存储';
 
 /** 窄屏详情页推栈参数：牌组 id 经 param 传递，页面内按 id 取最新快照数据 */
 interface 牌组详情页参数 {
@@ -95,6 +100,11 @@ struct 首页 {
   private readonly 统计服务实例: 统计服务 = new 统计服务();
   private readonly 牌组配置服务实例: 牌组配置服务 = new 牌组配置服务();
   private readonly 云端牌组服务实例: 云端牌组服务 = new 云端牌组服务();
+  private readonly 官方公告服务实例: 官方公告服务 = new 官方公告服务();
+  private 首次弹窗序列已启动: boolean = false;
+  @State private 显示官方公告: boolean = false;
+  @State private 官方公告数据: 官方公告展示项 | null = null;
+  @State private 官方公告确认中: boolean = false;
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
   // 笔记添加广播：添加笔记页保存成功后写 noteAddedTick = Date.now()，
   // 这里 @Watch 监听变化触发 加载主页数据，绕开 NavPathStack.onPop 偶发不触发的问题，
@@ -218,14 +228,68 @@ struct 首页 {
     this.显示首次弹窗序列();
   }
 
-  /** 首次云端牌组引导优先于版本欢迎弹窗。 */
+  /** 官方公告优先于首次云端牌组引导，云端牌组引导优先于版本欢迎弹窗。 */
   private async 显示首次弹窗序列(): Promise<void> {
-    const 已完成: boolean = await 是否已完成云端牌组引导();
-    if (!已完成) {
+    if (this.首次弹窗序列已启动) return;
+    this.首次弹窗序列已启动 = true;
+    const displayed: boolean = await this.尝试显示官方公告();
+    if (displayed) return;
+    await this.继续首次弹窗序列();
+  }
+
+  /** 拉取并判断官方公告；任何网络/协议/读档失败都静默跳过，最多阻塞启动约 2 秒。 */
+  private async 尝试显示官方公告(): Promise<boolean> {
+    try {
+      const info: bundleManager.BundleInfo = await bundleManager.getBundleInfoForSelf(
+        bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
+      const announcement: 官方公告展示项 | null = await this.官方公告服务实例.加载公告(
+        info.versionName, 当前语言模式(), Date.now());
+      if (announcement === null || await 是否已确认官方公告(announcement.id)) return false;
+      this.官方公告数据 = announcement;
+      this.显示官方公告 = true;
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  private async 继续首次弹窗序列(): Promise<void> {
+    const completed: boolean = await 是否已完成云端牌组引导();
+    if (!completed) {
       this.打开云端牌组弹窗();
       return;
     }
     await this.显示欢迎弹窗一次();
+  }
+
+  /** 只有「我知道了」写入已读并关闭；持久化失败仅提示，仍关闭并继续原启动序列。 */
+  private async 确认官方公告(): Promise<void> {
+    if (this.官方公告确认中 || this.官方公告数据 === null) return;
+    this.官方公告确认中 = true;
+    const saved: boolean = await 标记已确认官方公告(this.官方公告数据.id);
+    if (!saved) {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.official_announcement_save_failed')
+      });
+    }
+    this.显示官方公告 = false;
+    this.官方公告数据 = null;
+    this.官方公告确认中 = false;
+    await this.继续首次弹窗序列();
+  }
+
+  /** 详情地址只经系统浏览器打开，不渲染远端 HTML；打开失败保持公告打开。 */
+  private 打开官方公告详情(): void {
+    if (this.官方公告数据 === null || this.官方公告数据.actionUrl.length === 0) return;
+    const context: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    context.startAbility({
+      action: 'ohos.want.action.viewData',
+      uri: this.官方公告数据.actionUrl
+    }).catch((_error: Error): void => {
+      this.getUIContext().getPromptAction().showToast({
+        message: $r('app.string.official_announcement_open_failed')
+      });
+    });
   }
 
   // ========================================================
@@ -268,6 +332,9 @@ struct 首页 {
    * Extension Points: 新增弹窗时在此链中按层级插入对应 @State 判断。
    */
   onBackPress(): boolean {
+    if (this.显示官方公告) {
+      return true;
+    }
     if (this.显示数据迁移) { this.显示数据迁移 = false; return true; }
     if (this.显示牌组定制) { this.显示牌组定制 = false; return true; }
     if (this.显示自定义学习) { this.显示自定义学习 = false; return true; }
@@ -2263,6 +2330,17 @@ struct 首页 {
             onCopyQQGroup: (): void => {
               this.复制云端牌组QQ群号();
             }
+          })
+        }
+
+        // 官方启动公告：层级高于云端牌组引导与欢迎弹窗；返回键与遮罩不关闭，仅「我知道了」关闭
+        if (this.显示官方公告 && this.官方公告数据 !== null) {
+          官方公告弹窗({
+            announcement: this.官方公告数据,
+            isDark: this.是否深色(),
+            acknowledging: this.官方公告确认中,
+            onAcknowledge: (): void => { this.确认官方公告(); },
+            onOpenDetails: (): void => { this.打开官方公告详情(); }
           })
         }
 
