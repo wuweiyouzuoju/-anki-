@@ -1033,6 +1033,11 @@
     { "name": "cloud_deck_status_failed", "value": "Failed" },
     { "name": "cloud_deck_install_complete", "value": "Cloud decks imported" },
     { "name": "cloud_deck_install_partial", "value": "Some decks could not be imported. Select them again to retry." },
-    { "name": "cloud_deck_save_failed", "value": "Could not save completion. Please try again." }
+    { "name": "cloud_deck_save_failed", "value": "Could not save completion. Please try again." },
+    { "name": "official_announcement_published_at", "value": "Published %s" },
+    { "name": "official_announcement_acknowledge", "value": "Got it" },
+    { "name": "official_announcement_details", "value": "Learn more" },
+    { "name": "official_announcement_open_failed", "value": "Couldn't open announcement details. Please try again later." },
+    { "name": "official_announcement_save_failed", "value": "Read status couldn't be saved, so this may appear again next time." }
   ]
 }

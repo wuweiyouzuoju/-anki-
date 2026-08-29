@@ -34,3 +34,38 @@ test('announcement service performs one uncached two-second GET and always destr
   assert.match(source, /finally \{\s*client\.destroy\(\);/);
   assert.doesNotMatch(source, /setTimeout|retry|ClientSecret|accessToken/i);
 });
+
+test('announcement modal is native, themed, scrollable and non-dismissible', () => {
+  const source = read('../../entry/src/main/ets/components/官方公告弹窗.ets');
+  assert.match(source, /官方公告展示项/);
+  assert.match(source, /announcement\.title/);
+  assert.match(source, /announcement\.content/);
+  assert.match(source, /official_announcement_published_at/);
+  assert.match(source, /official_announcement_acknowledge/);
+  assert.match(source, /official_announcement_details/);
+  assert.match(source, /onAcknowledge/);
+  assert.match(source, /onOpenDetails/);
+  assert.match(source, /backgroundBlurStyle\(BlurStyle\.Thin/);
+  assert.match(source, /取全屏转场/);
+  assert.match(source, /edgeEffect\(EdgeEffect\.Spring\)/);
+  assert.doesNotMatch(source, /Web\(|RichText\(|onClose|\.onClick\(\(\) => this\.onAcknowledge/);
+});
+
+test('announcement fixed strings are aligned and translated', () => {
+  const zh = JSON.parse(read('../../entry/src/main/resources/base/element/string.json')).string;
+  const en = JSON.parse(read('../../entry/src/main/resources/en_US/element/string.json')).string;
+  const zhMap = new Map(zh.map((item) => [item.name, item.value]));
+  const enMap = new Map(en.map((item) => [item.name, item.value]));
+  const keys = [
+    'official_announcement_published_at',
+    'official_announcement_acknowledge',
+    'official_announcement_details',
+    'official_announcement_open_failed',
+    'official_announcement_save_failed',
+  ];
+  for (const key of keys) {
+    assert.ok(zhMap.has(key));
+    assert.ok(enMap.has(key));
+    assert.doesNotMatch(enMap.get(key), /[\u3400-\u9fff]/);
+  }
+});
