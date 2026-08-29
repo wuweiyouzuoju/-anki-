@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { common } from '@kit.AbilityKit';
+import { pasteboard } from '@kit.BasicServicesKit';
 import { promptAction } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { 后端会话 } from '../backend/后端会话';
@@ -1280,6 +1281,19 @@ struct 首页 {
     await this.显示欢迎弹窗一次();
   }
 
+  /** 点击首次引导中的 QQ 群提示时复制群号；复制结果通过本地化提示反馈。 */
+  private async 复制云端牌组QQ群号(): Promise<void> {
+    const groupNumber: string = '726837065';
+    try {
+      const data: pasteboard.PasteData =
+        pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, groupNumber);
+      await pasteboard.getSystemPasteboard().setData(data);
+      this.显示提示($r('app.string.about_qq_group_copied'));
+    } catch (error) {
+      this.显示提示($r('app.string.cloud_deck_qq_copy_failed', groupNumber));
+    }
+  }
+
   private 切换云端牌组选择(deckId: string): void {
     if (this.云端牌组忙碌 || this.云端牌组成功ID列表.indexOf(deckId) >= 0) return;
     const index: number = this.云端牌组选中ID列表.indexOf(deckId);
@@ -2245,6 +2259,9 @@ struct 首页 {
             },
             onEnter: (): void => {
               this.完成云端牌组首次引导();
+            },
+            onCopyQQGroup: (): void => {
+              this.复制云端牌组QQ群号();
             }
           })
         }

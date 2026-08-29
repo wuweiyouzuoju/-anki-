@@ -25,6 +25,7 @@ export struct 云端牌组弹窗 {
   onRetry: () => void = (): void => {};
   onDownload: () => void = (): void => {};
   onEnter: () => void = (): void => {};
+  onCopyQQGroup: () => void = (): void => {};
 
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景: string = '#2F5FD0';
@@ -60,7 +61,7 @@ export struct 云端牌组弹窗 {
           .borderRadius(应用尺寸.圆角_胶囊)
       }
 
-      Column({ space: 应用尺寸.间距_5 }) {
+      Column({ space: 应用尺寸.间距_4 }) {
         Row({ space: 应用尺寸.间距_8 }) {
           Text(deck.name)
             .fontSize(应用尺寸.字号_正文)
@@ -85,7 +86,7 @@ export struct 云端牌组弹窗 {
           Text(deck.description)
             .fontSize(应用尺寸.字号_正文_小)
             .fontColor($r('app.color.text_secondary'))
-            .maxLines(2)
+            .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
         }
@@ -110,7 +111,7 @@ export struct 云端牌组弹窗 {
       .layoutWeight(1)
     }
     .width('100%')
-    .padding(应用尺寸.卡片内边距)
+    .padding(应用尺寸.间距_8)
     .backgroundColor(this.已选中(deck.id) ? this.选中背景色 : $r('app.color.surface_page'))
     .border({
       width: 应用尺寸.卡片边框,
@@ -150,6 +151,12 @@ export struct 云端牌组弹窗 {
           .fontSize(应用尺寸.字号_正文_小)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
+
+        Text($r('app.string.cloud_deck_qq_group_entry', '726837065'))
+          .fontSize(应用尺寸.字号_说明)
+          .fontColor(this.动作主色)
+          .width('100%')
+          .onClick((): void => { this.onCopyQQGroup(); })
 
         if (this.loading) {
           Column({ space: 应用尺寸.间距_8 }) {
@@ -247,7 +254,7 @@ export struct 云端牌组弹窗 {
         .width('100%')
       }
       .width('90%')
-      .constraintSize({ maxWidth: 560, maxHeight: '88%' })
+      .constraintSize({ maxWidth: 560, maxHeight: '72%' })
       .padding(应用尺寸.间距_16)
       .backgroundColor($r('app.color.surface_card'))
       .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
