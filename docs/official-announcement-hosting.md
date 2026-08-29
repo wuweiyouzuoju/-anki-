@@ -1,49 +1,30 @@
-# 官方公告静态托管指南
+# 官方公告直链发布指南
 
-生产地址：
-`https://4001784660.cdn.123clouddisk.com/4001784660/jidecards/announcement.json`
+应用通过 123 云盘为 `announcement.json` 实际生成的公开 HTTPS 长链读取公告。不得根据 UID、目录名或 CDN 主域名自行拼接地址，客户端不得包含 Client ID、Client Secret、Token 或上传凭据。
 
-应用只读取公开 JSON；123 云盘 Client ID、Client Secret、Token 只能用于开发电脑或受控发布环境。
+## 首次接入：验证长链稳定性
+
+1. 在已开启直链的文件夹上传一个临时 JSON，并复制控制台实际生成的 HTTPS 长链。
+2. 使用同名替换上传内容不同的第二版文件。
+3. 再次请求第一步记录的原长链；只有原长链仍返回新内容，才证明它适合作为可更新公告源。
+4. 如果同名替换后长链变化，停止接入，改用已配置自定义域名的静态网页托管或其他稳定 URL 服务。
+
+任何上传、替换或删除操作都必须先取得操作时确认。
 
 ## 发布
 
-1. 从 `hosting/announcement.json` 复制工作文件。
-2. 发布公告时把 `announcement` 改为完整对象，并为每条新公告生成新 ID。
-3. `startsAt` 和 `expiresAt` 使用带时区的 ISO 8601；`actionUrl` 为空或为 HTTPS。
-4. 上传到 123 云盘 `/jidecards/announcement.json`，保持父目录直链已启用。
-5. 用下面命令验证公开内容；成功后才视为发布完成。
-
-```powershell
-$announcementUrl='https://4001784660.cdn.123clouddisk.com/4001784660/jidecards/announcement.json?v=' + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-$response=Invoke-WebRequest -Uri $announcementUrl -TimeoutSec 20
-if ($response.StatusCode -ne 200) { throw "announcement HTTP $($response.StatusCode)" }
-$document=$response.Content | ConvertFrom-Json
-if ($document.schemaVersion -ne 1) { throw 'announcement schema mismatch' }
-$document | ConvertTo-Json -Depth 4
-```
+1. 从 `hosting/announcement.json` 复制工作文件；正式文件保持在 5 KiB 以内。
+2. 每条不同公告使用全新的 `id`，配置开始/结束时间和应用版本范围。
+3. 普通直链模式下 `actionUrl` 保持为空；只有已配置自定义域名和 HTTPS 静态页面托管时才发布详情页。
+4. 同名替换生产 `announcement.json`，不要创建新的客户端 URL。
+5. 使用客户端配置的同一长链追加当前 10 分钟时间桶参数读回，确认 HTTP 200、`schemaVersion: 1` 和预期公告 ID。
+6. 若控制台提供直链缓存刷新，执行刷新后仍必须重新读回验证。
+7. 查看直链流量余额；公告拉取失败时客户端会静默降级。
 
 ## 停用与回滚
 
-发布 `{ "schemaVersion": 1, "announcement": null }` 可立即停用。若回滚到以前的公告文件，旧 ID 已在用户设备的最近 32 项记录中，不会重复展示；需要重新通知时必须发布新 ID。
+发布 `{ "schemaVersion": 1, "announcement": null }` 可停用公告。不得用旧 ID 表达另一条内容；需要再次通知时发布新 ID。同一设备确认过的最近 32 个 ID 不再展示。
 
-## 完整公告示例
+## 送达语义
 
-```json
-{
-  "schemaVersion": 1,
-  "announcement": {
-    "id": "20260829-01",
-    "enabled": true,
-    "titleZh": "官方公告",
-    "contentZh": "记得闪卡云端牌组服务现已开放。",
-    "titleEn": "Official announcement",
-    "contentEn": "Cloud decks are now available.",
-    "publishedAt": "2026-08-29T18:00:00+08:00",
-    "startsAt": "2026-08-29T18:00:00+08:00",
-    "expiresAt": "2026-09-30T23:59:59+08:00",
-    "minimumAppVersion": "2.0.0",
-    "maximumAppVersion": "",
-    "actionUrl": ""
-  }
-}
-```
+冷启动立即检查。发布后用户返回主页时，客户端立即检查或在上次检查满 10 分钟时补做一次；不会在主页持续轮询。离线、旧版 App、直链流量耗尽或 123 服务异常时不保证送达，恢复条件后需要再次冷启动或返回主页。

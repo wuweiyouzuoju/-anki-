@@ -135,8 +135,20 @@ test('home closes and continues even when acknowledgement persistence fails', ()
   assert.match(method, /await this\.继续首次弹窗序列\(\)/);
 });
 
-test('hosted announcement manifest starts disabled and matches schema v1', () => {
-  const manifest = JSON.parse(read('../../hosting/announcement.json'));
+test('hosted announcement manifest starts disabled, is small, and matches schema v1', () => {
+  const text = read('../../hosting/announcement.json');
+  const manifest = JSON.parse(text);
   assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.announcement, null);
+  assert.ok(Buffer.byteLength(text, 'utf8') <= 5 * 1024);
+});
+
+test('hosting guide requires an actual stable long link and ten-minute delivery window', () => {
+  const guide = read('../../docs/official-announcement-hosting.md');
+  assert.match(guide, /实际生成的 HTTPS 长链/);
+  assert.match(guide, /同名替换/);
+  assert.match(guide, /原长链仍返回新内容/);
+  assert.match(guide, /10 分钟/);
+  assert.match(guide, /5 KiB/);
+  assert.match(guide, /不得.*自行拼接/);
 });
