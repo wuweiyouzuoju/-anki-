@@ -18,6 +18,7 @@ test('解析云端牌组目录 accepts public and reserved redeem-code entries',
         accessType: 'public',
         downloadUrl: 'https://api.example.cn/download?id=english-basic&token=short',
         size: 1536,
+        cardCount: 14311,
       },
       {
         id: 'premium-demo',
@@ -35,8 +36,10 @@ test('解析云端牌组目录 accepts public and reserved redeem-code entries',
   assert.equal(catalog.decks.length, 2);
   assert.equal(catalog.decks[0].accessType, 'public');
   assert.equal(catalog.decks[0].size, 1536);
+  assert.equal(catalog.decks[0].cardCount, 14311);
   assert.equal(catalog.decks[1].accessType, 'redeem_code');
   assert.equal(catalog.decks[1].downloadUrl, '');
+  assert.equal(catalog.decks[1].cardCount, undefined);
 });
 
 test('解析云端牌组目录 accepts extensionless HTTPS links from third-party APIs', () => {
@@ -84,6 +87,14 @@ test('解析云端牌组目录 drops duplicate and unsafe entries', () => {
       {
         id: 'negative', name: 'Negative', description: '', version: '1', accessType: 'public',
         downloadUrl: 'https://cdn.example.cn/negative.apkg', size: -1,
+      },
+      {
+        id: 'zero-cards', name: 'Zero Cards', description: '', version: '1', accessType: 'public',
+        downloadUrl: 'https://cdn.example.cn/zero.apkg', size: 10, cardCount: 0,
+      },
+      {
+        id: 'fractional-cards', name: 'Fractional Cards', description: '', version: '1', accessType: 'public',
+        downloadUrl: 'https://cdn.example.cn/fractional.apkg', size: 10, cardCount: 1.5,
       },
     ],
   }));

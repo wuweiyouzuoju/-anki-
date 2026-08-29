@@ -13,6 +13,7 @@ export interface 云端牌组目录项 {
   downloadUrl: string;
   coverUrl?: string;
   size?: number;
+  cardCount?: number;
 }
 
 /** 当前应用支持的云端牌组目录。 */
@@ -30,6 +31,7 @@ interface 原始牌组目录项 {
   downloadUrl?: string;
   coverUrl?: string;
   size?: number;
+  cardCount?: number;
 }
 
 interface 原始云端牌组目录 {
@@ -49,6 +51,10 @@ function 是有效大小(size: number | undefined): boolean {
   return size === undefined || (Number.isInteger(size) && size >= 0);
 }
 
+function 是有效卡片数量(cardCount: number | undefined): boolean {
+  return cardCount === undefined || (Number.isInteger(cardCount) && cardCount > 0);
+}
+
 function 解析目录项(raw: 原始牌组目录项): 云端牌组目录项 | null {
   const id: string = typeof raw.id === 'string' ? raw.id.trim() : '';
   const name: string = typeof raw.name === 'string' ? raw.name.trim() : '';
@@ -57,7 +63,8 @@ function 解析目录项(raw: 原始牌组目录项): 云端牌组目录项 | nu
   const accessType: string = typeof raw.accessType === 'string' ? raw.accessType : '';
   const downloadUrl: string = typeof raw.downloadUrl === 'string' ? raw.downloadUrl.trim() : '';
 
-  if (!是安全牌组ID(id) || name.length === 0 || version.length === 0 || !是有效大小(raw.size)) {
+  if (!是安全牌组ID(id) || name.length === 0 || version.length === 0 || !是有效大小(raw.size) ||
+    !是有效卡片数量(raw.cardCount)) {
     return null;
   }
   if (accessType !== 'public' && accessType !== 'redeem_code') {
@@ -80,6 +87,9 @@ function 解析目录项(raw: 原始牌组目录项): 云端牌组目录项 | nu
   };
   if (raw.size !== undefined) {
     item.size = raw.size;
+  }
+  if (raw.cardCount !== undefined) {
+    item.cardCount = raw.cardCount;
   }
   if (typeof raw.coverUrl === 'string' && 是HTTPS地址(raw.coverUrl.trim())) {
     item.coverUrl = raw.coverUrl.trim();
