@@ -50,7 +50,7 @@ export struct 云端牌组弹窗 {
         Toggle({ type: ToggleType.Checkbox, isOn: this.已选中(deck.id) })
           .selectedColor(this.动作主色)
           .enabled(!this.busy && !this.已成功(deck.id))
-          .onChange((): void => { this.onToggle(deck.id); })
+          .hitTestBehavior(HitTestMode.None)
       } else {
         Text($r('app.string.cloud_deck_locked_badge'))
           .fontSize(应用尺寸.字号_说明)

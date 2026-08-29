@@ -15,6 +15,7 @@ export struct 导入来源弹窗 {
 
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.选中背景) private 选中背景色: string = '#E8EEFC';
+  @State private 按下来源: number = 0;
 
   build() {
     Stack() {
@@ -50,7 +51,7 @@ export struct 导入来源弹窗 {
           Text($r('app.string.import_source_local_title'))
             .fontSize(应用尺寸.字号_正文)
             .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
+            .fontColor(this.按下来源 === 1 ? this.动作主色 : $r('app.color.text_primary'))
             .width('100%')
           Text($r('app.string.import_source_local_description'))
             .fontSize(应用尺寸.字号_正文_小)
@@ -59,17 +60,25 @@ export struct 导入来源弹窗 {
         }
         .width('100%')
         .padding(应用尺寸.卡片内边距)
-        .backgroundColor($r('app.color.surface_page'))
-        .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
+        .backgroundColor(this.按下来源 === 1 ? this.选中背景色 : $r('app.color.surface_page'))
+        .border({ width: 应用尺寸.卡片边框,
+          color: this.按下来源 === 1 ? this.动作主色 : $r('app.color.border_subtle') })
         .borderRadius(应用尺寸.圆角_面板)
         .enabled(!this.busy)
-        .onClick((): void => { this.onLocal(); })
+        .onTouch((event: TouchEvent): void => {
+          if (event.type === TouchType.Down) this.按下来源 = 1;
+          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) this.按下来源 = 0;
+        })
+        .onClick((): void => {
+          this.按下来源 = 0;
+          this.onLocal();
+        })
 
         Column({ space: 应用尺寸.间距_5 }) {
           Text($r('app.string.import_source_cloud_title'))
             .fontSize(应用尺寸.字号_正文)
             .fontWeight(FontWeight.Bold)
-            .fontColor(this.动作主色)
+            .fontColor(this.按下来源 === 2 ? this.动作主色 : $r('app.color.text_primary'))
             .width('100%')
           Text($r('app.string.import_source_cloud_description'))
             .fontSize(应用尺寸.字号_正文_小)
@@ -78,11 +87,19 @@ export struct 导入来源弹窗 {
         }
         .width('100%')
         .padding(应用尺寸.卡片内边距)
-        .backgroundColor(this.选中背景色)
-        .border({ width: 应用尺寸.卡片边框, color: this.动作主色 })
+        .backgroundColor(this.按下来源 === 2 ? this.选中背景色 : $r('app.color.surface_page'))
+        .border({ width: 应用尺寸.卡片边框,
+          color: this.按下来源 === 2 ? this.动作主色 : $r('app.color.border_subtle') })
         .borderRadius(应用尺寸.圆角_面板)
         .enabled(!this.busy)
-        .onClick((): void => { this.onCloud(); })
+        .onTouch((event: TouchEvent): void => {
+          if (event.type === TouchType.Down) this.按下来源 = 2;
+          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) this.按下来源 = 0;
+        })
+        .onClick((): void => {
+          this.按下来源 = 0;
+          this.onCloud();
+        })
 
         Button($r('app.string.import_source_cancel'))
           .type(ButtonType.Normal)

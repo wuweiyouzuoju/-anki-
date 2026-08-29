@@ -1,0 +1,139 @@
+diff --git a/rslib/src/import_export/service.rs b/rslib/src/import_export/service.rs
+--- a/rslib/src/import_export/service.rs
++++ b/rslib/src/import_export/service.rs
+@@ -7,6 +7,23 @@ use anki_proto::import_export::ExportLimit;
+ use crate::prelude::*;
+ use crate::search::SearchNode;
+
++#[cfg(feature = "rustls")]
++fn compact_import_log(log: &mut NoteLog) {
++    for note in log
++        .new
++        .iter_mut()
++        .chain(log.updated.iter_mut())
++        .chain(log.duplicate.iter_mut())
++        .chain(log.conflicting.iter_mut())
++        .chain(log.first_field_match.iter_mut())
++        .chain(log.missing_notetype.iter_mut())
++        .chain(log.missing_deck.iter_mut())
++        .chain(log.empty_first_field.iter_mut())
++    {
++        note.fields.clear();
++    }
++}
++
+ impl crate::services::ImportExportService for Collection {
+     fn import_anki_package(
+         &mut self,
+@@ -98,9 +115,12 @@ impl crate::services::ImportExportService for Collection {
+
+ impl From<OpOutput<NoteLog>> for anki_proto::import_export::ImportResponse {
+     fn from(output: OpOutput<NoteLog>) -> Self {
++        let mut log = output.output;
++        #[cfg(feature = "rustls")]
++        compact_import_log(&mut log);
+         Self {
+             changes: Some(output.changes.into()),
+-            log: Some(output.output),
++            log: Some(log),
+         }
+     }
+ }
+@@ -141,6 +161,24 @@ mod tests {
+     use crate::services::ImportExportService;
+     use crate::tests::NoteAdder;
+
++    #[cfg(feature = "rustls")]
++    #[test]
++    fn compact_log_preserves_entries_and_discards_redundant_fields() {
++        let mut note = anki_proto::import_export::import_response::Note::default();
++        note.fields = vec!["front".into(), "back".into()];
++        let mut log = NoteLog {
++            new: vec![note],
++            found_notes: 1,
++            ..Default::default()
++        };
++
++        compact_import_log(&mut log);
++
++        assert_eq!(log.new.len(), 1);
++        assert!(log.new[0].fields.is_empty());
++        assert_eq!(log.found_notes, 1);
++    }
++
+     // --- From<ExportLimit> for SearchNode ---
+
+     #[test]
+diff --git a/rslib/src/import_export/package/apkg/import/notes.rs b/rslib/src/import_export/package/apkg/import/notes.rs
+--- a/rslib/src/import_export/package/apkg/import/notes.rs
++++ b/rslib/src/import_export/package/apkg/import/notes.rs
+@@ -14,5 +14,6 @@ use crate::import_export::package::UpdateCondition;
+ use crate::import_export::ImportError;
+ use crate::import_export::ImportProgress;
++use crate::import_export::LogNote;
+ use crate::import_export::NoteLog;
+ use crate::notes::UpdateNoteInnerWithoutCardsArgs;
+ use crate::notetype::ChangeNotetypeInput;
+@@ -21,6 +22,13 @@ use crate::prelude::*;
+ use crate::progress::ThrottlingProgressHandler;
+ use crate::text::replace_media_refs;
+
++fn into_apkg_log_note(note: Note) -> LogNote {
++    let mut log_note = note.into_log_note();
++    #[cfg(feature = "rustls")]
++    log_note.fields.clear();
++    log_note
++}
++
+ #[derive(Debug)]
+ struct NoteContext<'a> {
+     target_col: &'a mut Collection,
+@@ -51,12 +59,12 @@ pub(super) struct NoteImports {
+ impl NoteImports {
+     fn log_new(&mut self, note: Note, source_id: NoteId) {
+         self.id_map.insert(source_id, note.id);
+-        self.log.new.push(note.into_log_note());
++        self.log.new.push(into_apkg_log_note(note));
+     }
+
+     fn log_updated(&mut self, note: Note, source_id: NoteId) {
+         self.id_map.insert(source_id, note.id);
+-        self.log.updated.push(note.into_log_note());
++        self.log.updated.push(into_apkg_log_note(note));
+     }
+
+     fn log_duplicate(&mut self, mut note: Note, target_id: NoteId) {
+@@ -63,10 +71,10 @@ impl NoteImports {
+         // id is for looking up note in *target* collection
+         note.id = target_id;
+-        self.log.duplicate.push(note.into_log_note());
++        self.log.duplicate.push(into_apkg_log_note(note));
+     }
+
+     fn log_conflicting(&mut self, note: Note) {
+-        self.log.conflicting.push(note.into_log_note());
++        self.log.conflicting.push(into_apkg_log_note(note));
+     }
+ }
+
+@@ -628,6 +636,20 @@ mod test {
+     use crate::import_export::package::media::SafeMediaEntry;
+     use crate::notetype::CardTemplate;
+     use crate::notetype::NoteField;
++    use crate::tests::NoteAdder;
++
++    #[cfg(feature = "rustls")]
++    #[test]
++    fn compact_apkg_log_discards_fields_before_accumulation() {
++        let mut col = Collection::new();
++        let mut note = NoteAdder::basic(&mut col).note();
++        note.fields_mut()[0] = "large imported field".into();
++
++        let log_note = into_apkg_log_note(note);
++
++        assert!(log_note.id.is_some());
++        assert!(log_note.fields.is_empty());
++    }
+
+     #[derive(Default)]
+     struct ImportBuilder {

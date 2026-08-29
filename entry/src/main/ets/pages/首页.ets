@@ -1322,6 +1322,11 @@ struct 首页 {
     }
     if (selectedDecks.length === 0) return;
 
+    // 用户已在首次引导中主动开始安装；先持久化选择，避免超大牌组导入期间进程退出后再次阻塞在引导页。
+    if (this.云端牌组首次引导) {
+      await 标记已完成云端牌组引导();
+    }
+
     const oldDeckIds: Set<string> = new Set(this.主页快照数据.decks.map(
       (deck: 牌组汇总): string => deck.id));
     const successIds: string[] = [];

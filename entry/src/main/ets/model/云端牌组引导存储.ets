@@ -4,7 +4,8 @@ import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 
 const 存储名: string = 'jidecards_settings';
-const 引导完成键: string = 'cloud_deck_onboarding_completed';
+// v1 表示正式五牌组目录首次启用；避免沿用预配置测试包留下的完成标记。
+const 引导完成键: string = 'cloud_deck_onboarding_completed_v1';
 const 上下文键: string = 'abilityContext';
 
 function 取能力上下文(): common.UIAbilityContext | null {

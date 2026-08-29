@@ -16,7 +16,8 @@ test('cloud deck hosting has one replaceable catalog URL and no management crede
 
 test('first-launch cloud deck onboarding is persisted independently', () => {
   const source = read('../../entry/src/main/ets/model/云端牌组引导存储.ets');
-  assert.match(source, /cloud_deck_onboarding_completed/);
+  assert.match(source, /cloud_deck_onboarding_completed_v1/);
+  assert.doesNotMatch(source, /'cloud_deck_onboarding_completed'/);
   assert.match(source, /是否已完成云端牌组引导/);
   assert.match(source, /标记已完成云端牌组引导/);
   assert.match(source, /preferences\.getPreferences/);
@@ -93,6 +94,15 @@ test('import source modal offers local and software-cloud choices on the shared 
   assert.match(source, /取全屏转场时长/);
 });
 
+test('import source choices start neutral and only highlight while pressed', () => {
+  const source = read('../../entry/src/main/ets/components/导入来源弹窗.ets');
+  assert.match(source, /@State private 按下来源: number = 0/);
+  assert.match(source, /按下来源 === 1 \? this\.选中背景色 : \$r\('app\.color\.surface_page'\)/);
+  assert.match(source, /按下来源 === 2 \? this\.选中背景色 : \$r\('app\.color\.surface_page'\)/);
+  assert.match(source, /TouchType\.Down/);
+  assert.match(source, /TouchType\.Up \|\| event\.type === TouchType\.Cancel/);
+});
+
 test('cloud deck modal presents selectable public decks, locked future decks and download progress', () => {
   const source = read('../../entry/src/main/ets/components/云端牌组弹窗.ets');
   assert.match(source, /云端牌组目录项/);
@@ -106,6 +116,14 @@ test('cloud deck modal presents selectable public decks, locked future decks and
   assert.match(source, /ProgressType\.Linear/);
   assert.match(source, /onDownload/);
   assert.match(source, /backgroundBlurStyle\(BlurStyle\.Thin/);
+});
+
+test('each cloud deck tap uses exactly one toggle path', () => {
+  const source = read('../../entry/src/main/ets/components/云端牌组弹窗.ets');
+  const rowBuilder = source.match(/private 牌组行[\s\S]*?\n  build\(\)/)?.[0] ?? '';
+  assert.match(rowBuilder, /hitTestBehavior\(HitTestMode\.None\)/);
+  assert.doesNotMatch(rowBuilder, /\.onChange\(/);
+  assert.equal((rowBuilder.match(/this\.onToggle\(deck\.id\)/g) ?? []).length, 1);
 });
 
 test('cloud deck and import source strings are aligned and translated', () => {
@@ -156,4 +174,15 @@ test('home downloads and imports selected cloud decks sequentially through the e
   assert.match(source, /展开新导入牌组/);
   assert.match(source, /successIds/);
   assert.match(source, /failedIds/);
+});
+
+test('starting an onboarding download is persisted before the long-running import', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  const downloadMethod = source.match(/private async 下载选中云端牌组\(\)[\s\S]*?\n  private async 从选择器导入牌组/)?.[0] ?? '';
+  const persistedAt = downloadMethod.indexOf('await 标记已完成云端牌组引导()');
+  const busyAt = downloadMethod.indexOf('this.云端牌组忙碌 = true');
+  const importAt = downloadMethod.indexOf('await 执行牌组导入(downloadedPath)');
+  assert.ok(persistedAt >= 0, 'onboarding choice should be persisted');
+  assert.ok(persistedAt < busyAt, 'persist before starting the long-running task');
+  assert.ok(persistedAt < importAt, 'persist before native import can terminate the process');
 });

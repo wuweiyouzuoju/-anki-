@@ -11,6 +11,27 @@ $Workspace = Split-Path -Parent $PSScriptRoot
 $ReleaseArgs = @()
 if ($Profile -eq 'release') { $ReleaseArgs = @('--release') }
 
+# Mobile imports only consume summary counts, while upstream Anki keeps every
+# imported field in its result log. Apply the tracked, idempotent patch before
+# compiling so large APKG files do not retain and bridge a second full copy of
+# all note text. third_party/ is intentionally gitignored and may be recloned.
+$AnkiRoot = Join-Path $Workspace 'third_party\anki'
+$AnkiPatch = Join-Path $Workspace 'tools\patches\anki-compact-import-log.patch'
+if (-not (Test-Path $AnkiRoot)) {
+    throw 'third_party\anki is missing; clone the Anki source before building native code.'
+}
+& git -C $Workspace apply --check --reverse --directory=third_party/anki $AnkiPatch 2>$null
+if ($LASTEXITCODE -ne 0) {
+    & git -C $Workspace apply --check --directory=third_party/anki $AnkiPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Anki compact import-log patch does not apply to the current vendored source.'
+    }
+    & git -C $Workspace apply --directory=third_party/anki $AnkiPatch
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Failed to apply the Anki compact import-log patch.'
+    }
+}
+
 # Toolchain resolution: prefer JIDECARDS_TOOLCHAINS env var; fall back to the
 # bundled work\toolchains directory (offline toolchain shipped with the repo).
 # If neither exists, enter "external mode" — assume rustup/protoc/cargo-zigbuild/

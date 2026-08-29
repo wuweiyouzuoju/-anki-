@@ -51,3 +51,16 @@ test('Harmony product targets API 23 with API 21 floor set by ibest-ui dependenc
   assert.match(profile, /compatibleSdkVersion:\s*['"]6\.0\.1\(21\)['"]/);
   assert.match(profile, /targetSdkVersion:\s*['"]6\.1\.0\(23\)['"]/);
 });
+
+test('Harmony imports compact verbose note fields before crossing the native bridge', () => {
+  const patch = read('tools/patches/anki-compact-import-log.patch');
+  const buildScript = read('tools/build-native.ps1');
+
+  assert.match(patch, /fn compact_import_log/);
+  assert.match(patch, /fn into_apkg_log_note/);
+  assert.match(patch, /note\.fields\.clear\(\)/);
+  assert.match(patch, /log_note\.fields\.clear\(\)/);
+  assert.match(patch, /#\[cfg\(feature = "rustls"\)\]/);
+  assert.match(buildScript, /anki-compact-import-log\.patch/);
+  assert.match(buildScript, /git[\s\S]*apply[\s\S]*--check[\s\S]*--reverse/);
+});
