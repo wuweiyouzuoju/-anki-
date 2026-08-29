@@ -14,3 +14,23 @@ test('announcement acknowledgements use one bounded Preferences record', () => {
   assert.match(source, /await store\.flush\(\);\s*return true;/);
   assert.match(source, /catch \(error\) \{\s*return false;/);
 });
+
+test('announcement hosting has one public URL and no management credential', () => {
+  const source = read('../../entry/src/main/ets/model/官方公告配置.ts');
+  assert.match(source, /https:\/\/4001784660\.cdn\.123clouddisk\.com\/4001784660\/jidecards\/announcement\.json/);
+  assert.doesNotMatch(source, /(clientSecret|clientID|accessToken|refreshToken|password|管理密钥)/i);
+});
+
+test('announcement service performs one uncached two-second GET and always destroys the client', () => {
+  const source = read('../../entry/src/main/ets/backend/官方公告服务.ets');
+  assert.match(source, /from '@kit\.NetworkKit'/);
+  assert.match(source, /构建官方公告请求地址/);
+  assert.match(source, /http\.RequestMethod\.GET/);
+  assert.match(source, /http\.HttpDataType\.STRING/);
+  assert.match(source, /usingCache: false/);
+  assert.match(source, /connectTimeout: 2000/);
+  assert.match(source, /readTimeout: 2000/);
+  assert.match(source, /解析可展示官方公告/);
+  assert.match(source, /finally \{\s*client\.destroy\(\);/);
+  assert.doesNotMatch(source, /setTimeout|retry|ClientSecret|accessToken/i);
+});
