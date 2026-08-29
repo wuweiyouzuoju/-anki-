@@ -24,7 +24,7 @@ test('托管目录提供六个带准确卡片数量的公开牌组', async () =>
       { id: 'high-school-english-vocabulary', name: '高考英语词汇', size: 184166749, cardCount: 8453, accessType: 'public' },
       { id: 'middle-school-english-vocabulary', name: '中考英语词汇', size: 89582440, cardCount: 3305, accessType: 'public' },
       { id: 'ai-machine-learning', name: 'AI机器学习', size: 13955271, cardCount: 1450, accessType: 'public' },
-      { id: 'ai-computer-terms', name: 'AI计算机专业工具名词术语', size: 473723, cardCount: 1, accessType: 'public' },
+      { id: 'ai-computer-terms', name: 'AI计算机专业工具名词术语', size: 473723, cardCount: 2190, accessType: 'public' },
       { id: 'china-law-professional', name: '中国法律专业版', size: 1351898, cardCount: 2500, accessType: 'public' },
     ],
   );
