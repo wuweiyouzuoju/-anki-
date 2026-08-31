@@ -15,3 +15,8 @@
 - 做法：`AI制卡页` 处理 `draft_correction` 时保留已有 `正文`，仅追加换行并清除错误态；不改变 Runner 的有界循环、Provider 输入回放或 `propose_create_notes` 草稿边界。
 - 备选：为每个 Provider 轮次创建独立 AI 气泡，因会扩大消息索引、历史恢复和草稿归属改动，本次不采用。
 - 假设：同一个 AI 气泡承载一次用户请求的所有自动补救输出是现有交互约定；换行足以区分连续轮次。
+
+### 验证
+
+- 2026-08-31：新增 `draft correction keeps earlier visible model text instead of clearing the bubble` 回归测试；先在旧实现上确认失败，再以 `message.正文 += '\\n\\n'` 修复。
+- 聚焦 Agent 契约测试通过；完整 `npm test` 通过，699/699。
