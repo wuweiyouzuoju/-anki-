@@ -454,6 +454,9 @@ export class AgentRunner {
             name: '', argumentsJson: '', output: sanitizeAgentToolJson(result.outputJson, 32768).text
           });
           if (result.clarification !== null) {
+            if (this.cancelled) {
+              throw new AgentRunnerError('cancelled');
+            }
             return awaitingClarificationResult(result.clarification, providerCalls, toolCalls);
           }
         } catch (error) {
