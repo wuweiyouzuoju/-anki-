@@ -2,6 +2,8 @@
 
 import type { AgentToolCall, ChangeDraft, ToolRisk } from '../../model/agent/AgentTypes';
 import { toolRiskOf } from '../../model/agent/AgentPolicy';
+import type { AgentClarificationRequest } from '../../model/agent/AgentClarification';
+import { decodeAgentClarificationRequest } from '../../model/agent/AgentClarification';
 
 export interface AgentReadToolHandler {
   execute(argumentsJson: string): Promise<string>;
@@ -14,6 +16,7 @@ export interface AgentDraftToolHandler {
 export interface AgentToolResult {
   outputJson: string;
   draft: ChangeDraft | null;
+  clarification: AgentClarificationRequest | null;
 }
 
 export class AgentToolRegistryError extends Error {
@@ -56,6 +59,14 @@ export class AgentToolRegistry {
   }
 
   async execute(call: AgentToolCall): Promise<AgentToolResult> {
+    if (call.name === 'request_clarification') {
+      const clarification: AgentClarificationRequest = decodeAgentClarificationRequest(call.argumentsJson);
+      return {
+        outputJson: JSON.stringify({ status: 'awaiting_user', clarificationId: clarification.id }),
+        draft: null,
+        clarification: clarification
+      };
+    }
     const risk: ToolRisk = toolRiskOf(call.name);
     if (risk === 'read') {
       const handler: AgentReadToolHandler | undefined = this.readHandlers.get(call.name);
@@ -63,7 +74,7 @@ export class AgentToolRegistry {
         throw new AgentToolRegistryError('tool_unavailable');
       }
       const output: string = await handler.execute(call.argumentsJson);
-      return { outputJson: output, draft: null };
+      return { outputJson: output, draft: null, clarification: null };
     }
     if (risk === 'write') {
       const handler: AgentDraftToolHandler | undefined = this.draftHandlers.get(call.name);
@@ -71,7 +82,7 @@ export class AgentToolRegistry {
         throw new AgentToolRegistryError('tool_unavailable');
       }
       const draft: ChangeDraft = await handler.propose(call.argumentsJson);
-      return { outputJson: JSON.stringify(draft), draft: draft };
+      return { outputJson: JSON.stringify(draft), draft: draft, clarification: null };
     }
     if (risk === 'high_risk' && call.name.startsWith('propose_')) {
       const handler: AgentDraftToolHandler | undefined = this.highRiskDraftHandlers.get(call.name);
@@ -82,7 +93,7 @@ export class AgentToolRegistry {
       if (draft.risk !== 'high_risk') {
         throw new AgentToolRegistryError('tool_result_risk_mismatch');
       }
-      return { outputJson: JSON.stringify(draft), draft: draft };
+      return { outputJson: JSON.stringify(draft), draft: draft, clarification: null };
     }
     throw new AgentToolRegistryError('tool_blocked');
   }

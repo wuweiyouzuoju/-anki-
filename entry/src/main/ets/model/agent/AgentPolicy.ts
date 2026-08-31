@@ -33,6 +33,7 @@ export function toolRiskOf(toolName: string): ToolRisk {
     case 'search_cards':
     case 'list_decks':
     case 'web_search':
+    case 'request_clarification':
       return 'read';
     case 'propose_create_notes':
     case 'propose_update_notes':

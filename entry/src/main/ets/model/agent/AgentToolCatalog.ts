@@ -6,6 +6,8 @@ import type { AgentMode } from './AgentTypes';
 
 function exampleArgumentsFor(name: string): string {
   switch (name) {
+    case 'request_clarification':
+      return '{"clarificationId":"scope-1","question":"Choose one card organization.","options":[{"id":"one-per-fact","label":"One per fact","description":"More focused cards"},{"id":"chapter-summary","label":"Chapter summary","description":"Fewer cards"}],"recommendedOptionId":"one-per-fact","allowFreeText":true}';
     case 'get_note_type_capabilities': return '{"notetypeIds":[1]}';
     case 'get_note_context': return '{"cardIds":[1],"noteIds":[1]}';
     case 'search_cards': return '{"query":"deck:example","limit":20}';
@@ -30,6 +32,9 @@ function exampleArgumentsFor(name: string): string {
 }
 
 function rulesFor(name: string): string {
+  if (name === 'request_clarification') {
+    return 'Use only for blocking ambiguity. This tool must be called alone and never writes.';
+  }
   if (name === 'propose_create_notes') {
     return 'reason is allowed only at the top level. Every notes[] item may contain only fields. ' +
       'fields must follow the real note-type field order. Cloze markup is allowed only in backend-declared ' +
@@ -65,6 +70,9 @@ export function agentFunctionTools(batchLimit: number = 100, mode: AgentMode = '
   const createLimit: number = normalizeBatchLimit(batchLimit);
   const notes: string = `{"type":"array","minItems":1,"maxItems":${createLimit},"items":{"type":"object","properties":{"fields":{"type":"array","items":{"type":"string"}}},"required":["fields"],"additionalProperties":false}}`;
   const tools: ProviderFunctionTool[] = [
+    tool('request_clarification', '提出一个需要用户选择的澄清问题；只等待回答，绝不写入。',
+      '"clarificationId":{"type":"string","minLength":1,"maxLength":64},"question":{"type":"string","minLength":1,"maxLength":600},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"id":{"type":"string","minLength":1,"maxLength":64},"label":{"type":"string","minLength":1,"maxLength":80},"description":{"type":"string","maxLength":240}},"required":["id","label"],"additionalProperties":false}},"recommendedOptionId":{"type":"string","maxLength":64},"allowFreeText":{"type":"boolean"}',
+      '"clarificationId","question","options","allowFreeText"'),
     tool('get_note_type_capabilities', '读取笔记类型结构、字段与填空字段序号。',
       `"notetypeIds":${ID_ARRAY}`, '"notetypeIds"'),
     tool('get_note_context', '读取当前笔记、卡片、字段、标签、牌组和兄弟卡片。',
@@ -100,7 +108,7 @@ export function agentFunctionTools(batchLimit: number = 100, mode: AgentMode = '
   if (mode === 'edit') { return tools; }
   const createTools: ProviderFunctionTool[] = [];
   for (const value of tools) {
-    if (value.name === 'get_note_type_capabilities' || value.name === 'list_decks' ||
+    if (value.name === 'request_clarification' || value.name === 'get_note_type_capabilities' || value.name === 'list_decks' ||
       value.name === 'propose_create_notes') {
       createTools.push(value);
     }
