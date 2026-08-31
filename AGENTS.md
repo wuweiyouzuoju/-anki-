@@ -25,7 +25,7 @@
 
 ## 快速验证命令
 
-- Node 契约测试（316 个）：`npm test`
+- 完整 Node 契约测试：`npm test`
 - 工具链诊断：`npm run doctor`
 - Rust FFI 主机测试：`tools\build-native.ps1 -Target host-test`
 - 完整构建（Rust + ArkTS + HAP）：`npm run build:app`

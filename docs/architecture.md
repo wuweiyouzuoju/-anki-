@@ -9,7 +9,7 @@
 - **是什么**：鸿蒙手机/平板的本地卡片学习软件，独立品牌，AGPL-3.0-or-later
 - **复用什么**：Anki 26.05 的 Rust backend（`rslib`），通过 Node-API + 窄 C ABI 调用
 - **不复用什么**：不引入 Qt、Python、桌面 Add-on、mpv、桌面 LaTeX；不使用 Anki 商标
-- **当前阶段**：M8 本地学习闭环 Alpha（2026-07-18）；同步/浏览/统计/图像遮挡为 post-release
+- **当前阶段**：3.0.0 开发版本；学习、同步、浏览、统计、图像遮挡与应用内 AI Agent 已进入同一应用工程
 
 ## 2. 端到端调用链
 
@@ -93,7 +93,30 @@ Anki Rust backend IMPORT_ANKI_PACKAGE
 
 `model/云端牌组模型.ts` 是无 `@kit.*` 依赖的纯协议层；`model/云端牌组配置.ts` 是唯一托管目录配置点。客户端不保存托管管理凭据。该引导必须至少成功导入一个牌组才能完成，完成标记不随普通版本号变化；后续“新建牌组 → 导入牌组”直接使用本地文件选择器。详见 [cloud-deck-hosting.md](cloud-deck-hosting.md)。
 
-### 3.2 目录树
+### 3.2 AI 制卡/改卡 Agent
+
+Agent 位于 ArkTS 应用层，不修改 Anki Rust、protobuf、NAPI ABI 或数据库结构：
+
+```text
+AI 制卡 / AI 改卡入口
+  ↓ 用户发送消息后才请求 Provider
+AI制卡页.ets（会话、过程、来源、可编辑草稿）
+  ↓
+AgentRunner（有界 Responses/SSE 与工具循环）
+  ├─ ProviderProtocol（DeepSeek / OpenAI / Custom）
+  ├─ AgentToolCatalog（模型可见 JSON Schema 与标准调用模板）
+  └─ AgentScope（每轮重建的稳定 ID 授权范围）
+       ↓
+CardAgentTools / HighRiskAgentTools（只生成 ChangeDraft，不直接写库）
+       ↓ 用户确认；高风险再次确认；执行前检查 baseline
+AgentDraftExecutor（唯一写边界）
+       ↓
+既有 ArkTS Service → BackendSession → Anki Rust
+```
+
+模型只能调用工具目录公开的语义工具，不能访问裸 RPC、数据库、文件系统或 shell。普通写入一次确认，删除、笔记类型迁移、模板/CSS 等高风险写入两次确认；工具失败采用结构化诊断、有界纠错和重复失败熔断。搜索只有在 Provider 返回真实搜索事件与 HTTPS 来源时才被记录为成功。
+
+### 3.3 目录树
 
 ```
 jidecards/
@@ -233,7 +256,7 @@ StudyPage.aboutToAppear():
 
 | 测试类型 | 命令 | 覆盖范围 |
 | --- | --- | --- |
-| Node 契约测试 | `npm test` | 94 个测试：proto 编解码字节级 vector、Service 调用契约、StudyPage 完整链路、媒体 URL 重写、SoundPlayer 串行队列等 |
+| Node 契约测试 | `npm test` | proto 编解码、Service 调用、学习链路、AI Agent 协议/工具/安全/UI 契约等完整测试集 |
 | 工具链诊断 | `npm run doctor` | Rust 版本、SDK、ABI 目标、签名配置 |
 | Rust FFI 主机测试 | `tools\build-native.ps1 -Target host-test` | rsharmony 注册表 + Anki 26.05 真实 core 联调 |
 | 完整构建 | `npm run build:app` | Rust + OHOS + Hvigor 全链路 |
