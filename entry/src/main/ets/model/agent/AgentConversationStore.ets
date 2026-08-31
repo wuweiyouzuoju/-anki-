@@ -4,6 +4,9 @@ import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import type { AgentMode, AgentToolTrace, AgentToolTraceStatus, SearchSource } from './AgentTypes';
 import { sanitizeAgentToolJson } from './AgentToolDiagnostics';
+import type { AgentTaskSetup } from './AgentTaskContext';
+import type { AgentClarificationState, AgentClarificationView } from './AgentClarification';
+import { cloneAgentClarificationView } from './AgentClarification';
 
 const STORE_NAME: string = 'jidecards_ai_agent_history';
 const HISTORY_KEY: string = 'conversations_v1';
@@ -15,6 +18,9 @@ const MAX_AUDIT_TEXT_TOTAL: number = 200000;
 export interface AgentHistoryMessage {
   role: string;
   text: string;
+  kind: string;
+  clarification: AgentClarificationView | null;
+  expanded: boolean;
 }
 
 export interface AgentHistoryAudit extends AgentToolTrace {}
@@ -31,10 +37,80 @@ export interface AgentConversation {
   mode: AgentMode;
   title: string;
   updatedAt: number;
+  setup: AgentTaskSetup;
   messages: AgentHistoryMessage[];
   audits: AgentHistoryAudit[];
   sources: SearchSource[];
   results: AgentHistoryResult[];
+}
+
+function safeStringArray(values: string[] | undefined): string[] {
+  if (!Array.isArray(values)) { return []; }
+  const output: string[] = [];
+  for (const value of values.slice(0, 100)) {
+    if (typeof value === 'string') { output.push(sanitizeHistoryText(value)); }
+  }
+  return output;
+}
+
+function safeNumberArray(values: number[] | undefined): number[] {
+  if (!Array.isArray(values)) { return []; }
+  const output: number[] = [];
+  for (const value of values.slice(0, 100)) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      output.push(Math.max(0, Math.floor(value)));
+    }
+  }
+  return output;
+}
+
+function emptySetup(mode: AgentMode): AgentTaskSetup {
+  return {
+    mode: mode, deckId: 0, deckName: '', notetypeId: 0, notetypeName: '',
+    fieldNames: [], noteTypeKind: 0, clozeFieldOrds: [], expanded: true
+  };
+}
+
+function safeSetup(value: AgentTaskSetup | undefined, mode: AgentMode): AgentTaskSetup {
+  if (value === undefined || value === null || typeof value !== 'object') { return emptySetup(mode); }
+  return {
+    mode: value.mode === 'edit' ? 'edit' : mode,
+    deckId: typeof value.deckId === 'number' ? Math.max(0, Math.floor(value.deckId)) : 0,
+    deckName: sanitizeHistoryText(typeof value.deckName === 'string' ? value.deckName : ''),
+    notetypeId: typeof value.notetypeId === 'number' ? Math.max(0, Math.floor(value.notetypeId)) : 0,
+    notetypeName: sanitizeHistoryText(typeof value.notetypeName === 'string' ? value.notetypeName : ''),
+    fieldNames: safeStringArray(value.fieldNames),
+    noteTypeKind: typeof value.noteTypeKind === 'number' ? Math.max(0, Math.floor(value.noteTypeKind)) : 0,
+    clozeFieldOrds: safeNumberArray(value.clozeFieldOrds),
+    expanded: value.expanded !== false
+  };
+}
+
+function safeClarificationState(value: string): AgentClarificationState {
+  if (value === 'submitting' || value === 'resolved' || value === 'submit_failed' || value === 'cancelled') {
+    return value;
+  }
+  return 'pending';
+}
+
+function safeClarification(value: AgentClarificationView | null | undefined): AgentClarificationView | null {
+  if (value === null || value === undefined || value.request === undefined ||
+    !Array.isArray(value.request.options)) { return null; }
+  const safe: AgentClarificationView = cloneAgentClarificationView(value);
+  safe.request.id = sanitizeHistoryText(safe.request.id);
+  safe.request.question = sanitizeHistoryText(safe.request.question);
+  safe.request.recommendedOptionId = sanitizeHistoryText(safe.request.recommendedOptionId);
+  safe.selectedOptionId = sanitizeHistoryText(safe.selectedOptionId);
+  safe.supplementalText = sanitizeHistoryText(safe.supplementalText);
+  safe.state = safeClarificationState(safe.state);
+  for (const option of safe.request.options.slice(0, 4)) {
+    option.id = sanitizeHistoryText(option.id);
+    option.label = sanitizeHistoryText(option.label);
+    option.description = sanitizeHistoryText(option.description);
+  }
+  safe.request.options = safe.request.options.slice(0, 4);
+  safe.expanded = safe.state === 'pending' || safe.state === 'submit_failed';
+  return safe;
 }
 
 function getContext(): common.UIAbilityContext | null {
@@ -110,7 +186,13 @@ function safeConversation(value: AgentConversation): AgentConversation {
   const messages: AgentHistoryMessage[] = [];
   for (const message of value.messages.slice(-MAX_MESSAGES)) {
     if (message.role === 'user' || message.role === 'assistant') {
-      messages.push({ role: message.role, text: sanitizeHistoryText(message.text) });
+      const clarification: AgentClarificationView | null = safeClarification(message.clarification);
+      messages.push({
+        role: message.role, text: sanitizeHistoryText(message.text),
+        kind: message.kind === 'clarification' ? 'clarification' : 'normal',
+        clarification: clarification,
+        expanded: clarification === null ? message.expanded === true : clarification.expanded
+      });
     }
   }
   const audits: AgentHistoryAudit[] = [];
@@ -140,6 +222,7 @@ function safeConversation(value: AgentConversation): AgentConversation {
   return {
     id: sanitizeHistoryText(value.id), mode: value.mode,
     title: sanitizeHistoryText(value.title), updatedAt: value.updatedAt,
+    setup: safeSetup(value.setup, value.mode),
     messages: messages, audits: audits, sources: sources, results: results
   };
 }

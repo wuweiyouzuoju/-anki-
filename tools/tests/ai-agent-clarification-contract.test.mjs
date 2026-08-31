@@ -16,6 +16,11 @@ import { AgentToolSchemaError } from '../../entry/src/main/ets/model/agent/Agent
 import { AgentToolRegistry } from '../../entry/src/main/ets/backend/agent/AgentToolRegistry.ets';
 import { agentFunctionTools } from '../../entry/src/main/ets/model/agent/AgentToolCatalog.ts';
 import { toolRiskOf } from '../../entry/src/main/ets/model/agent/AgentPolicy.ts';
+import {
+  buildAgentTaskProviderText,
+  buildAgentTaskVisibleText,
+  evaluateAgentReadiness,
+} from '../../entry/src/main/ets/model/agent/AgentTaskContext.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
@@ -144,4 +149,36 @@ test('clarification answer text contains the question, selected option and suppl
   assert.match(text, /请包含例题/);
   assert.equal(buildClarificationAnswerVisibleText(answer), '每个知识点一张\n请包含例题');
   assert.equal(buildClarificationAnswerVisibleText({ ...answer, supplementalText: '' }), '每个知识点一张');
+});
+
+test('create readiness requires deck, note type capability, text and provider', () => {
+  const base = { mode: 'create', deckId: 0, deckName: '', notetypeId: 0,
+    notetypeName: '', fieldNames: [], noteTypeKind: 0, clozeFieldOrds: [], expanded: true };
+  assert.equal(evaluateAgentReadiness(base, '', true), 'missing_deck');
+  assert.equal(evaluateAgentReadiness({ ...base, deckId: 1 }, '', true), 'missing_notetype');
+  assert.equal(evaluateAgentReadiness({ ...base, deckId: 1, notetypeId: 2,
+    fieldNames: ['文字'] }, '', true), 'missing_input');
+  assert.equal(evaluateAgentReadiness({ ...base, deckId: 1, notetypeId: 2,
+    fieldNames: ['文字'] }, '请制卡', false), 'missing_provider');
+  assert.equal(evaluateAgentReadiness({ ...base, deckId: 1, notetypeId: 2,
+    fieldNames: ['文字'] }, '请制卡', true, true), 'busy');
+});
+
+test('task payload preserves stable capability while visible text omits IDs', () => {
+  const snapshot = {
+    mode: 'create', deckId: 11, deckName: '世界史', notetypeId: 22,
+    notetypeName: '填空题', fieldNames: ['文字'], noteTypeKind: 1,
+    clozeFieldOrds: [0], userText: '提取年份', localContext: '无预选卡片',
+    omittedMedia: true, batchLimit: 20,
+  };
+  const provider = buildAgentTaskProviderText(snapshot);
+  assert.match(provider, /"deckId":11/);
+  assert.match(provider, /"notetypeId":22/);
+  assert.match(provider, /提取年份/);
+  assert.match(provider, /二进制媒体未发送/);
+  const visible = buildAgentTaskVisibleText(snapshot);
+  assert.match(visible, /世界史/);
+  assert.match(visible, /填空题/);
+  assert.match(visible, /提取年份/);
+  assert.doesNotMatch(visible, /11|22|deckId|notetypeId/);
 });
