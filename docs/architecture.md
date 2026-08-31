@@ -124,9 +124,9 @@ jidecards/
 │   └── tests/*.test.mjs           16 个 Node 契约测试
 ├── docs/                          文档
 │   ├── DEVELOPMENT_PLAN.md        6 阶段开发计划（实施依据）
-│   ├── IMPLEMENTATION_STATUS.md   阶段门状态
-│   ├── DEBUGGING_GUIDE.md         调试指南
-│   ├── SERVICE_EXTENSION_GUIDE.md ServiceExtension 指南
+│   ├── cloud-deck-hosting.md      云端牌组托管说明
+│   ├── official-announcement-hosting.md 官方公告托管说明
+│   ├── superpowers/               功能 plan / spec 文档
 │   └── architecture.md            本文件
 ├── Cargo.toml / Cargo.lock        Rust 工作区
 ├── build-profile.json5            Hvigor 构建配置
@@ -262,8 +262,5 @@ StudyPage.aboutToAppear():
 ## 10. 进一步阅读
 
 - [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) — 6 阶段实施计划与验收门
-- [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — 当前阶段门状态
-- [DEBUGGING_GUIDE.md](DEBUGGING_GUIDE.md) — 调试与故障定位
-- [SERVICE_EXTENSION_GUIDE.md](SERVICE_EXTENSION_GUIDE.md) — ServiceExtension 配置
 - Anki 上游：[third_party/anki/rslib/src/](../third_party/anki/rslib/src/)
 - Proto 定义：[third_party/anki/proto/anki/](../third_party/anki/proto/anki/)

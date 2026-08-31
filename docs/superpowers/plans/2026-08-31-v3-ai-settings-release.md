@@ -8,6 +8,8 @@
 
 **Tech Stack:** ArkTS、ArkUI、HarmonyOS AppScope/Resource、Preferences、Asset Store、Node contract tests、hvigor。
 
+**执行结果（2026-08-31）：** Tasks 1-4 的产品改动和验证均已完成。按 TDD 先得到预期 RED，再完成 GREEN；定向契约 45/45、全量测试 632/632、完整 Rust+ArkTS 构建成功，签名 HAP 已用 `install -r` 覆盖安装两台模拟器并完成视觉核对。截图异常额外修复为：DeepSeek reasoning 以纯文本续传、HTTP 错误保留状态码、推理区明确显示“思考过程”。工作区原本含大量未提交 Agent 基础改动，因此未执行计划中的批量提交步骤，避免把用户的既有修改混入提交。
+
 ## Global Constraints
 
 - 当前发布必须是 `versionName: '3.0.0'` 与 `versionCode: 3000`。

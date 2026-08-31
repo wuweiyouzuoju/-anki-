@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "announcement": {
-    "id": "20260829-v2.3.3-release",
+    "id": "20260831-v3.0.0-release",
     "enabled": true,
-    "titleZh": "记得闪卡 v2.3.3 更新",
-    "contentZh": "【新增】首次加入云端牌组下载。进入软件即可选择并下载 6 套牌组：CET 四六级词汇、高考英语词汇、中考英语词汇、AI 机器学习、AI 计算机专业工具名词术语和中国法律专业版；下载完成后会自动导入，不用再手动找文件。更多、更全的牌组可加入官方 QQ 群 726837065 获取。\n\n【新增】新增官方公告。以后重要更新和通知会在首页及时送达，点击“我知道了”后，同一条公告不会重复打扰。\n\n【新增】云端牌组会显示卡片数量、版本和文件大小，支持多选、下载进度和逐个导入；失败项目可以重试，已经成功导入的不会重复处理。\n\n【优化】AnkiWeb 同步页新增账号说明和免费注册链接，第一次使用同步更容易上手。\n\n【修复】修复部分图片在创建图片遮罩卡片时无法读取或格式识别失败的问题。",
-    "titleEn": "What's new in jidecards v2.3.3",
-    "contentEn": "[New] Cloud deck downloads are here for the first time. Choose from six decks when entering the app: CET-4/6 Vocabulary, Gaokao English Vocabulary, Zhongkao English Vocabulary, AI & Machine Learning, AI & Computer Tools and Terms, and Chinese Law Professional. Downloads are imported automatically. For more complete deck collections, join the official QQ group 726837065.\n\n[New] Official announcements are now available. Important updates and notices will arrive on Home. After you tap “Got it,” the same announcement will not appear again.\n\n[New] Cloud decks show card count, version, and file size, with multi-select, download progress, and sequential import. Failed items can be retried without processing successful imports again.\n\n[Improved] The AnkiWeb sync page now explains account requirements and links to free registration, making first-time setup easier.\n\n[Fixed] Fixed cases where images could not be read or correctly recognized when creating image occlusion cards.",
-    "publishedAt": "2026-08-29T00:00:00+08:00",
-    "startsAt": "2026-08-29T00:00:00+08:00",
+    "titleZh": "记得闪卡 v3.0.0 更新",
+    "contentZh": "【新增】AI 制卡升级为应用内智能体。它会读取当前选择的牌组与笔记类型，支持普通题、填空题和导入牌组的自定义笔记类型，并可一次生成多张可编辑草稿。\n\n【新增】加入独立的 AI 改卡。可以从首页、学习中的当前卡片或浏览器选中内容进入，通过对话修改字段、标签和牌组；删除、模板和笔记结构等高风险操作会显示精确影响并要求再次确认。\n\n【新增】支持联网搜索、来源和工具执行过程。AI 只有在你发送要求后才连接所选提供商，应用写入仍由本地受控工具完成。\n\n【优化】DeepSeek、OpenAI 与自定义提供商统一为下拉配置；DeepSeek 提供 Flash、Pro 与视觉实验模型，密钥仍加密保存在本机。\n\n【新增】保留云端牌组下载、官方公告、AnkiWeb 使用引导，以及图片遮罩读取与格式识别修复。更多牌组可加入官方 QQ 群 726837065 获取。",
+    "titleEn": "What's new in jidecards v3.0.0",
+    "contentEn": "[New] AI Card Creation is now an in-app agent. It reads the selected deck and note type, supports basic, cloze, and imported custom note types, and can produce multiple editable drafts in one request.\n\n[New] AI Card Editing is available from Home, the current study card, or selected Browser items. Use conversation to update fields, tags, and decks. Deletions, templates, and note-structure changes show their exact impact and require an additional confirmation.\n\n[New] Web search, sources, and tool activity are visible. The selected provider is contacted only after you send a request, while app writes remain controlled by local tools.\n\n[Improved] DeepSeek, OpenAI, and custom providers share one configuration flow. DeepSeek offers Flash, Pro, and the experimental vision model, while API keys remain encrypted on the device.\n\n[New] This release also retains cloud deck downloads, official announcements, AnkiWeb guidance, and image-occlusion reading and format fixes. Join the official QQ group 726837065 for more decks.",
+    "publishedAt": "2026-08-31T00:00:00+08:00",
+    "startsAt": "2026-08-31T00:00:00+08:00",
     "expiresAt": "2099-12-31T23:59:59+08:00",
-    "minimumAppVersion": "2.3.3",
-    "maximumAppVersion": "2.3.3",
+    "minimumAppVersion": "3.0.0",
+    "maximumAppVersion": "3.0.0",
     "actionUrl": ""
   }
 }

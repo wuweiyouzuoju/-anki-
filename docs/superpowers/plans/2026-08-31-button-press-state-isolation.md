@@ -1,5 +1,7 @@
 # Button Press State Isolation Implementation Plan
 
+> **SUPERSEDED (2026-08-31):** The `stateEffect(false)` diagnosis and its screenshot-based validation were disproved. Use `2026-08-31-focus-theme-and-press-state-recovery.md`; this file remains only as an audit trail of the abandoned attempt.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove native Button press-effect flashes so settings help buttons stay transparent and only the touched study action button receives the custom blue highlight.
@@ -31,7 +33,7 @@
 - Consumes: ArkTS source text and the existing `field_help_button`, `BURY_RATING_TAG`, `SUSPEND_RATING_TAG`, and `RATING_*` button declarations.
 - Produces: A source-contract test that fails until every affected `Button` explicitly calls `.stateEffect(false)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```javascript
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -85,7 +87,7 @@ test('study action buttons disable native effects and keep one custom pressed st
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -112,7 +114,7 @@ Expected: both tests fail because the affected buttons do not yet contain `.stat
 - Consumes: `ButtonAttribute.stateEffect(value: boolean)` from the installed HarmonyOS SDK.
 - Produces: Buttons whose only visible pressed background is the application's existing custom state.
 
-- [ ] **Step 1: Apply the minimal production change**
+- [x] **Step 1: Apply the minimal production change**
 
 For every settings help button, retain the current type and add:
 
@@ -130,7 +132,7 @@ For bury, suspend, Again, Hard, Good, and Easy, add immediately after each `Butt
 
 Do not alter the existing `.backgroundColor(...)`, `.onTouch(...)`, or `.onClick(...)` chains.
 
-- [ ] **Step 2: Run the focused test and verify GREEN**
+- [x] **Step 2: Run the focused test and verify GREEN**
 
 Run:
 
@@ -140,7 +142,7 @@ node --experimental-transform-types --import ./tools/tests/register-ts-hook.mjs 
 
 Expected: 2 tests pass, 0 fail.
 
-- [ ] **Step 3: Inspect the scoped diff**
+- [x] **Step 3: Inspect the scoped diff**
 
 Run:
 
@@ -161,7 +163,7 @@ Expected: no whitespace errors. Do not stage the dirty production files as whole
 - Consumes: the complete repository test suite, Rust/ArkTS build pipeline, and connected HarmonyOS devices.
 - Produces: a signed HAP with the isolated press behavior and recorded verification evidence.
 
-- [ ] **Step 1: Run all contract tests**
+- [x] **Step 1: Run all contract tests**
 
 Run:
 
@@ -171,7 +173,7 @@ npm test
 
 Expected: all tests pass with no failures.
 
-- [ ] **Step 2: Build the signed application**
+- [x] **Step 2: Build the signed application**
 
 Run:
 
@@ -181,7 +183,7 @@ npm run build:app
 
 Expected: Rust targets and ArkTS type checking succeed; `entry-default-signed.hap` is produced.
 
-- [ ] **Step 3: Cover-install on every online device**
+- [x] **Step 3: Cover-install on every online device**
 
 Run `hdc list targets`, then for each returned target:
 
@@ -191,7 +193,7 @@ hdc -t <target> install -r entry/build/default/outputs/default/entry-default-sig
 
 Expected: successful replacement install. Never run uninstall.
 
-- [ ] **Step 4: Verify visible behavior**
+- [x] **Step 4: Verify visible behavior**
 
 On an interactive online device:
 
