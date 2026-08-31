@@ -63,7 +63,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 统计页 | `entry/src/main/ets/pages/统计页.ets` + `entry/src/main/ets/components/stats/` | NavDestination；阶段状态机 loading→data/error（切换牌组重载时保留旧图表不闪空）；13 个图表分区对齐 Anki 14 图（难度/难度系数互斥合一，稳定度/记忆率仅 FSRS 显示）；顶部条内嵌牌组选择下拉（全库=空搜索串，选中牌组传 `deck:"全名"`）；桌面卡片快照仅全库口径刷新 |
 | 统计图表组件 | `entry/src/main/ets/components/stats/*.ets` | 纯展示层；@Prop 数据 + @StorageProp 主题色；**build 方法必须单根 Column**（if/else 分支 + @Builder 渲染内容）；@Builder 内不能写 const/let，数据通过参数传入；颜色/分箱走 `model/统计色板.ets`（d3 色带插值）与 `model/统计分箱.ets`（d3 ticks/nice/分位）纯函数 |
 | 媒体管理面板 | `entry/src/main/ets/components/settings/媒体管理面板.ets` | Stack 遮罩+面板；持有 媒体服务 实例直接调后端；检查中/处理中防重入；清空回收站需二次确认 |
-| 云端牌组下载 | `model/{云端牌组模型,云端牌组配置,云端牌组引导存储}.*` + `backend/云端牌组服务.ets` + `components/云端牌组弹窗.ets` + `pages/首页.ets` | 新用户及首次升级用户仅展示一次强制引导；至少成功导入一个牌组后才落盘固定代际标记并进入首页；系统下载代理先写 `filesDir/cloud-decks/*.part`，校验后改名并在导入后清理；后续“导入牌组”只走本地文件选择器 |
+| 云端牌组下载 | `model/{云端牌组模型,云端牌组配置,云端牌组引导存储}.*` + `backend/云端牌组服务.ets` + `components/云端牌组弹窗.ets` + `pages/首页.ets` | 新用户及首次升级用户仅展示一次强制引导；至少成功导入 1 个、最多选择 3 个，选第 4 个时提示且不加入；顶部小字引导至官方 QQ 群 `726837065` 免费下载更多牌组文件；系统下载代理先写 `filesDir/cloud-decks/*.part`，校验后改名并在导入后清理；后续“导入牌组”只走本地文件选择器 |
 | 官方启动公告 | `model/{官方公告模型.ts,官方公告配置.ts,官方公告存储.ets}` + `backend/官方公告服务.ets` + `components/官方公告弹窗.ets` + `pages/首页.ets` | 纯模型负责协议校验/时间窗/版本范围/语言回退；NetworkKit 匿名 GET 使用 10 分钟 CDN 时间桶和独立 2 秒墙钟截止（`Promise.race` 总截止，connect/read 各 2s 兜底）；冷启动立即检查，回到前台或各导航目标返回主页时进入单请求/单延迟任务协调器（`返回主页后刷新`），10 分钟内不重复请求且不持续轮询；请求期间离开主页时暂存结果，返回主页后展示；Preferences `official_announcement_acknowledged_ids_v1` 保存最近 32 个已确认 ID，当前进程内存即时抑制已确认 ID，仅「我知道了」写入并 `flush()`；原生弹窗返回键与遮罩不可关闭；启动顺序固定 公告→云端牌组引导→版本欢迎；公开地址必须来自 123 实际生成且经同名替换验证的稳定 HTTPS 长链，不得自行拼接；客户端代码永远不含 123 云盘管理凭据 |
 | 卡片预览页 | `entry/src/main/ets/components/browser/卡片预览页.ets` | Web 组件复用 卡片渲染服务；支持翻面 + 左右滑切上下张；底部"编辑字段"进浏览编辑区 |
 
@@ -97,6 +97,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 
 ## 关键设计决策
 
+- **云端牌组采用分发版目录并限制三选**（2026-08-31）：目录固定为 CET四六级词汇、高考英语词汇、中考英语词汇、AI机器学习、IT计算机、中国法律专业版六项。软件显示名不带“（分发版）”，下载 URL 指向同名分发文件；不包含已从云盘删除的 AI for Science。中国法律专业版 APKG 的 `media` 为空，不含 MP3 或其他媒体。首次引导至少选择 1 个、最多选择 3 个，更多牌组文件可前往官方 QQ 群 `726837065` 免费下载。
 - **2.3.3 起版本更新改用云端官方公告**（2026-08-29）：旧欢迎弹窗保持静默，版本更新内容由 `hosting/announcement.json` 下发；弹窗沿用旧版磨砂背景、圆角卡片、淡入动画和 `【新增】/【优化】/【修复】` 文案格式，但只能点击“我知道了”确认关闭，同一公告 ID 不再重复显示。每个版本必须使用新 ID；2.3.3 首次发布云端牌组下载，更多、更全的牌组引导至官方 QQ 群 `726837065`
 - **语言切换**用 startAbility + terminateSelf 重启（`setAppPreferredLanguage` 全局重渲染会卡 UI）
 - **ThemeMode 与 ColorTheme 正交**（独立选择）
