@@ -130,6 +130,24 @@ test('each cloud deck tap uses exactly one toggle path', () => {
   assert.equal((rowBuilder.match(/this\.onToggle\(deck\.id\)/g) ?? []).length, 1);
 });
 
+test('home limits the initial cloud deck selection to three before downloading', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  assert.match(source, /const 云端牌组最多选择数量: number = 3;/);
+
+  const toggleMethod = source.match(
+    /private 切换云端牌组选择\(deckId: string\): void \{[\s\S]*?private 展开新导入牌组/,
+  )?.[0] ?? '';
+  assert.match(toggleMethod, /if \(index >= 0\)[\s\S]*return;/);
+  assert.match(toggleMethod,
+    /云端牌组选中ID列表\.length >= 云端牌组最多选择数量[\s\S]*cloud_deck_selection_limit[\s\S]*return;[\s\S]*concat\(\[deckId\]\)/);
+
+  const downloadMethod = source.match(
+    /private async 下载选中云端牌组\(\): Promise<void> \{[\s\S]*?private async 从选择器导入牌组/,
+  )?.[0] ?? '';
+  assert.match(downloadMethod,
+    /云端牌组选中ID列表\.length > 云端牌组最多选择数量[\s\S]*cloud_deck_selection_limit[\s\S]*return;/);
+});
+
 test('cloud deck and import source strings are aligned and translated', () => {
   const zh = JSON.parse(read('../../entry/src/main/resources/base/element/string.json')).string;
   const en = JSON.parse(read('../../entry/src/main/resources/en_US/element/string.json')).string;
@@ -140,7 +158,7 @@ test('cloud deck and import source strings are aligned and translated', () => {
     'cloud_deck_empty', 'cloud_deck_retry', 'cloud_deck_download',
     'cloud_deck_locked_badge', 'cloud_deck_status_success', 'cloud_deck_status_failed',
     'cloud_deck_enter', 'cloud_deck_meta_cards', 'cloud_deck_meta_cards_unknown_size',
-    'cloud_deck_qq_group_entry', 'cloud_deck_qq_copy_failed',
+    'cloud_deck_qq_group_entry', 'cloud_deck_qq_copy_failed', 'cloud_deck_selection_limit',
   ];
   for (const key of required) {
     assert.ok(zhMap.has(key), `missing base key ${key}`);
@@ -152,7 +170,10 @@ test('cloud deck and import source strings are aligned and translated', () => {
     '获取你的牌组',
   );
   assert.equal(zhMap.get('cloud_deck_onboarding_message'),
-    '首次进入可自由选择所需牌组，至少选择 1 个，下载后将自动导入。本次选择机会仅有一次，请按需选择。');
+    '首次进入至少选择 1 个、最多选择 3 个牌组，下载后将自动导入。本次选择机会仅有一次，请按需选择。');
+  assert.equal(zhMap.get('cloud_deck_qq_group_entry'),
+    '更多牌组文件可前往官方 QQ 群 %s 免费下载（点击复制）');
+  assert.equal(zhMap.get('cloud_deck_selection_limit'), '最多只能选择 %d 个牌组');
   assert.doesNotMatch(enMap.get('cloud_deck_onboarding_message'), /安装|导入|牌组|QQ群/);
   assert.deepEqual([...zhMap.keys()].sort(), [...enMap.keys()].sort());
 });

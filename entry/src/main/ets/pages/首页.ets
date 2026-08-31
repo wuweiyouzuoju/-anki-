@@ -92,6 +92,8 @@ interface 牌组详情页参数 {
   deckId?: string;
 }
 
+const 云端牌组最多选择数量: number = 3;
+
 @Entry
 @Component
 struct 首页 {
@@ -1448,9 +1450,13 @@ struct 首页 {
     if (index >= 0) {
       this.云端牌组选中ID列表 = this.云端牌组选中ID列表.filter(
         (id: string): boolean => id !== deckId);
-    } else {
-      this.云端牌组选中ID列表 = this.云端牌组选中ID列表.concat([deckId]);
+      return;
     }
+    if (this.云端牌组选中ID列表.length >= 云端牌组最多选择数量) {
+      this.显示提示($r('app.string.cloud_deck_selection_limit', 云端牌组最多选择数量));
+      return;
+    }
+    this.云端牌组选中ID列表 = this.云端牌组选中ID列表.concat([deckId]);
   }
 
   /** 刷新导入后的主页，并展开这次新出现且含子牌组的父节点。 */
@@ -1471,6 +1477,10 @@ struct 首页 {
   /** 按选择顺序串行下载并导入，单项失败不阻断后续牌组。 */
   private async 下载选中云端牌组(): Promise<void> {
     if (this.云端牌组忙碌 || this.云端牌组选中ID列表.length === 0) return;
+    if (this.云端牌组选中ID列表.length > 云端牌组最多选择数量) {
+      this.显示提示($r('app.string.cloud_deck_selection_limit', 云端牌组最多选择数量));
+      return;
+    }
     const context: common.UIAbilityContext | null = this.取能力上下文();
     if (context === null) return;
 
