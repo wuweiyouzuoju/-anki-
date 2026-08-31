@@ -34,6 +34,7 @@ import { OpenAIAdapter } from './OpenAIAdapter';
 import { CustomAdapter } from './CustomAdapter';
 import { AgentToolRegistry, AgentToolResult } from './AgentToolRegistry';
 import { AgentToolSchemaError } from '../../model/agent/AgentToolSchemas';
+import type { AgentClarificationRequest } from '../../model/agent/AgentClarification';
 import {
   AgentToolFailureRecord,
   AgentToolFailureTracker,
@@ -47,7 +48,11 @@ export interface AgentRunObserver {
   onEvent(event: AgentEvent): void;
 }
 
+export type AgentRunStatus = 'completed' | 'awaiting_clarification';
+
 export interface AgentRunResult {
+  status: AgentRunStatus;
+  clarification: AgentClarificationRequest | null;
   drafts: ChangeDraft[];
   providerCalls: number;
   toolCalls: number;
@@ -129,6 +134,14 @@ function toolErrorJson(diagnostic: AgentToolDiagnostic, record: AgentToolFailure
     correction: correction
   };
   return sanitizeAgentToolJson(JSON.stringify(output), 16384).text;
+}
+
+function awaitingClarificationResult(clarification: AgentClarificationRequest,
+  providerCalls: number, toolCalls: number): AgentRunResult {
+  return {
+    status: 'awaiting_clarification', clarification: clarification,
+    drafts: [], providerCalls: providerCalls, toolCalls: toolCalls
+  };
 }
 
 function copyInput(item: ProviderInputItem): ProviderInputItem {
@@ -364,9 +377,46 @@ export class AgentRunner {
           collector.searchSources
         );
         observer.onEvent(simpleEvent('completed'));
-        return { drafts: drafts, providerCalls: providerCalls, toolCalls: toolCalls };
+        return {
+          status: 'completed', clarification: null,
+          drafts: drafts, providerCalls: providerCalls, toolCalls: toolCalls
+        };
       }
       appendRoundContinuation(request, collector);
+      const hasClarification: boolean = collector.toolCalls.some((call: AgentToolCall): boolean =>
+        call.name === 'request_clarification');
+      if (hasClarification && collector.toolCalls.length > 1) {
+        if (toolCalls + collector.toolCalls.length > this.limits.maxToolCalls) {
+          observer.onEvent(simpleEvent('error', '', 'agent_tool_limit'));
+          throw new AgentRunnerError('agent_tool_limit');
+        }
+        const output = JSON.stringify({
+          tool_error: 'clarification_must_be_only_tool',
+          message: 'request_clarification must be the only tool call in its provider round.',
+          correction: 'Call request_clarification alone, or finish ordinary tool work before asking the user.'
+        });
+        const diagnostic: AgentToolDiagnostic = {
+          code: 'clarification_must_be_only_tool', path: '',
+          message: 'request_clarification must be the only tool call in its provider round.',
+          receivedKeys: [], allowedKeys: [], validTemplateJson: ''
+        };
+        for (const call of collector.toolCalls) {
+          registerToolCallId(seenToolCallIds, call.id);
+          toolCalls += 1;
+          const startedTrace: AgentToolTrace = createStartedAgentToolTrace(call, providerCalls, toolCalls);
+          const failedTrace: AgentToolTrace = failAgentToolTrace(startedTrace, diagnostic, 1);
+          observer.onEvent(toolStatusEvent('tool_failed', call, failedTrace, diagnostic.code));
+          request.input.push({
+            kind: 'function_call', role: '', content: '', callId: call.id,
+            name: call.name, argumentsJson: call.argumentsJson, output: ''
+          });
+          request.input.push({
+            kind: 'function_call_output', role: '', content: '', callId: call.id,
+            name: '', argumentsJson: '', output: output
+          });
+        }
+        continue;
+      }
       const acceptedToolCalls: AgentToolCall[] = [];
       for (const call of collector.toolCalls) {
         if (!registerToolCallId(seenToolCallIds, call.id)) {
@@ -403,7 +453,16 @@ export class AgentRunner {
             kind: 'function_call_output', role: '', content: '', callId: call.id,
             name: '', argumentsJson: '', output: sanitizeAgentToolJson(result.outputJson, 32768).text
           });
+          if (result.clarification !== null) {
+            if (this.cancelled) {
+              throw new AgentRunnerError('cancelled');
+            }
+            return awaitingClarificationResult(result.clarification, providerCalls, toolCalls);
+          }
         } catch (error) {
+          if (error instanceof AgentRunnerError && error.code === 'cancelled') {
+            throw error;
+          }
           const diagnostic: AgentToolDiagnostic = diagnosticForError(error as Object, call, request);
           const record: AgentToolFailureRecord = failureTracker.record(call.name, call.argumentsJson, diagnostic);
           const failedTrace: AgentToolTrace = failAgentToolTrace(startedTrace, diagnostic, record.count);

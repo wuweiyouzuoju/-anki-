@@ -1124,6 +1124,26 @@
     { "name": "ai_agent_tool_template", "value": "Valid arguments template" },
     { "name": "ai_agent_tool_repeat_count", "value": "Identical failure count: %s" },
     { "name": "ai_agent_tool_truncated", "value": "Some content was truncated by the safety size limit" },
-    { "name": "ai_agent_repeated_tool_failure", "value": "The model submitted the same invalid tool arguments three times, so this turn stopped early. Review the error path and valid template above." }
+    { "name": "ai_agent_repeated_tool_failure", "value": "The model submitted the same invalid tool arguments three times, so this turn stopped early. Review the error path and valid template above." },
+    { "name": "ai_agent_setup_title_create", "value": "Card setup" },
+    { "name": "ai_agent_setup_title_edit", "value": "Edit scope" },
+    { "name": "ai_agent_setup_instruction", "value": "Choose the settings, then paste study material or describe what to create below." },
+    { "name": "ai_agent_setup_ready", "value": "Ready" },
+    { "name": "ai_agent_setup_missing_deck", "value": "Choose a target deck" },
+    { "name": "ai_agent_setup_missing_notetype", "value": "Choose a note type" },
+    { "name": "ai_agent_setup_missing_input", "value": "Add study material or instructions" },
+    { "name": "ai_agent_setup_missing_provider", "value": "Configure AI first" },
+    { "name": "ai_agent_setup_summary", "value": "Target: %s · Note type: %s" },
+    { "name": "ai_agent_clarification_title", "value": "Your input is needed" },
+    { "name": "ai_agent_clarification_waiting", "value": "Waiting for your answer" },
+    { "name": "ai_agent_clarification_recommended", "value": "Recommended" },
+    { "name": "ai_agent_clarification_supplement_hint", "value": "Add details (optional)" },
+    { "name": "ai_agent_clarification_continue", "value": "Continue" },
+    { "name": "ai_agent_clarification_submitting", "value": "Continuing…" },
+    { "name": "ai_agent_clarification_resolved", "value": "Confirmed" },
+    { "name": "ai_agent_clarification_resolved_summary", "value": "Confirmed: %s" },
+    { "name": "ai_agent_clarification_submit_failed", "value": "Couldn’t send. Try again." },
+    { "name": "ai_agent_clarification_cancelled", "value": "Clarification cancelled" },
+    { "name": "ai_agent_clarification_choose_one", "value": "Choose one option" }
   ]
 }

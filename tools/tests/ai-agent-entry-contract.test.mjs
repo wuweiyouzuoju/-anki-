@@ -29,7 +29,6 @@ test('shared Agent page has explicit mode and sends no provider request while ap
   const appear = page.match(/async aboutToAppear\(\): Promise<void> \{([\s\S]*?)\n  \}/)?.[1] ?? '';
   assert.doesNotMatch(appear, /\.run\(|请求AI生成卡片/);
   assert.doesNotMatch(page, /请求AI生成卡片/);
-  assert.match(page, /this\.本地入口上下文\.length\s*>\s*0\s*\?\s*\$r\('app\.string\.ai_agent_edit_welcome'\)/);
   assert.match(page, /ai_agent_edit_search_welcome/);
 });
 
@@ -57,9 +56,8 @@ test('browser edit entry passes selected IDs and preserves the active search', (
 
 test('shared page rebuilds stable ID scope and batch policy for every user turn', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
-  const send = page.match(/private async 发送\(\): Promise<void> \{([\s\S]*?)\n  \}/)?.[1] ?? '';
   assert.match(page, /private 重建本轮AgentScope\(\)/);
-  assert.match(send, /this\.重建本轮AgentScope\(\)/);
+  assert.match(page, /runAgentTurn[\s\S]*this\.重建本轮AgentScope\(\)/);
   assert.match(page, /this\.agentScope\.reset\(\)/);
   assert.match(page, /configureBatchLimit\(this\.agentSettings\.batchLimit\)/);
   assert.match(page, /agentFunctionTools\(this\.agentSettings\.batchLimit, this\.pageMode\)/);
@@ -106,7 +104,7 @@ test('AI configuration is localized and has no acknowledgement gate or explanato
 
 test('AI page title uses equal side regions around the screen midpoint', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
-  const top = page.match(/private 顶部条\(\)[\s\S]*?@Builder\s+private 选择区/)?.[0] ?? '';
+  const top = page.match(/private 顶部条\(\)[\s\S]*?@Builder\s+private 配置区/)?.[0] ?? '';
   assert.equal((top.match(/\.width\('35%'\)/g) ?? []).length, 2);
   assert.match(top, /\.width\('30%'\)[\s\S]*\.textAlign\(TextAlign\.Center\)/);
   assert.match(top, /\.justifyContent\(FlexAlign\.End\)/);
@@ -158,10 +156,10 @@ test('all successful and failed tool calls use one typed detail view collapsed b
   assert.ok(cardsIndex > sourcesIndex, 'card drafts must render after reasoning, tools, and sources');
   assert.ok(draftsIndex > sourcesIndex, 'change drafts must render after reasoning, tools, and sources');
 
-  const toolItem = page.match(/private 工具过程项\(消息索引: number, 追踪索引: number\)[\s\S]*?@Builder\s+private AI气泡/)?.[0] ?? '';
-  assert.match(toolItem, /Text\('▼'\)/);
-  assert.match(toolItem, /\.rotate\(\{ angle:[\s\S]*?expanded\s*\?\s*0\s*:\s*-90 \}\)/);
-  assert.match(page, /切换工具详情[\s\S]*?animateTo\(\{ duration: 150, curve: Curve\.EaseOut \}/);
+  const disclosure = read('entry/src/main/ets/components/agent/AgentDisclosureCard.ets');
+  assert.match(disclosure, /Text\('▼'\)/);
+  assert.match(disclosure, /expanded\s*\?\s*0\s*:\s*-90/);
+  assert.doesNotMatch(page, /切换工具详情[\s\S]*?animateTo\(/);
   assert.match(page,
     /trace\.expanded\s*=\s*message\.工具过程\[existingIndex\]\.expanded[\s\S]*?message\.工具过程\[existingIndex\]\s*=\s*trace/,
     'completion events must preserve a user-expanded running trace');

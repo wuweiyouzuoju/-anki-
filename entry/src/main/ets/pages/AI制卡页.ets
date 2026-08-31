@@ -2,7 +2,7 @@
 
 // AI 制卡/改卡共享页：带结构化工具、可编辑草稿与显式确认的轻量 Agent。
 // 由 首页.ets 通过 Navigation pathStack 以 NavDestination 形式入栈（与 添加笔记页 同机制）。
-// 顶部：目标牌组 / 笔记类型 Select + AI 配置折叠区（密钥进 Asset Store，其余设置进 Preferences）。
+// 顶部：历史与 AI 配置；目标牌组和笔记类型位于本地对话设置卡。
 // 中间：聊天消息流。AI 返回的卡片以草稿形式内嵌在 AI 消息里，可勾选、可编辑字段、批量保存。
 // 底部：材料输入框 + 发送按钮。
 // 所有写入都经 AgentDraftExecutor，最终仍只调用现有 Anki ArkTS Service。
@@ -33,6 +33,24 @@ import {
 } from '../backend/agent/AgentDraftExecutor';
 import type { AgentConfirmationToken } from '../model/agent/AgentConfirmation';
 import { buildFailedOperationsRetryDraft } from '../model/agent/AgentDraftRetry';
+import type {
+  AgentClarificationAnswer,
+  AgentClarificationOption,
+  AgentClarificationRequest,
+  AgentClarificationState,
+  AgentClarificationView
+} from '../model/agent/AgentClarification';
+import {
+  buildClarificationAnswerText,
+  buildClarificationAnswerVisibleText,
+  cloneAgentClarificationView
+} from '../model/agent/AgentClarification';
+import type { AgentReadinessReason, AgentTaskSetup, AgentTaskSnapshot } from '../model/agent/AgentTaskContext';
+import {
+  buildAgentTaskProviderText,
+  buildAgentTaskVisibleText,
+  evaluateAgentReadiness
+} from '../model/agent/AgentTaskContext';
 import { agentContextFieldHasOmittedMedia, sanitizeAgentContextField } from '../model/agent/AgentMediaPolicy';
 import { explicitYearClozeRequested, inferRequestedCardCount } from '../model/agent/AgentRequestIntent';
 import {
@@ -58,6 +76,9 @@ import {
   loadAgentConversations,
   saveAgentConversation
 } from '../model/agent/AgentConversationStore';
+import { AgentDisclosureCard } from '../components/agent/AgentDisclosureCard';
+import { AgentSetupCard } from '../components/agent/AgentSetupCard';
+import { AgentClarificationCard } from '../components/agent/AgentClarificationCard';
 
 /** 建卡目标牌组候选（通过 Navigation param 传入） */
 export interface AI制卡牌组选项 {
@@ -83,11 +104,6 @@ export interface AI制卡页参数 {
 }
 
 interface 页面AI配置 { apiKey: string; baseUrl: string; model: string; }
-
-/** Select 组件所需选项结构 */
-interface AI制卡下拉选项 {
-  value: string;
-}
 
 /** 单张待确认卡片：fields 与当前笔记类型字段顺序一一对应。 */
 interface 卡片草稿 {
@@ -118,6 +134,12 @@ interface 聊天消息 {
   工具过程: AgentToolTrace[];
   来源列表: SearchSource[];
   推理摘要: string;
+  kind: string;
+  clarification: AgentClarificationView | null;
+  expanded: boolean;
+  taskStatus: string;
+  answerMessageId: number;
+  providerText: string;
 }
 
 class 页面Agent观察者 implements AgentRunObserver {
@@ -176,6 +198,7 @@ export struct AI制卡页 {
   @State private 配置模型输入: string = '';
   @State private 配置提示: string = '';
   @State private 错误信息: string = '';
+  @State private setupExpanded: boolean = true;
 
   private 下一个消息ID值: number = 1;
 
@@ -207,8 +230,7 @@ export struct AI制卡页 {
       this.pageDeckOptions.map((item: AI制卡牌组选项): number => item.id));
     const 入参牌组ID: number = this.pageDeckId === '' ? 0 : parseInt(this.pageDeckId);
     const 命中入参: boolean = this.牌组选项.some((项: AI制卡牌组选项): boolean => 项.id === 入参牌组ID);
-    this.牌组ID = 命中入参 ? 入参牌组ID
-      : (this.牌组选项.length > 0 ? this.牌组选项[0].id : 0);
+    this.牌组ID = 命中入参 ? 入参牌组ID : 0;
     try {
       this.agentSettings = await loadAgentSettings();
     } catch (错误) {
@@ -287,9 +309,6 @@ export struct AI制卡页 {
       } catch (error) { summary.push(`note=${noteId} unavailable`); }
     }
     this.本地入口上下文 = summary.join('\n');
-    const welcome: Resource = this.本地入口上下文.length > 0 ?
-      $r('app.string.ai_agent_edit_welcome') : $r('app.string.ai_agent_edit_search_welcome');
-    this.追加消息(this.空消息('ai', this.取本地化文案(welcome), false));
   }
 
   private 取能力上下文(): common.UIAbilityContext | null {
@@ -322,8 +341,84 @@ export struct AI制卡页 {
     }
   }
 
+  private selectedDeckName(): string {
+    const selected: AI制卡牌组选项 | undefined = this.牌组选项.find(
+      (item: AI制卡牌组选项): boolean => item.id === this.牌组ID);
+    return selected === undefined ? '' : selected.name;
+  }
+
+  private selectedNotetypeName(): string {
+    const selected: AI制卡笔记类型选项 | undefined = this.笔记类型选项.find(
+      (item: AI制卡笔记类型选项): boolean => item.id === this.已选笔记类型ID);
+    return selected === undefined ? this.笔记类型名 : selected.name;
+  }
+
+  private providerReady(): boolean {
+    if (this.AI配置.apiKey.trim().length === 0 || this.AI配置.model.trim().length === 0) {
+      return false;
+    }
+    return this.pageMode !== 'create' || this.页面Provider !== 'custom' ||
+      this.AI配置.baseUrl.startsWith('https://');
+  }
+
+  private taskSetup(): AgentTaskSetup {
+    return {
+      mode: this.pageMode,
+      deckId: this.pageMode === 'create' ? this.牌组ID : 0,
+      deckName: this.pageMode === 'create' ? this.selectedDeckName() : '',
+      notetypeId: this.pageMode === 'create' ? this.已选笔记类型ID : 0,
+      notetypeName: this.pageMode === 'create' ? this.selectedNotetypeName() : '',
+      fieldNames: this.pageMode === 'create' ? this.字段名列表.slice() : [],
+      noteTypeKind: this.pageMode === 'create' ? this.noteTypeKind : NOTE_TYPE_KIND_NORMAL,
+      clozeFieldOrds: this.pageMode === 'create' ? this.clozeFieldOrds.slice() : [],
+      expanded: this.setupExpanded
+    };
+  }
+
+  private hasPendingClarification(): boolean {
+    for (const message of this.消息列表) {
+      if (message.kind === 'clarification' && message.clarification !== null &&
+        (message.clarification.state === 'pending' || message.clarification.state === 'submitting' ||
+          message.clarification.state === 'submit_failed')) { return true; }
+    }
+    return false;
+  }
+
+  private readinessReason(): AgentReadinessReason {
+    return evaluateAgentReadiness(this.taskSetup(), this.输入草稿,
+      this.providerReady(), this.处理中 || this.hasPendingClarification());
+  }
+
+  private taskSnapshot(input: string): AgentTaskSnapshot {
+    const setup: AgentTaskSetup = this.taskSetup();
+    return {
+      mode: setup.mode, deckId: setup.deckId, deckName: setup.deckName,
+      notetypeId: setup.notetypeId, notetypeName: setup.notetypeName,
+      fieldNames: setup.fieldNames.slice(), noteTypeKind: setup.noteTypeKind,
+      clozeFieldOrds: setup.clozeFieldOrds.slice(), userText: input,
+      localContext: this.本地入口上下文.length > 0 ? this.本地入口上下文 : '无预选卡片，可使用搜索工具。',
+      omittedMedia: this.omittedMediaInContext,
+      batchLimit: this.agentSettings.batchLimit
+    };
+  }
+
+  private readinessText(): ResourceStr {
+    const reason: AgentReadinessReason = this.readinessReason();
+    if (reason === 'missing_deck') { return $r('app.string.ai_agent_setup_missing_deck'); }
+    if (reason === 'missing_notetype') { return $r('app.string.ai_agent_setup_missing_notetype'); }
+    if (reason === 'missing_input') { return $r('app.string.ai_agent_setup_missing_input'); }
+    if (reason === 'missing_provider') { return $r('app.string.ai_agent_setup_missing_provider'); }
+    if (reason === 'busy') { return $r('app.string.ai_agent_clarification_waiting'); }
+    return $r('app.string.ai_agent_setup_ready');
+  }
+
+  private editSetupContext(): string {
+    if (this.本地入口上下文.length > 0) { return this.本地入口上下文; }
+    return this.取本地化文案($r('app.string.ai_agent_edit_search_welcome'));
+  }
+
   // ========================================================
-  // 笔记类型加载：拉取列表 → 过滤 Image Occlusion → 加载默认类型的字段名
+  // 笔记类型加载：拉取列表 → 过滤 Image Occlusion；只为明确选择加载能力。
   // ========================================================
 
   private async 加载笔记类型列表(): Promise<void> {
@@ -334,7 +429,6 @@ export struct AI制卡页 {
     }
     try {
       await 后端会话.获取实例().确保已打开(上下文.filesDir);
-      const 默认值 = await this.笔记服务实例.获取添加默认值();
       const 名称列表: NotetypeNameId[] = await this.笔记类型服务实例.获取笔记类型名列表();
       // 第一版不支持 Image Occlusion（独立 RPC 建卡流程），直接从候选中剔除
       const 可用列表: NotetypeNameId[] = 名称列表.filter(
@@ -348,16 +442,16 @@ export struct AI制卡页 {
         ({ id: 项.id, name: 项.name }));
       this.追加稳定IDs(this.本地范围笔记类型IDs,
         可用列表.map((item: NotetypeNameId): number => item.id));
-      // 默认类型被过滤掉时回退首个可用类型
-      const 默认有效: boolean = 可用列表.some(
-        (项: NotetypeNameId): boolean => 项.id === 默认值.notetypeId);
-      await this.加载笔记类型(默认有效 ? 默认值.notetypeId : 可用列表[0].id);
+      this.已选笔记类型ID = 0;
+      this.笔记类型名 = '';
+      this.字段名列表 = [];
     } catch (错误) {
       this.已选笔记类型ID = 0;
       this.笔记类型名 = '';
       this.字段名列表 = [];
       this.noteTypeKind = NOTE_TYPE_KIND_NORMAL;
       this.clozeFieldOrds = [];
+      this.setupExpanded = true;
       this.错误信息 = this.取本地化文案($r('app.string.ai_card_err_no_notetype'));
     }
   }
@@ -377,6 +471,7 @@ export struct AI制卡页 {
       this.字段名列表 = [];
       this.noteTypeKind = NOTE_TYPE_KIND_NORMAL;
       this.clozeFieldOrds = [];
+      this.setupExpanded = true;
       this.错误信息 = this.取本地化文案($r('app.string.ai_card_err_no_notetype'));
     }
   }
@@ -396,7 +491,9 @@ export struct AI制卡页 {
     return {
       id: this.下一个消息ID(), 角色: 角色, 正文: 正文, 是否错误: 是否错误,
       卡片列表: [], 字段名列表: [], 批次结果: '', 批次保存中: false,
-      变更草稿列表: [], 工具过程: [], 来源列表: [], 推理摘要: ''
+      变更草稿列表: [], 工具过程: [], 来源列表: [], 推理摘要: '',
+      kind: 'normal', clarification: null, expanded: false, taskStatus: '',
+      answerMessageId: 0, providerText: 正文
     };
   }
 
@@ -450,7 +547,13 @@ export struct AI制卡页 {
       变更草稿列表: 消息.变更草稿列表.slice(),
       工具过程: 消息.工具过程.map((追踪: AgentToolTrace): AgentToolTrace => this.克隆工具追踪(追踪)),
       来源列表: 消息.来源列表.slice(),
-      推理摘要: 消息.推理摘要
+      推理摘要: 消息.推理摘要,
+      kind: 消息.kind,
+      clarification: 消息.clarification === null ? null : cloneAgentClarificationView(消息.clarification),
+      expanded: 消息.expanded,
+      taskStatus: 消息.taskStatus,
+      answerMessageId: 消息.answerMessageId,
+      providerText: 消息.providerText
     };
   }
 
@@ -533,54 +636,64 @@ export struct AI制卡页 {
 
   private 取消当前请求(): void {
     if (this.agentRunner !== null) { this.agentRunner.cancel(); }
+    this.cancelPendingClarifications();
   }
 
-  private 构建Provider输入(currentInput: string): ProviderInputItem[] {
+  private 构建Provider输入(): ProviderInputItem[] {
     const values: ProviderInputItem[] = [];
-    const previousEnd: number = Math.max(0, this.消息列表.length - 2);
-    for (let index: number = 0; index < previousEnd; index++) {
-      const message: 聊天消息 = this.消息列表[index];
+    for (const message of this.消息列表) {
+      if (!(message.kind === 'normal' || message.kind === 'clarification')) { continue; }
       if (message.正文.length === 0) { continue; }
       values.push({
         kind: 'message', role: message.角色 === 'user' ? 'user' : 'assistant',
-        content: message.正文, callId: '', name: '', argumentsJson: '', output: ''
+        content: message.角色 === 'user' ? message.providerText : message.正文,
+        callId: '', name: '', argumentsJson: '', output: ''
       });
     }
-    values.push({
-      kind: 'message', role: 'user', content: this.构建用户输入(currentInput),
-      callId: '', name: '', argumentsJson: '', output: ''
-    });
     return values;
   }
 
-  // ========================================================
-  // 发送：校验 → 追加用户消息 → 请求 AI → 追加卡片消息 / 错误消息
-  // ========================================================
-
   private async 发送(): Promise<void> {
     const 输入: string = this.输入草稿.trim();
-    if (this.处理中 || 输入.length === 0) {
-      return;
-    }
-    if (this.pageMode === 'create' && this.牌组ID === 0) {
-      this.错误信息 = this.取本地化文案($r('app.string.ai_card_err_no_deck'));
-      return;
-    }
-    if (this.pageMode === 'create' && (this.已选笔记类型ID === 0 || this.字段名列表.length === 0)) {
-      this.错误信息 = this.取本地化文案($r('app.string.ai_card_err_no_notetype'));
-      return;
-    }
-    if (this.AI配置.apiKey.trim().length === 0 || this.AI配置.model.trim().length === 0) {
-      this.错误信息 = this.取本地化文案($r('app.string.ai_card_err_no_key'));
-      this.显示配置区 = true;
-      return;
-    }
-    this.重建本轮AgentScope();
-    this.agentScope.configureCreateConstraints(this.pageMode === 'create' && explicitYearClozeRequested(输入));
-    this.错误信息 = '';
-    if (this.agentRunner === null) { this.错误信息 = 'agent_not_ready'; return; }
-    this.追加消息(this.空消息('user', 输入, false));
+    if (this.readinessReason() !== 'ready') { return; }
+    const snapshot: AgentTaskSnapshot = this.taskSnapshot(输入);
     this.输入草稿 = '';
+    const result: AgentRunResult | null = await this.runAgentTurn(
+      buildAgentTaskProviderText(snapshot), buildAgentTaskVisibleText(snapshot));
+    if (result !== null && result.status === 'awaiting_clarification' && result.clarification !== null) {
+      this.appendClarificationMessage(result.clarification);
+      await this.保存当前会话历史();
+    }
+  }
+
+  private async runAgentTurn(providerText: string, visibleUserText: string,
+    existingUserMessageId: number = 0): Promise<AgentRunResult | null> {
+    if (this.处理中 || this.agentRunner === null) { return null; }
+    this.重建本轮AgentScope();
+    this.agentScope.configureCreateConstraints(this.pageMode === 'create' &&
+      explicitYearClozeRequested(providerText));
+    this.错误信息 = '';
+    let userMessageId: number = existingUserMessageId;
+    let foundExisting: boolean = false;
+    if (existingUserMessageId > 0) {
+      for (let index: number = 0; index < this.消息列表.length; index++) {
+        if (this.消息列表[index].id === existingUserMessageId) {
+          this.更新消息(index, (message: 聊天消息): void => {
+            message.正文 = visibleUserText;
+            message.providerText = providerText;
+          });
+          foundExisting = true;
+          break;
+        }
+      }
+    }
+    if (!foundExisting) {
+      const userMessage: 聊天消息 = this.空消息('user', visibleUserText, false);
+      userMessage.providerText = providerText;
+      userMessageId = userMessage.id;
+      this.追加消息(userMessage);
+    }
+    this.storeClarificationAnswerMessageId(userMessageId);
     this.处理中 = true;
     const aiMessage: 聊天消息 = this.空消息('ai', '', false);
     this.追加消息(aiMessage);
@@ -591,43 +704,187 @@ export struct AI制卡页 {
         baseUrl: this.AI配置.baseUrl,
         model: this.AI配置.model,
         instructions: this.构建Agent指令(),
-        input: this.构建Provider输入(输入),
+        input: this.构建Provider输入(),
         functionTools: agentFunctionTools(this.agentSettings.batchLimit, this.pageMode),
         searchMode: this.agentSettings.searchMode,
         requiresSearchEvidence: this.agentSettings.searchMode === 'always' ||
-          (this.agentSettings.searchMode === 'auto' && explicitWebSearchRequested(输入)),
+          (this.agentSettings.searchMode === 'auto' && explicitWebSearchRequested(providerText)),
         requiresDraft: this.pageMode === 'create',
         expectedDraftCount: this.pageMode === 'create' ?
-          inferRequestedCardCount(输入, this.agentSettings.batchLimit) : 0,
+          inferRequestedCardCount(providerText, this.agentSettings.batchLimit) : 0,
         reasoningEffort: 'low', maxOutputTokens: 32768
       };
       const observer: 页面Agent观察者 = new 页面Agent观察者(
         (event: AgentEvent): void => { this.处理Agent事件(aiIndex, event); });
       const result: AgentRunResult = await this.agentRunner.run(this.agentSettings.selectedProvider, request, observer);
-      this.接收Agent草稿(aiIndex, result.drafts);
+      this.setupExpanded = false;
+      if (result.status === 'awaiting_clarification') {
+        this.更新消息(aiIndex, (message: 聊天消息): void => {
+          message.taskStatus = 'waiting';
+        });
+      } else {
+        this.接收Agent草稿(aiIndex, result.drafts);
+      }
+      return result;
     } catch (错误) {
       const 异常: Error = 错误 instanceof Error ? 错误 : new Error(`${错误}`);
       const 错误文案: string = this.取Agent错误文案(异常);
       this.更新消息(aiIndex, (message: 聊天消息): void => {
         message.正文 = message.正文.length > 0 ? `${message.正文}\n\n${错误文案}` : 错误文案;
         message.是否错误 = true;
+        message.kind = 'error';
       });
+      return null;
     } finally {
       this.处理中 = false;
       await this.保存当前会话历史();
     }
   }
 
+  private storeClarificationAnswerMessageId(messageId: number): void {
+    for (let index: number = this.消息列表.length - 1; index >= 0; index--) {
+      const view: AgentClarificationView | null = this.消息列表[index].clarification;
+      if (this.消息列表[index].kind === 'clarification' &&
+        view !== null && view.state === 'submitting') {
+        this.更新消息(index, (message: 聊天消息): void => {
+          message.answerMessageId = messageId;
+        });
+        return;
+      }
+    }
+  }
+
+  private appendClarificationMessage(request: AgentClarificationRequest): void {
+    if (this.hasPendingClarification()) { throw new Error('clarification_already_pending'); }
+    const message: 聊天消息 = this.空消息('ai', request.question, false);
+    message.kind = 'clarification';
+    message.clarification = {
+      request: request, selectedOptionId: '', supplementalText: '',
+      state: 'pending', expanded: true
+    };
+    message.expanded = true;
+    this.追加消息(message);
+  }
+
+  private updateClarificationState(messageIndex: number, state: AgentClarificationState,
+    expanded: boolean): void {
+    this.更新消息(messageIndex, (message: 聊天消息): void => {
+      if (message.clarification !== null) {
+        message.clarification.state = state;
+        message.clarification.expanded = expanded;
+        message.expanded = expanded;
+      }
+    });
+  }
+
+  private selectClarificationOption(messageIndex: number, optionId: string): void {
+    this.更新消息(messageIndex, (message: 聊天消息): void => {
+      if (message.clarification !== null &&
+        (message.clarification.state === 'pending' || message.clarification.state === 'submit_failed')) {
+        message.clarification.selectedOptionId = optionId;
+      }
+    });
+  }
+
+  private updateClarificationSupplement(messageIndex: number, value: string): void {
+    this.更新消息(messageIndex, (message: 聊天消息): void => {
+      if (message.clarification !== null &&
+        (message.clarification.state === 'pending' || message.clarification.state === 'submit_failed')) {
+        message.clarification.supplementalText = value;
+      }
+    });
+  }
+
+  private toggleClarification(messageIndex: number): void {
+    this.更新消息(messageIndex, (message: 聊天消息): void => {
+      if (message.clarification !== null &&
+        (message.clarification.state === 'resolved' || message.clarification.state === 'cancelled')) {
+        message.clarification.expanded = !message.clarification.expanded;
+        message.expanded = message.clarification.expanded;
+      }
+    });
+  }
+
+  private clarificationStatusText(view: AgentClarificationView): ResourceStr {
+    if (view.state === 'submitting') { return $r('app.string.ai_agent_clarification_submitting'); }
+    if (view.state === 'resolved') {
+      const selected: AgentClarificationOption | undefined = view.request.options.find(
+        (item: AgentClarificationOption): boolean => item.id === view.selectedOptionId);
+      return this.取本地化格式($r('app.string.ai_agent_clarification_resolved_summary'),
+        [selected === undefined ? '' : selected.label]);
+    }
+    if (view.state === 'submit_failed') { return $r('app.string.ai_agent_clarification_submit_failed'); }
+    if (view.state === 'cancelled') { return $r('app.string.ai_agent_clarification_cancelled'); }
+    return $r('app.string.ai_agent_clarification_waiting');
+  }
+
+  private async continueClarification(messageIndex: number): Promise<void> {
+    const source: AgentClarificationView | null = this.消息列表[messageIndex].clarification;
+    if (source === null || source.selectedOptionId.length === 0 || this.处理中) { return; }
+    const view: AgentClarificationView = cloneAgentClarificationView(source);
+    const option: AgentClarificationOption | undefined = view.request.options.find(
+      (item: AgentClarificationOption): boolean => item.id === view.selectedOptionId);
+    if (option === undefined) { return; }
+    this.更新消息(messageIndex, (message: 聊天消息): void => {
+      if (message.clarification !== null) {
+        message.clarification.state = 'submitting';
+        message.clarification.expanded = true;
+      }
+    });
+    const answer: AgentClarificationAnswer = {
+      clarificationId: view.request.id, optionId: option.id, optionLabel: option.label,
+      supplementalText: view.supplementalText.trim()
+    };
+    this.重建本轮AgentScope();
+    const result: AgentRunResult | null = await this.runAgentTurn(
+      buildClarificationAnswerText(view.request, answer),
+      buildClarificationAnswerVisibleText(answer),
+      this.消息列表[messageIndex].answerMessageId);
+    const current: AgentClarificationView | null = this.消息列表[messageIndex].clarification;
+    if (result === null) {
+      if (current !== null && current.state !== 'cancelled') {
+        this.更新消息(messageIndex, (message: 聊天消息): void => {
+          if (message.clarification !== null) {
+            message.clarification.state = 'submit_failed';
+            message.clarification.expanded = true;
+          }
+        });
+      }
+      await this.保存当前会话历史();
+      return;
+    }
+    this.更新消息(messageIndex, (message: 聊天消息): void => {
+      if (message.clarification !== null) {
+        message.clarification.state = 'resolved';
+        message.clarification.expanded = false;
+        message.expanded = false;
+      }
+    });
+    if (result.status === 'awaiting_clarification' && result.clarification !== null) {
+      this.appendClarificationMessage(result.clarification);
+    }
+    await this.保存当前会话历史();
+  }
+
+  private cancelPendingClarifications(): void {
+    for (let index: number = 0; index < this.消息列表.length; index++) {
+      const view: AgentClarificationView | null = this.消息列表[index].clarification;
+      if (view !== null && (view.state === 'pending' || view.state === 'submitting' ||
+        view.state === 'submit_failed')) {
+        this.更新消息(index, (message: 聊天消息): void => {
+          if (message.clarification !== null) {
+            message.clarification.state = 'cancelled';
+            message.clarification.expanded = false;
+            message.expanded = false;
+          }
+        });
+      }
+    }
+  }
+
   private 构建Agent指令(): string {
     const modeText: string = this.pageMode === 'create' ? '制卡' : '改卡';
     return `你是记得闪卡应用内的${modeText} Agent。只可使用所列语义工具。读取工具可直接调用；任何写入都必须调用 propose_ 工具生成草稿，绝不能声称已保存。创建模式目标 deckId=${this.牌组ID} notetypeId=${this.已选笔记类型ID}，字段=${JSON.stringify(this.字段名列表)}，kind=${this.noteTypeKind}，clozeFieldOrds=${JSON.stringify(this.clozeFieldOrds)}，单轮最多 ${this.agentSettings.batchLimit} 张。填空类型必须把 {{c1::答案}} 写在允许的字段。含糊请求应合理澄清或提出可编辑草稿，不要输出需要客户端自行解析的自由 JSON。`;
-  }
-
-  private 构建用户输入(input: string): string {
-    const context: string = this.本地入口上下文.length === 0 ? '无预选卡片，可使用搜索工具。' : this.本地入口上下文;
-    const mediaNotice: string = this.omittedMediaInContext ?
-      '\n媒体说明：当前文本适配器未发送图片或音频二进制，已用占位符代替；不得声称看到或听到该媒体。' : '';
-    return `${input}\n\n应用内本地上下文（稳定 ID，仅限本轮）：\n${context}${mediaNotice}`;
   }
 
   private 处理Agent事件(messageIndex: number, event: AgentEvent): void {
@@ -976,47 +1233,6 @@ export struct AI制卡页 {
     this.错误信息 = '';
   }
 
-  // ========================================================
-  // 下拉数据
-  // ========================================================
-
-  private 牌组选中索引(): number {
-    const 索引: number = this.牌组选项.findIndex(
-      (牌组: AI制卡牌组选项): boolean => 牌组.id === this.牌组ID);
-    return 索引 < 0 ? 0 : 索引;
-  }
-
-  private 牌组下拉选项(): AI制卡下拉选项[] {
-    const 选项列表: AI制卡下拉选项[] = [];
-    for (const 牌组 of this.牌组选项) {
-      选项列表.push({ value: 牌组.name });
-    }
-    return 选项列表;
-  }
-
-  private 笔记类型选中索引(): number {
-    const 索引: number = this.笔记类型选项.findIndex(
-      (类型: AI制卡笔记类型选项): boolean => 类型.id === this.已选笔记类型ID);
-    return 索引 < 0 ? 0 : 索引;
-  }
-
-  private 笔记类型下拉选项(): AI制卡下拉选项[] {
-    const 选项列表: AI制卡下拉选项[] = [];
-    for (const 类型 of this.笔记类型选项) {
-      选项列表.push({ value: 类型.name });
-    }
-    return 选项列表;
-  }
-
-  private 已选笔记类型名(): string {
-    for (const 类型 of this.笔记类型选项) {
-      if (类型.id === this.已选笔记类型ID) {
-        return 类型.name;
-      }
-    }
-    return this.笔记类型名;
-  }
-
   private async 保存当前会话历史(): Promise<void> {
     try {
       const messages: AgentHistoryMessage[] = [];
@@ -1026,8 +1242,13 @@ export struct AI制卡页 {
         $r('app.string.ai_agent_history_create_title') : $r('app.string.ai_agent_history_edit_title'));
       let title: string = defaultTitle;
       for (const message of this.消息列表) {
-        if (message.正文.length > 0) {
-          messages.push({ role: message.角色 === 'user' ? 'user' : 'assistant', text: message.正文 });
+        if (message.正文.length > 0 && (message.kind === 'normal' || message.kind === 'clarification')) {
+          messages.push({
+            role: message.角色 === 'user' ? 'user' : 'assistant', text: message.正文,
+            kind: message.kind,
+            clarification: message.clarification === null ? null : cloneAgentClarificationView(message.clarification),
+            expanded: message.clarification === null ? message.expanded : message.clarification.expanded
+          });
           if (message.角色 === 'user' && title === defaultTitle) {
             title = message.正文.slice(0, 40);
           }
@@ -1038,6 +1259,7 @@ export struct AI制卡页 {
       if (messages.length === 0) { return; }
       const conversation: AgentConversation = {
         id: this.conversationId, mode: this.pageMode, title: title, updatedAt: Date.now(),
+        setup: this.taskSetup(),
         messages: messages, audits: audits, sources: sources,
         results: this.历史执行结果.slice()
       };
@@ -1091,10 +1313,15 @@ export struct AI制卡页 {
   }
 
   /** 只恢复可见文本与审计结果，不恢复旧草稿和确认令牌。 */
-  private 恢复历史会话(selected: AgentConversation): void {
+  private async 恢复历史会话(selected: AgentConversation): Promise<void> {
     const restored: 聊天消息[] = [];
     for (const item of selected.messages) {
-      restored.push(this.空消息(item.role === 'user' ? 'user' : 'ai', item.text, false));
+      const message: 聊天消息 = this.空消息(item.role === 'user' ? 'user' : 'ai', item.text, false);
+      message.kind = item.kind;
+      message.clarification = item.clarification;
+      message.expanded = item.expanded;
+      message.providerText = item.text;
+      restored.push(message);
     }
     let auditTarget: number = -1;
     for (let index: number = restored.length - 1; index >= 0; index--) {
@@ -1112,13 +1339,54 @@ export struct AI制卡页 {
     this.conversationId = selected.id;
     this.历史执行结果 = selected.results.slice();
     this.消息列表 = restored;
+    this.setupExpanded = selected.setup.expanded;
+    let validContext: boolean = true;
+    if (this.pageMode === 'create') {
+      const deckExists: boolean = this.牌组选项.some(
+        (item: AI制卡牌组选项): boolean => item.id === selected.setup.deckId);
+      const notetypeExists: boolean = this.笔记类型选项.some(
+        (item: AI制卡笔记类型选项): boolean => item.id === selected.setup.notetypeId);
+      if (!deckExists || !notetypeExists) {
+        validContext = false;
+        this.牌组ID = deckExists ? selected.setup.deckId : 0;
+        this.已选笔记类型ID = 0;
+      } else {
+        this.牌组ID = selected.setup.deckId;
+        await this.加载笔记类型(selected.setup.notetypeId);
+        validContext = this.已选笔记类型ID === selected.setup.notetypeId && this.字段名列表.length > 0;
+      }
+    }
+    if (!validContext) {
+      this.setupExpanded = true;
+      this.cancelRestoredClarifications(this.取本地化文案(
+        this.牌组ID === 0 ? $r('app.string.ai_agent_setup_missing_deck') :
+          $r('app.string.ai_agent_setup_missing_notetype')));
+    }
     this.滚动到底部();
   }
 
+  private cancelRestoredClarifications(reason: string): void {
+    for (let index: number = 0; index < this.消息列表.length; index++) {
+      const view: AgentClarificationView | null = this.消息列表[index].clarification;
+      if (view !== null && (view.state === 'pending' || view.state === 'submit_failed')) {
+        this.更新消息(index, (message: 聊天消息): void => {
+          if (message.clarification !== null) {
+            message.clarification.state = 'cancelled';
+            message.clarification.expanded = false;
+            message.expanded = false;
+            message.taskStatus = reason;
+          }
+        });
+      }
+    }
+  }
+
   private 开始新会话(): void {
+    this.cancelPendingClarifications();
     this.conversationId = `agent-${Date.now()}-${Math.random()}`;
     this.历史执行结果 = [];
     this.消息列表 = [];
+    this.setupExpanded = true;
     this.配置提示 = '';
   }
 
@@ -1205,58 +1473,6 @@ export struct AI制卡页 {
       bottom: 应用尺寸.间距_8
     })
     .backgroundColor($r('app.color.surface_page'))
-  }
-
-  @Builder
-  private 选择区() {
-    Column({ space: 应用尺寸.间距_8 }) {
-      Row() {
-        Text($r('app.string.ai_card_target_deck'))
-          .fontSize(应用尺寸.字号_按钮)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
-        Select(this.牌组下拉选项())
-          .selected(this.牌组选中索引())
-          .value(this.牌组选项.length > 0 ? this.牌组选项[this.牌组选中索引()].name : '')
-          .controlSize(ControlSize.SMALL)
-          .enabled(!this.处理中 && this.牌组选项.length > 0)
-          .onSelect((索引: number): void => {
-            if (索引 >= 0 && 索引 < this.牌组选项.length) {
-              this.牌组ID = this.牌组选项[索引].id;
-              this.错误信息 = '';
-            }
-          })
-      }
-      .width('100%')
-
-      Row() {
-        Text($r('app.string.add_note_notetype'))
-          .fontSize(应用尺寸.字号_按钮)
-          .fontColor($r('app.color.text_secondary'))
-          .layoutWeight(1)
-        Select(this.笔记类型下拉选项())
-          .selected(this.笔记类型选中索引())
-          .value(this.已选笔记类型名())
-          .controlSize(ControlSize.SMALL)
-          .enabled(!this.处理中 && this.笔记类型选项.length > 0)
-          .onSelect((索引: number): void => {
-            if (索引 >= 0 && 索引 < this.笔记类型选项.length) {
-              this.加载笔记类型(this.笔记类型选项[索引].id);
-            }
-          })
-      }
-      .width('100%')
-
-      if (this.显示配置区) {
-        this.配置区()
-      }
-    }
-    .width('100%')
-    .padding({
-      left: 应用尺寸.卡片内边距,
-      right: 应用尺寸.卡片内边距,
-      top: 应用尺寸.间距_8
-    })
   }
 
   @Builder
@@ -1506,41 +1722,31 @@ export struct AI制卡页 {
   }
 
   private 切换工具详情(消息索引: number, 追踪索引: number): void {
-    this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, (): void => {
-      this.更新消息(消息索引, (消息: 聊天消息): void => {
-        if (追踪索引 >= 0 && 追踪索引 < 消息.工具过程.length) {
-          消息.工具过程[追踪索引].expanded = !消息.工具过程[追踪索引].expanded;
-        }
-      });
+    this.更新消息(消息索引, (消息: 聊天消息): void => {
+      if (追踪索引 >= 0 && 追踪索引 < 消息.工具过程.length) {
+        消息.工具过程[追踪索引].expanded = !消息.工具过程[追踪索引].expanded;
+      }
     });
   }
 
   @Builder
   private 工具过程项(消息索引: number, 追踪索引: number) {
-    Column({ space: 应用尺寸.间距_5 }) {
-      Row({ space: 应用尺寸.间距_5 }) {
-        Text(this.取本地化格式($r('app.string.ai_agent_tool_round'), [
+    AgentDisclosureCard({
+      title: this.取本地化格式($r('app.string.ai_agent_tool_round'), [
           this.消息列表[消息索引].工具过程[追踪索引].providerRound,
           this.消息列表[消息索引].工具过程[追踪索引].sequence
-        ]))
-          .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_tertiary'))
-        Text(this.消息列表[消息索引].工具过程[追踪索引].toolName)
-          .fontSize(应用尺寸.字号_正文_小).fontWeight(FontWeight.Medium)
-          .layoutWeight(1)
-        Text(this.工具状态文案(this.消息列表[消息索引].工具过程[追踪索引].status))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor(this.消息列表[消息索引].工具过程[追踪索引].status === 'failed' ?
-            $r('app.color.error_text') : $r('app.color.text_secondary'))
-        Text('▼')
-          .fontSize(11)
-          .fontColor($r('app.color.text_tertiary'))
-          .rotate({ angle: this.消息列表[消息索引].工具过程[追踪索引].expanded ? 0 : -90 })
-          .animation({ duration: 150, curve: Curve.EaseOut })
-      }
-      .width('100%')
-      .onClick((): void => { this.切换工具详情(消息索引, 追踪索引); })
+        ]) + ` · ${this.消息列表[消息索引].工具过程[追踪索引].toolName}`,
+      status: this.工具状态文案(this.消息列表[消息索引].工具过程[追踪索引].status),
+      showStatus: true,
+      expanded: this.消息列表[消息索引].工具过程[追踪索引].expanded,
+      toggleLocked: false,
+      onToggle: (): void => { this.切换工具详情(消息索引, 追踪索引); },
+      content: (): void => { this.工具详情内容(消息索引, 追踪索引); }
+    })
+  }
 
-      if (this.消息列表[消息索引].工具过程[追踪索引].expanded) {
+  @Builder
+  private 工具详情内容(消息索引: number, 追踪索引: number) {
         if (this.消息列表[消息索引].工具过程[追踪索引].legacySummary.length > 0) {
           Text(this.消息列表[消息索引].工具过程[追踪索引].legacySummary)
             .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_secondary')).width('100%')
@@ -1589,18 +1795,18 @@ export struct AI制卡页 {
           Text($r('app.string.ai_agent_tool_truncated'))
             .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_tertiary')).width('100%')
         }
-      }
-    }
-    .width('100%').padding(应用尺寸.间距_8)
-    .backgroundColor($r('app.color.surface_page'))
-    .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-    .borderRadius(应用尺寸.圆角_卡片)
   }
 
   @Builder
   private AI气泡(消息索引: number) {
     Row() {
       Column({ space: 应用尺寸.间距_10 }) {
+        if (this.消息列表[消息索引].taskStatus === 'waiting') {
+          Text($r('app.string.ai_agent_clarification_waiting'))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+        }
         Text(this.消息列表[消息索引].正文)
           .fontSize(应用尺寸.字号_正文)
           .fontColor(this.消息列表[消息索引].是否错误
@@ -1682,20 +1888,47 @@ export struct AI制卡页 {
   }
 
   @Builder
+  private clarificationBubble(messageIndex: number) {
+    if (this.消息列表[messageIndex].clarification !== null) {
+      AgentClarificationCard({
+        clarification: this.消息列表[messageIndex].clarification!,
+        statusText: this.消息列表[messageIndex].taskStatus.length > 0 ?
+          this.消息列表[messageIndex].taskStatus :
+          this.clarificationStatusText(this.消息列表[messageIndex].clarification!),
+        onOptionSelected: (id: string): void => { this.selectClarificationOption(messageIndex, id); },
+        onSupplementChanged: (value: string): void => {
+          this.updateClarificationSupplement(messageIndex, value);
+        },
+        onContinue: (): void => { this.continueClarification(messageIndex); },
+        onToggle: (): void => { this.toggleClarification(messageIndex); }
+      })
+    }
+  }
+
+  @Builder
   private 消息流() {
     Scroll(this.聊天滚动器) {
       Column({ space: 应用尺寸.间距_12 }) {
-        if (this.消息列表.length === 0) {
-          Text($r('app.string.ai_card_welcome'))
-            .fontSize(应用尺寸.字号_正文)
-            .fontColor($r('app.color.text_tertiary'))
-            .width('100%')
-            .textAlign(TextAlign.Center)
-            .padding({ top: 应用尺寸.间距_13 * 4 })
-        }
+        AgentSetupCard({
+          mode: this.pageMode,
+          setup: this.taskSetup(),
+          deckOptions: this.牌组选项,
+          notetypeOptions: this.笔记类型选项,
+          readinessText: this.readinessText(),
+          editContext: this.editSetupContext(),
+          disabled: this.处理中 || this.hasPendingClarification(),
+          onDeckSelected: (id: number): void => {
+            this.牌组ID = id;
+            this.错误信息 = '';
+          },
+          onNotetypeSelected: (id: number): void => { this.加载笔记类型(id); },
+          onToggle: (): void => { this.setupExpanded = !this.setupExpanded; }
+        })
         ForEach(this.消息列表, (消息: 聊天消息, 消息索引: number) => {
           if (this.消息列表[消息索引].角色 === 'user') {
             this.用户气泡(消息索引)
+          } else if (this.消息列表[消息索引].kind === 'clarification') {
+            this.clarificationBubble(消息索引)
           } else {
             this.AI气泡(消息索引)
           }
@@ -1733,7 +1966,7 @@ export struct AI制卡页 {
         .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
         .borderRadius(应用尺寸.圆角_面板)
         .padding(应用尺寸.间距_10)
-        .enabled(!this.处理中)
+        .enabled(!this.处理中 && !this.hasPendingClarification())
         .onChange((值: string): void => {
           this.输入草稿 = 值;
         })
@@ -1744,7 +1977,7 @@ export struct AI制卡页 {
         .fontColor($r('app.color.action_on_primary'))
         .backgroundColor(this.处理中 ? this.主色按钮按下色 : this.主色按钮背景色)
         .borderRadius(应用尺寸.圆角_胶囊)
-        .enabled(this.处理中 || this.输入草稿.trim().length > 0)
+        .enabled(this.处理中 || this.readinessReason() === 'ready')
         .onClick((): void => {
           if (this.处理中) { this.取消当前请求(); }
           else { this.发送(); }
@@ -1764,16 +1997,7 @@ export struct AI制卡页 {
     NavDestination() {
       Column() {
         this.顶部条()
-        if (this.pageMode === 'create') {
-          this.选择区()
-        } else if (this.本地入口上下文 !== '') {
-          Text(this.本地入口上下文)
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor($r('app.color.text_secondary'))
-            .maxLines(5).textOverflow({ overflow: TextOverflow.Ellipsis })
-             .width('100%').padding({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
-        }
-        if (this.pageMode === 'edit' && this.显示配置区) {
+        if (this.显示配置区) {
           this.配置区()
         }
         Divider()

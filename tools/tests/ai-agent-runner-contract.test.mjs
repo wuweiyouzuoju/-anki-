@@ -2,6 +2,7 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { register } from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,89 @@ import { encodeNotetypeId } from '../../entry/src/main/ets/proto/messages/Notety
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
+
+const transportStub = `export class AgentStreamObserver {} export class AgentTransportError extends Error {} export class AgentTransportSession {}`;
+const transportStubUrl = 'data:text/javascript;base64,' + Buffer.from(transportStub).toString('base64');
+const adapterStub = `export class DeepSeekAdapter {} export class OpenAIAdapter {} export class CustomAdapter {}`;
+const adapterStubUrl = 'data:text/javascript;base64,' + Buffer.from(adapterStub).toString('base64');
+const registryStub = `export class AgentToolRegistry {} export class AgentToolResult {}`;
+const registryStubUrl = 'data:text/javascript;base64,' + Buffer.from(registryStub).toString('base64');
+const diagnosticsStub = `
+export class AgentToolFailureRecord {}
+export class AgentToolFailureTracker { record() { return { count: 1, requireCorrection: false, shouldAbort: false }; } }
+export const createStartedAgentToolTrace = (call, providerCalls, sequence) => ({ callId: call.id, providerCalls, sequence, status: 'started' });
+export const completeAgentToolTrace = (trace, outputJson) => ({ ...trace, status: 'completed', outputJson });
+export const failAgentToolTrace = (trace, diagnostic) => ({ ...trace, status: 'failed', diagnostic });
+export const sanitizeAgentToolJson = (text) => ({ text });
+`;
+const diagnosticsStubUrl = 'data:text/javascript;base64,' + Buffer.from(diagnosticsStub).toString('base64');
+const loaderCode = `export function resolve(specifier, context, nextResolve) {
+  if (specifier === './AgentTransport') return { url: ${JSON.stringify(transportStubUrl)}, shortCircuit: true };
+  if (specifier === './DeepSeekAdapter' || specifier === './OpenAIAdapter' || specifier === './CustomAdapter') {
+    return { url: ${JSON.stringify(adapterStubUrl)}, shortCircuit: true };
+  }
+  if (specifier === './AgentToolRegistry') return { url: ${JSON.stringify(registryStubUrl)}, shortCircuit: true };
+  if (specifier === '../../model/agent/AgentToolDiagnostics') {
+    return { url: ${JSON.stringify(diagnosticsStubUrl)}, shortCircuit: true };
+  }
+  return nextResolve(specifier, context);
+}`;
+register('data:text/javascript;base64,' + Buffer.from(loaderCode).toString('base64'), import.meta.url);
+const { AgentRunner } = await import('../../entry/src/main/ets/backend/agent/AgentRunner.ets');
+
+function providerRequest(overrides = {}) {
+  return {
+    apiKey: 'test-key', baseUrl: 'https://example.test/v1', model: 'test-model', instructions: '',
+    input: [], functionTools: [], searchMode: 'off', requiresSearchEvidence: false,
+    requiresDraft: false, expectedDraftCount: 0, reasoningEffort: '', maxOutputTokens: 1024,
+    ...overrides,
+  };
+}
+
+function toolCall(id, name, argumentsJson = '{}') {
+  return { id, name, argumentsJson };
+}
+
+function toolCallEvent(call) {
+  return { kind: 'tool_call', text: '', toolCall: call, toolTrace: null, source: null, errorCode: '' };
+}
+
+function runnerHarness(rounds, results) {
+  const registry = {
+    calls: [],
+    async execute(call) {
+      this.calls.push(call);
+      return results.shift();
+    },
+  };
+  const runner = new AgentRunner(registry);
+  const requests = [];
+  let roundIndex = 0;
+  runner.createSession = (_provider, request, observer) => ({
+    async start() {
+      requests.push(request);
+      const events = rounds[roundIndex] ?? [];
+      roundIndex += 1;
+      for (const event of events) {
+        observer.onEvent(event);
+      }
+    },
+    cancel() {},
+  });
+  return { runner, registry, requests };
+}
+
+function clarificationResult() {
+  return {
+    outputJson: JSON.stringify({ status: 'awaiting_user', clarificationId: 'scope-1' }),
+    draft: null,
+    clarification: {
+      id: 'scope-1', question: 'Choose the card scope.',
+      options: [{ id: 'one', label: 'One', description: '' }, { id: 'two', label: 'Two', description: '' }],
+      recommendedOptionId: 'one', allowFreeText: true,
+    },
+  };
+}
 
 test('note helper codecs cover CardsOfNote and GetSingleNotetypeOfNotes wire shapes', () => {
   assert.deepEqual(decodeCardIds(encodeCardIds([11, 12, 900719])), [11, 12, 900719]);
@@ -102,4 +186,97 @@ test('create mode cannot finish by merely claiming that a draft exists in text',
   assert.match(source, /Call the appropriate propose_ tool now/);
   assert.match(source, /createDraftNoteCount/);
   assert.match(source, /createdCount\s*!==\s*request\.expectedDraftCount/);
+});
+
+test('runner returns completed status with no clarification after ordinary work', () => {
+  const source = read('entry/src/main/ets/backend/agent/AgentRunner.ets');
+  assert.match(source, /status:\s*'completed'/);
+  assert.match(source, /clarification:\s*null/);
+});
+
+test('sole clarification pauses before create-mode draft correction with completed trace and output', async () => {
+  const call = toolCall('clarify-1', 'request_clarification', '{"clarificationId":"scope-1"}');
+  const { runner, registry, requests } = runnerHarness([[toolCallEvent(call)]], [clarificationResult()]);
+  const events = [];
+
+  const result = await runner.run('deepseek', providerRequest({ requiresDraft: true }), {
+    onEvent(event) { events.push(event); },
+  });
+
+  assert.equal(result.status, 'awaiting_clarification');
+  assert.equal(result.clarification.id, 'scope-1');
+  assert.deepEqual(result.drafts, []);
+  assert.equal(result.providerCalls, 1);
+  assert.equal(registry.calls.length, 1);
+  assert.deepEqual(events.map((event) => event.kind), ['tool_call', 'tool_started', 'tool_completed']);
+  assert.deepEqual(requests[0].input.map((item) => item.kind), ['function_call', 'function_call_output']);
+});
+
+test('create mode rejects an ordinary no-tool completion without a draft', async () => {
+  const { runner } = runnerHarness([[]], []);
+  await assert.rejects(
+    () => runner.run('deepseek', providerRequest({ requiresDraft: true }), { onEvent() {} }),
+    (error) => error instanceof Error && error.message === 'agent_no_valid_draft',
+  );
+});
+
+test('mixed clarification batches execute no registry calls and return protocol failures', async () => {
+  const clarification = toolCall('clarify-1', 'request_clarification', '{"clarificationId":"scope-1"}');
+  const ordinary = toolCall('search-1', 'search_cards', '{"query":"capital"}');
+  const { runner, registry, requests } = runnerHarness(
+    [[toolCallEvent(clarification), toolCallEvent(ordinary)], []], [],
+  );
+  const events = [];
+
+  const result = await runner.run('deepseek', providerRequest(), { onEvent(event) { events.push(event); } });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(registry.calls.length, 0);
+  const failed = events.filter((event) => event.kind === 'tool_failed');
+  assert.equal(failed.length, 2);
+  assert.ok(failed.every((event) => event.errorCode === 'clarification_must_be_only_tool'));
+  const replayedCalls = requests[0].input.filter((item) => item.kind === 'function_call');
+  assert.deepEqual(replayedCalls.map((item) => item.callId), [clarification.id, ordinary.id]);
+  const outputs = requests[0].input.filter((item) => item.kind === 'function_call_output');
+  assert.equal(outputs.length, 2);
+  for (const replayedCall of replayedCalls) {
+    const index = requests[0].input.indexOf(replayedCall);
+    assert.equal(requests[0].input[index + 1].kind, 'function_call_output');
+    assert.equal(requests[0].input[index + 1].callId, replayedCall.callId);
+    assert.equal(outputs.filter((item) => item.callId === replayedCall.callId).length, 1);
+  }
+  assert.ok(outputs.every((item) => {
+    const output = JSON.parse(item.output);
+    return output.tool_error === 'clarification_must_be_only_tool' &&
+      output.correction === 'Call request_clarification alone, or finish ordinary tool work before asking the user.';
+  }));
+});
+
+test('normal no-tool completion returns completed status', async () => {
+  const { runner } = runnerHarness([[]], []);
+  const result = await runner.run('deepseek', providerRequest(), { onEvent() {} });
+  assert.deepEqual(result, {
+    status: 'completed', clarification: null, drafts: [], providerCalls: 1, toolCalls: 0,
+  });
+});
+
+test('cancellation triggered by a completed clarification trace wins over the pause result', async () => {
+  const call = toolCall('clarify-1', 'request_clarification', '{"clarificationId":"scope-1"}');
+  const { runner, requests } = runnerHarness([[toolCallEvent(call)]], [clarificationResult()]);
+  const events = [];
+
+  await assert.rejects(
+    () => runner.run('deepseek', providerRequest({ requiresDraft: true }), {
+      onEvent(event) {
+        events.push(event);
+        if (event.kind === 'tool_completed') { runner.cancel(); }
+      },
+    }),
+    (error) => error instanceof Error && error.message === 'cancelled',
+  );
+  assert.equal(events.filter((event) => event.kind === 'tool_completed').length, 1);
+  assert.equal(events.filter((event) => event.kind === 'tool_failed').length, 0);
+  const outputs = requests[0].input.filter((item) => item.kind === 'function_call_output');
+  assert.equal(outputs.length, 1);
+  assert.equal(outputs[0].callId, call.id);
 });

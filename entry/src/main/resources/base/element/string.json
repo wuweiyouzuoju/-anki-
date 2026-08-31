@@ -1729,6 +1729,26 @@
     { "name": "ai_agent_tool_template", "value": "合法参数模板" },
     { "name": "ai_agent_tool_repeat_count", "value": "相同失败次数：%s" },
     { "name": "ai_agent_tool_truncated", "value": "部分内容因安全长度限制已截断" },
-    { "name": "ai_agent_repeated_tool_failure", "value": "模型连续三次提交完全相同的无效工具参数，本轮已提前停止。请查看上方错误路径与合法模板。" }
+    { "name": "ai_agent_repeated_tool_failure", "value": "模型连续三次提交完全相同的无效工具参数，本轮已提前停止。请查看上方错误路径与合法模板。" },
+    { "name": "ai_agent_setup_title_create", "value": "制卡设置" },
+    { "name": "ai_agent_setup_title_edit", "value": "修改范围" },
+    { "name": "ai_agent_setup_instruction", "value": "选择完成后，请在下方粘贴学习材料或描述制卡要求，我会按照这些设置生成卡片。" },
+    { "name": "ai_agent_setup_ready", "value": "已准备好" },
+    { "name": "ai_agent_setup_missing_deck", "value": "请选择目标牌组" },
+    { "name": "ai_agent_setup_missing_notetype", "value": "请选择笔记类型" },
+    { "name": "ai_agent_setup_missing_input", "value": "请填写学习材料或要求" },
+    { "name": "ai_agent_setup_missing_provider", "value": "请先完成 AI 配置" },
+    { "name": "ai_agent_setup_summary", "value": "目标：%s · 笔记类型：%s" },
+    { "name": "ai_agent_clarification_title", "value": "需要你确认" },
+    { "name": "ai_agent_clarification_waiting", "value": "等待回答" },
+    { "name": "ai_agent_clarification_recommended", "value": "推荐" },
+    { "name": "ai_agent_clarification_supplement_hint", "value": "可以补充说明（选填）" },
+    { "name": "ai_agent_clarification_continue", "value": "继续" },
+    { "name": "ai_agent_clarification_submitting", "value": "正在继续…" },
+    { "name": "ai_agent_clarification_resolved", "value": "已确认" },
+    { "name": "ai_agent_clarification_resolved_summary", "value": "已确认：%s" },
+    { "name": "ai_agent_clarification_submit_failed", "value": "发送失败，请重试" },
+    { "name": "ai_agent_clarification_cancelled", "value": "澄清已取消" },
+    { "name": "ai_agent_clarification_choose_one", "value": "请选择一个选项" }
   ]
 }

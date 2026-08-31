@@ -38,6 +38,13 @@ test('history schema keeps audit, sources and results but has no secret, reasoni
   assert.match(source, /sanitizeAgentToolJson/);
   assert.match(source, /MAX_AUDIT_TEXT_TOTAL/);
   assert.match(source, /legacySummary/);
+  assert.match(source, /setup:\s*AgentTaskSetup/);
+  assert.match(source, /kind:\s*string/);
+  assert.match(source, /clarification:\s*AgentClarificationView\s*\|\s*null/);
+  assert.match(source, /expanded:\s*boolean/);
+  assert.match(source, /function safeSetup/);
+  assert.match(source, /function safeClarification/);
+  assert.doesNotMatch(source, /confirmationToken\s*:/);
 });
 
 test('shared page persists completed turns and provides resume/delete actions', () => {
@@ -49,4 +56,16 @@ test('shared page persists completed turns and provides resume/delete actions', 
   assert.match(page, /显示历史菜单页/);
   assert.match(page, /promptAction\.showActionMenu/);
   assert.match(page, /开始新会话/);
+});
+
+test('history saves and restores structured clarification without deleting its question', () => {
+  const page = fs.readFileSync(
+    path.join(root, 'entry/src/main/ets/pages/AI制卡页.ets'), 'utf8');
+  assert.match(page, /kind:\s*message\.kind/);
+  assert.match(page, /clarification:\s*message\.clarification/);
+  assert.match(page, /message\.kind\s*=\s*item\.kind/);
+  assert.match(page, /message\.clarification\s*=\s*item\.clarification/);
+  assert.match(page, /message\.expanded\s*=\s*item\.expanded/);
+  assert.match(page, /message\.kind\s*=\s*'clarification'/);
+  assert.match(page, /空消息\('ai', request\.question, false\)/);
 });
