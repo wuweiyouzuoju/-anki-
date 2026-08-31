@@ -895,7 +895,7 @@ export struct AI制卡页 {
   private 处理Agent事件(messageIndex: number, event: AgentEvent): void {
     this.更新消息(messageIndex, (message: 聊天消息): void => {
       if (event.kind === 'status' && event.text === 'draft_correction') {
-        message.正文 = '';
+        message.正文 += '\n\n';
         message.是否错误 = false;
       }
       if (event.kind === 'text_delta') { message.正文 += event.text; }
