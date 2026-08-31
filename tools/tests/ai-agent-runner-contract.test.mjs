@@ -235,8 +235,16 @@ test('mixed clarification batches execute no registry calls and return protocol 
   const failed = events.filter((event) => event.kind === 'tool_failed');
   assert.equal(failed.length, 2);
   assert.ok(failed.every((event) => event.errorCode === 'clarification_must_be_only_tool'));
+  const replayedCalls = requests[0].input.filter((item) => item.kind === 'function_call');
+  assert.deepEqual(replayedCalls.map((item) => item.callId), [clarification.id, ordinary.id]);
   const outputs = requests[0].input.filter((item) => item.kind === 'function_call_output');
   assert.equal(outputs.length, 2);
+  for (const replayedCall of replayedCalls) {
+    const index = requests[0].input.indexOf(replayedCall);
+    assert.equal(requests[0].input[index + 1].kind, 'function_call_output');
+    assert.equal(requests[0].input[index + 1].callId, replayedCall.callId);
+    assert.equal(outputs.filter((item) => item.callId === replayedCall.callId).length, 1);
+  }
   assert.ok(outputs.every((item) => {
     const output = JSON.parse(item.output);
     return output.tool_error === 'clarification_must_be_only_tool' &&
@@ -254,14 +262,21 @@ test('normal no-tool completion returns completed status', async () => {
 
 test('cancellation triggered by a completed clarification trace wins over the pause result', async () => {
   const call = toolCall('clarify-1', 'request_clarification', '{"clarificationId":"scope-1"}');
-  const { runner } = runnerHarness([[toolCallEvent(call)]], [clarificationResult()]);
+  const { runner, requests } = runnerHarness([[toolCallEvent(call)]], [clarificationResult()]);
+  const events = [];
 
   await assert.rejects(
     () => runner.run('deepseek', providerRequest({ requiresDraft: true }), {
       onEvent(event) {
+        events.push(event);
         if (event.kind === 'tool_completed') { runner.cancel(); }
       },
     }),
     (error) => error instanceof Error && error.message === 'cancelled',
   );
+  assert.equal(events.filter((event) => event.kind === 'tool_completed').length, 1);
+  assert.equal(events.filter((event) => event.kind === 'tool_failed').length, 0);
+  const outputs = requests[0].input.filter((item) => item.kind === 'function_call_output');
+  assert.equal(outputs.length, 1);
+  assert.equal(outputs[0].callId, call.id);
 });

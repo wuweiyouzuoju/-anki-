@@ -460,6 +460,9 @@ export class AgentRunner {
             return awaitingClarificationResult(result.clarification, providerCalls, toolCalls);
           }
         } catch (error) {
+          if (error instanceof AgentRunnerError && error.code === 'cancelled') {
+            throw error;
+          }
           const diagnostic: AgentToolDiagnostic = diagnosticForError(error as Object, call, request);
           const record: AgentToolFailureRecord = failureTracker.record(call.name, call.argumentsJson, diagnostic);
           const failedTrace: AgentToolTrace = failAgentToolTrace(startedTrace, diagnostic, record.count);
