@@ -127,7 +127,8 @@ export const 笔记类型方法 = {
   获取笔记类型名列表: 8,
   移除笔记类型: 11,
   获取变更笔记类型信息: 14,
-  变更笔记类型: 15
+  变更笔记类型: 15,
+  获取填空字段序号: 18
 } as const;
 
 /** 后端笔记服务方法索引（backend.rs run_backend_notes_service_method 分支） */
@@ -137,7 +138,9 @@ export const 笔记方法 = {
   添加默认值: 3,
   更新笔记: 5,
   获取笔记: 6,
-  笔记字段校验: 11
+  笔记字段校验: 11,
+  某笔记的卡片: 12,
+  笔记的唯一笔记类型: 13
 } as const;
 
 /** 后端导入导出服务方法索引（backend.rs run_backend_import_export_service_method 分支） */

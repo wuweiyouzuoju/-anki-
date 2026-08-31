@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { 设置面板色板_取, 设置面板色板 } from '../../utils/设置面板配色';
+import { 设置分组卡片 } from './设置分组卡片';
 
 // ========================================================
 // @块ID UI-GLOSSARY-001
@@ -129,26 +130,6 @@ export struct 术语分组 {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id);
   }
 
-  @Builder
-  private 分组头部() {
-    Row() {
-      Text(this.取本地化文本($r('app.string.settings_glossary')))
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(设置面板色板_取(this.是否深色).次文字)
-      Blank()
-      Text('▼')
-        .fontSize(11)
-        .fontColor(设置面板色板_取(this.是否深色).弱化文字)
-        .rotate({ angle: this.是否展开 ? 0 : -90 })
-    }
-    .width('100%')
-    .height(40)
-    .onClick(() => {
-      this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => { this.切换展开回调(); });
-    })
-  }
-
   // ========================================================
   // @块ID UI-GLOSSARY-002
   // @名称 单条术语行
@@ -190,22 +171,19 @@ export struct 术语分组 {
   }
 
   build() {
-    Column() {
-      this.分组头部()
-
-      if (this.是否展开) {
-        Column() {
-          ForEach(this.条目列表, (条目: 术语条目) => {
-            this.术语行(设置面板色板_取(this.是否深色), 条目)
-          }, (条目: 术语条目): string => this.取本地化文本(条目.标签资源))
-        }
-        .width('100%')
+    设置分组卡片({
+      标题: $r('app.string.settings_glossary'),
+      是否深色: this.是否深色,
+      是否展开: this.是否展开,
+      切换展开回调: this.切换展开回调
+    }) {
+      Column() {
+        ForEach(this.条目列表, (条目: 术语条目) => {
+          this.术语行(设置面板色板_取(this.是否深色), 条目)
+        }, (条目: 术语条目): string => this.取本地化文本(条目.标签资源))
       }
+      .width('100%')
     }
-    .width('100%')
-    .padding(16)
-    .backgroundColor(设置面板色板_取(this.是否深色).背景)
-    .borderRadius(12)
   }
 }
 

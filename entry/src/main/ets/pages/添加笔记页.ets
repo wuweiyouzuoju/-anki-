@@ -216,8 +216,6 @@ export struct 添加笔记页 {
   // 笔记类型名列表映射为下拉候选结构（id + name）。
   // T3.2：若列表中无 'Image Occlusion'，调一次 图片遮罩服务.添加图片遮罩笔记类型() 后重新拉取列表；
   //   该调用失败时记录到 错误信息，但不阻断主流程（用户仍能选其他类型）。
-  // 2026-07-28：3 个 Basic 变种（附翻转卡片 / 可选附翻转卡片 / 输入答案）暂不做 UI 适配，
-  //   从下拉列表隐藏；默认值若被过滤掉则 fallback 到可见列表首个 id。
   //
   // @副作用
   // 调后端 确保已打开 / 获取添加默认值 / 获取笔记类型名列表；读写 处理中 状态
@@ -235,7 +233,7 @@ export struct 添加笔记页 {
       await 后端会话.获取实例().确保已打开(上下文.filesDir);
       const 默认值 = await this.笔记服务实例.获取添加默认值();
       let 名称列表: NotetypeNameId[] = await this.笔记类型服务实例.获取笔记类型名列表();
-      // 兜底恢复缺失的标准笔记类型：Basic / Cloze / ImageOcclusion。
+      // 兜底恢复缺失的标准笔记类型：Basic / Cloze / 3 个 Basic 变种 / ImageOcclusion。
       // Anki 26.05 默认 collection 预置 Basic + 3 变种 + Cloze，不预置 ImageOcclusion；
       // 但云同步替换 collection 后，云端可能缺这些标准类型（如账号曾被清理）。
       // 走 Anki 桌面版「管理笔记类型 → 添加 → 选择基础类型」同款流程：
@@ -261,6 +259,33 @@ export struct 添加笔记页 {
           this.错误信息 = e instanceof Error ? e.message : `${e}`;
         }
       }
+      if (!名称列表.some((项: NotetypeNameId): boolean => 添加笔记页.Basic反转笔记类型名集合.indexOf(项.name) >= 0)) {
+        try {
+          const json = await this.笔记类型服务实例.获取标准笔记类型JSON(标准笔记类型种类.BASIC_AND_REVERSED);
+          await this.笔记类型服务实例.添加笔记类型旧版(json);
+          类型缺失 = true;
+        } catch (e) {
+          this.错误信息 = e instanceof Error ? e.message : `${e}`;
+        }
+      }
+      if (!名称列表.some((项: NotetypeNameId): boolean => 添加笔记页.Basic可选反转笔记类型名集合.indexOf(项.name) >= 0)) {
+        try {
+          const json = await this.笔记类型服务实例.获取标准笔记类型JSON(标准笔记类型种类.BASIC_OPTIONAL_REVERSED);
+          await this.笔记类型服务实例.添加笔记类型旧版(json);
+          类型缺失 = true;
+        } catch (e) {
+          this.错误信息 = e instanceof Error ? e.message : `${e}`;
+        }
+      }
+      if (!名称列表.some((项: NotetypeNameId): boolean => 添加笔记页.Basic输入答案笔记类型名集合.indexOf(项.name) >= 0)) {
+        try {
+          const json = await this.笔记类型服务实例.获取标准笔记类型JSON(标准笔记类型种类.BASIC_TYPING);
+          await this.笔记类型服务实例.添加笔记类型旧版(json);
+          类型缺失 = true;
+        } catch (e) {
+          this.错误信息 = e instanceof Error ? e.message : `${e}`;
+        }
+      }
       // Anki 26.05 默认 collection 不预置 ImageOcclusion，单独兜底（用专用 RPC）。
       // 注意：后端返回的笔记类型名是本地化的（中文环境下为「图片遮盖」），用 是图片遮盖笔记类型名 识别。
       if (!名称列表.some((项: NotetypeNameId): boolean => this.是图片遮盖笔记类型名(项.name))) {
@@ -277,22 +302,13 @@ export struct 添加笔记页 {
       if (类型缺失) {
         名称列表 = await this.笔记类型服务实例.获取笔记类型名列表();
       }
-      // 用户决策 2026-07-28：3 个 Basic 变种（附翻转卡片 / 可选附翻转卡片 / 输入答案）
-      // 暂不做 UI 适配，从下拉列表隐藏，后续考虑。相关帮助文案/名集合保留不删，便于后续启用。
-      const 可见名称列表: NotetypeNameId[] = 名称列表.filter(
-        (项: NotetypeNameId): boolean => !this.是隐藏的笔记类型变种(项.name)
-      );
-      this.笔记类型选项 = 可见名称列表.map((项: NotetypeNameId): 添加笔记笔记类型选项 => ({
+      // 用户决策 2026-08-29：Basic 变种（附翻转卡片 / 可选附翻转卡片 / 输入答案）与其它类型
+      // 一并展示，对齐 Anki 桌面端下拉列表；调度与多模板卡片生成均由后端原生处理。
+      this.笔记类型选项 = 名称列表.map((项: NotetypeNameId): 添加笔记笔记类型选项 => ({
         id: 项.id, name: 项.name
       }));
-      // 默认值若被过滤掉（如上次用过变种类型），fallback 到可见列表首个 id。
-      const 默认ID可见: boolean = 可见名称列表.some(
-        (项: NotetypeNameId): boolean => 项.id === 默认值.notetypeId
-      );
-      const 加载ID: number = 默认ID可见 || 可见名称列表.length === 0
-        ? 默认值.notetypeId
-        : 可见名称列表[0].id;
-      await this.加载笔记类型(加载ID);
+      // 后端 defaults_for_adding 保证返回有效的笔记类型 ID（失效配置自动回退首个可用类型）。
+      await this.加载笔记类型(默认值.notetypeId);
     } catch (错误) {
       this.已选笔记类型ID = 0;
       this.字段名列表 = [];
@@ -414,13 +430,6 @@ export struct 添加笔记页 {
 
   private 是填空笔记类型名(名: string): boolean {
     return 添加笔记页.填空笔记类型名集合.indexOf(名) >= 0;
-  }
-
-  /** 是否为当前 UI 暂不适配的 Basic 变种（附翻转卡片 / 可选附翻转卡片 / 输入答案），需从下拉列表隐藏。 */
-  private 是隐藏的笔记类型变种(名: string): boolean {
-    return 添加笔记页.Basic反转笔记类型名集合.indexOf(名) >= 0
-      || 添加笔记页.Basic可选反转笔记类型名集合.indexOf(名) >= 0
-      || 添加笔记页.Basic输入答案笔记类型名集合.indexOf(名) >= 0;
   }
 
   private 是Header字段(名: string): boolean {

@@ -16,6 +16,7 @@ import type { 同步凭证信息 } from '../../model/同步凭证存储';
 import { 分类同步错误 } from '../../model/同步流程';
 import { 设置面板色板, 设置面板色板_取 } from '../../utils/设置面板配色';
 import { 颜色键 } from '../../model/颜色主题';
+import { 设置分组卡片 } from './设置分组卡片';
 
 // ========================================================
 // @块ID UI-SYNC-GROUP-001
@@ -245,42 +246,6 @@ export struct 同步分组 {
     this.打开同步弹窗回调(凭证, this.账号名);
   }
 
-  @Builder
-  private 分组头部() {
-    Row() {
-      Text(this.取本地化文本($r('app.string.settings_sync_group')))
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(设置面板色板_取(this.是否深色).次文字)
-      // 展开时才显示 ⓘ 按钮，点击弹出说明面板（与 调度器分组 / 语音分组 / 术语分组 一致）
-      if (this.是否展开) {
-        Button($r('app.string.field_help_button'))
-          .type(ButtonType.Normal)
-          .backgroundColor(Color.Transparent)
-          .fontSize(14)
-          .fontColor(设置面板色板_取(this.是否深色).三级文字)
-          .width(28)
-          .height(28)
-          .padding(0)
-          .onClick(() => {
-            this.打开说明回调($r('app.string.settings_sync_group'), $r('app.string.sync_help_text'));
-          })
-      }
-      Blank()
-      Text('▼')
-        .fontSize(11)
-        .fontColor(设置面板色板_取(this.是否深色).弱化文字)
-        .rotate({ angle: this.是否展开 ? 0 : -90 })
-    }
-    .width('100%')
-    .height(40)
-    .onClick(() => {
-      this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => {
-        this.切换展开回调();
-      });
-    })
-  }
-
   // ========================================================
   // @块ID UI-SYNC-GROUP-003
   // @名称 未登录内容
@@ -465,23 +430,23 @@ export struct 同步分组 {
   }
 
   build() {
-    Column() {
-      this.分组头部()
-
-      if (this.是否展开) {
-        Column({ space: 10 }) {
-          if (this.当前状态 === '未登录') {
-            this.未登录内容(设置面板色板_取(this.是否深色))
-          } else {
-            this.已登录内容(设置面板色板_取(this.是否深色))
-          }
+    设置分组卡片({
+      标题: $r('app.string.settings_sync_group'),
+      是否深色: this.是否深色,
+      是否展开: this.是否展开,
+      帮助标题: $r('app.string.settings_sync_group'),
+      帮助正文: $r('app.string.sync_help_text'),
+      切换展开回调: this.切换展开回调,
+      打开说明回调: this.打开说明回调
+    }) {
+      Column({ space: 10 }) {
+        if (this.当前状态 === '未登录') {
+          this.未登录内容(设置面板色板_取(this.是否深色))
+        } else {
+          this.已登录内容(设置面板色板_取(this.是否深色))
         }
-        .width('100%')
       }
+      .width('100%')
     }
-    .width('100%')
-    .padding(16)
-    .backgroundColor(设置面板色板_取(this.是否深色).背景)
-    .borderRadius(12)
   }
 }

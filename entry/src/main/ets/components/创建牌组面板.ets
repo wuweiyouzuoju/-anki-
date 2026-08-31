@@ -33,7 +33,6 @@ import { 应用尺寸 } from '../utils/应用尺寸';
 import { 组合牌组路径, 规范化牌组路径 } from '../model/牌组层级';
 import type { 牌组汇总 } from '../model/主页模型';
 import { 颜色键 } from '../model/颜色主题';
-import { 字段帮助面板 } from './字段帮助面板';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
 @Component
@@ -58,10 +57,6 @@ export struct 创建牌组面板 {
   @StorageProp(颜色键.主色按钮按下) private 主色按钮按下: string = '#1E4FB8';
   @StorageProp(颜色键.选中背景) private 选中背景色: string = '#E8EEFC';
   @State private 已按下确认: boolean = false;
-  // 帮助浮层：点击标题旁的 ⓘ 弹出，向用户解释 Default 牌组的自动隐藏规则（BUG-002 改进）
-  @State private 显示帮助: boolean = false;
-  @State private 帮助标题: Resource = $r('app.string.create_deck_help_title');
-  @State private 帮助正文: Resource = $r('app.string.create_deck_help_body');
 
   aboutToAppear(): void {
     this.parentId = this.initialParentId;
@@ -286,22 +281,13 @@ export struct 创建牌组面板 {
         .transition(TransitionEffect.OPACITY.animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() }))
 
       Column({ space: 应用尺寸.间距_16 }) {
-        // 标题行：标题 + ⓘ 帮助按钮（BUG-002 改进：解释 Default 牌组自动隐藏规则）
+        // 标题行
         Row() {
           Text($r('app.string.create_deck_title'))
             .fontSize(应用尺寸.字号_面板标题)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
-          Button($r('app.string.field_help_button'))
-            .type(ButtonType.Normal)
-            .backgroundColor(Color.Transparent)
-            .fontColor(this.动作主色)
-            .fontSize(应用尺寸.字号_面板标题)
-            .enabled(!this.busy)
-            .onClick((): void => {
-              this.显示帮助 = true;
-            })
         }
         .width('100%')
 
@@ -427,17 +413,6 @@ export struct 创建牌组面板 {
         TransitionEffect.opacity(0)
           .animation({ curve: 取全屏转场曲线(), duration: 取全屏转场时长() })
       ))
-
-      // 帮助浮层：点击标题旁的 ⓘ 触发，说明 Default 牌组的自动隐藏规则（BUG-002 改进）
-      if (this.显示帮助) {
-        字段帮助面板({
-          标题: this.帮助标题,
-          正文: this.帮助正文,
-          onClose: (): void => {
-            this.显示帮助 = false;
-          }
-        })
-      }
     }
     .width('100%')
     .height('100%')

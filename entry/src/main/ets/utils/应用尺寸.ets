@@ -106,6 +106,7 @@ export class 应用尺寸 {
   static readonly 间距_3: number = 3;
   static readonly 间距_4: number = 4;
   static readonly 间距_5: number = 5;
+  static readonly 间距_6: number = 6;
   static readonly 间距_7: number = 7;
   static readonly 间距_8: number = 8;
   static readonly 间距_10: number = 10;

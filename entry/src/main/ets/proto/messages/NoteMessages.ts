@@ -29,7 +29,7 @@
 // ========================================================
 
 import { 协议读取器 } from '../core/ProtoReader';
-import { 协议写入器 } from '../core/ProtoWriter';
+import { 协议写入器, 线类型_长度分隔, 线类型_变长整数 } from '../core/ProtoWriter';
 
 export interface EditableNote {
   id: number;
@@ -135,6 +135,48 @@ export function encodeNoteId(noteId: number): Uint8Array {
     writer.写入64位整数(1, noteId);
   }
   return writer.转为字节();
+}
+
+/** notes.NoteIds：供 GetSingleNotetypeOfNotes 使用。 */
+export function encodeNoteIds(noteIds: number[]): Uint8Array {
+  const writer = new 协议写入器();
+  writer.写入打包64位整数(1, noteIds);
+  return writer.转为字节();
+}
+
+/** cards.CardIds：CardsOfNote 的响应，兼容 packed / unpacked repeated int64。 */
+export function decodeCardIds(bytes: Uint8Array): number[] {
+  const reader = new 协议读取器(bytes);
+  const cardIds: number[] = [];
+  let tag;
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 === 1 && tag.线类型 === 线类型_长度分隔) {
+      const packed: number[] = reader.读取打包64位整数();
+      for (const cardId of packed) {
+        cardIds.push(cardId);
+      }
+    } else if (tag.字段号 === 1 && tag.线类型 === 线类型_变长整数) {
+      cardIds.push(reader.读取64位整数());
+    } else {
+      reader.跳过字段(tag.线类型);
+    }
+  }
+  return cardIds;
+}
+
+/** notetypes.NotetypeId：GetSingleNotetypeOfNotes 的响应。 */
+export function decodeNotetypeId(bytes: Uint8Array): number {
+  const reader = new 协议读取器(bytes);
+  let notetypeId: number = 0;
+  let tag;
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      notetypeId = reader.读取64位整数();
+    } else {
+      reader.跳过字段(tag.线类型);
+    }
+  }
+  return notetypeId;
 }
 
 export function encodeAddNoteRequest(note: EditableNote, deckId: number): Uint8Array {

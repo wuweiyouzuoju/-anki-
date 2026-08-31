@@ -7,6 +7,7 @@
 // 映射到沙箱 collection.media/，绕过 ArkWeb file 协议跨域拦截（官方推荐做法）。
 
 import { common } from '@kit.AbilityKit';
+import { LengthMetrics } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { 后端会话 } from '../backend/后端会话';
@@ -43,6 +44,7 @@ import { TTS播放器 } from '../utils/TTS播放器';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 学习浮动工具栏 } from '../components/学习浮动工具栏';
 import { 学习手写白板层 } from '../components/学习手写白板层';
+import { StudyActionButton } from '../components/StudyActionButton';
 import { 学习阶段 } from '../utils/吸附计算器';
 import { 加载学习布局模式, 学习布局模式 } from '../model/学习布局存储';
 import { 简洁模式AppStorage键, 加载简洁模式 } from '../model/简洁模式存储';
@@ -54,16 +56,10 @@ import { 颜色键 } from '../model/颜色主题';
 import { CustomTransition } from '../utils/自定义转场';
 // KeyCode 枚举：用于 onKeyPreIme 键盘事件判断（API 12+）。物理键盘/蓝牙键盘/2in1 设备统一派发。
 import { KeyCode } from '@kit.InputKit';
+import type { AI制卡页参数 } from './AI制卡页';
 
 /** 与上游 buildNextLearnMsg 一致：下一张学习卡 >=1 天后到期时，完成页不再提示学习卡 */
 const SECONDS_PER_DAY: number = 86400;
-
-// 评分按钮 + 辅助按钮共用 按下评分 状态时用的"伪 rating" tag：
-// RATING_AGAIN/HARD/GOOD/EASY 占 0/1/2/3，辅助按钮用 100/101 避免冲突。
-// 按下评分=-1 表示无按钮被按下。仅用于 onTouch 视觉反馈，不会传给 评分()/埋藏或暂停当前卡()。
-// 删除卡片按钮已移至 顶部条，与 back/undo 同款无 pressed 反馈，故不再占用 tag。
-const BURY_RATING_TAG: number = 100;
-const SUSPEND_RATING_TAG: number = 101;
 
 export interface 学习页参数 {
   deckId?: string;
@@ -149,9 +145,6 @@ export struct 学习页 {
   // 手势导航条高度（bottom 布局下答案条贴底，需抬高避让导航条）
   @StorageProp('导航条高度') private 导航条高度: number = 0;
   @State private 显示答案按下: boolean = false;
-  // 4 个评分按钮共用一个 pressed 状态：按下时记下对应 rating，松开恢复 -1。
-  // 用单状态而非 4 个 boolean，避免 4 个 @State 字段爆炸；onTouch Up/Cancel 都恢复 -1 保证松手必复位。
-  @State private 按下评分: number = -1;
   // Type-in-the-Answer：拼写字段名 为空串表示当前卡无 {{type:FieldName}} 标记，
   // 不渲染 TextInput、翻面时不注入比对结果。
   // 拼写填空=true 时翻面用 提取拼写填空内容 提取当前 cardOrd 的预期答案。
@@ -482,12 +475,49 @@ export struct 学习页 {
     // 「手写」入口：常驻显示（question/answer 阶段），无开关，进入后叠加 Canvas 笔迹层
     if (this.阶段 === 'question' || this.阶段 === 'answer') {
       菜单.push({
+        value: this.取文案($r('app.string.ai_card_edit')),
+        action: () => { this.打开AI改卡(); },
+        enabled: this.当前卡片 !== null
+      });
+      菜单.push({
         value: this.取文案($r('app.string.study_handwrite')),
         action: () => { this.手写模式 = true; },
         enabled: true
       });
     }
     return 菜单;
+  }
+
+  /** 当前卡只作为本地入口上下文；打开页面不会触发任何 AI 网络请求。 */
+  private 打开AI改卡(): void {
+    if (this.当前卡片 === null) { return; }
+    const params: AI制卡页参数 = {
+      mode: 'edit',
+      deckId: String(this.当前卡片.deckId),
+      deckName: this.牌组名,
+      deckOptions: [],
+      cardIds: [this.当前卡片.cardId],
+      noteIds: [this.当前卡片.noteId],
+      templateIdx: this.当前卡片.templateIdx
+    };
+    this.pathStack.pushPath({
+      name: 'AiCardPage', param: params,
+      onPop: (): void => { this.刷新AI改卡后当前卡(); }
+    });
+  }
+
+  /** 只重渲染同一张卡；不重新取队列、不评分、不埋藏或暂停。 */
+  private async 刷新AI改卡后当前卡(): Promise<void> {
+    if (this.当前卡片 === null || (this.阶段 !== 'question' && this.阶段 !== 'answer')) { return; }
+    try {
+      this.已渲染 = await this.卡片渲染服务实例.渲染既有卡片(this.当前卡片.cardId);
+      this.正面HTML = 剥除拼写标记(构建卡片HTML(this.已渲染, 'question'));
+      this.背面HTML = 构建卡片HTML(this.已渲染, 'answer');
+      const html: string = this.阶段 === 'answer' ? this.背面HTML : this.正面HTML;
+      this.网页控制器.loadData(html, 'text/html', 'UTF-8', 媒体基地址, ' ');
+    } catch (error) {
+      this.错误详情 = error instanceof Error ? error.message : `${error}`;
+    }
   }
 
   // ========================================================
@@ -1266,18 +1296,66 @@ export struct 学习页 {
       .alignContent(Alignment.BottomEnd)
 
       // Type-in-the-Answer：正面阶段在 Web 下方渲染输入框，翻面后比对用户输入与笔记字段值。
+      // Enter 提交翻面（对齐 Anki 桌面端输入框回车显示答案）。
+      // 左右内边距与 答案条 的埋藏/暂停行同款（输入框总宽 = 埋藏+暂停两键之和）；
+      // float 模式下 答案条 不渲染、输入框是卡片区最后元素贴屏底，
+      // 底部抬高避让手势导航条（与 答案条 bottom padding 同公式）。
       if (this.阶段 === 'question' && this.拼写字段名 !== '') {
-        TextInput({ placeholder: $r('app.string.study_type_answer_placeholder'), text: this.已输入答案 })
-          .width('100%')
-          .height(应用尺寸.行动按钮高度)
-          .margin({ top: 应用尺寸.间距_8 })
-          .fontSize(应用尺寸.字号_按钮)
-          .borderRadius(应用尺寸.圆角_面板)
-          .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
-          .backgroundColor($r('app.color.surface_card'))
-          .onChange((value: string) => {
-            this.已输入答案 = value;
-          })
+        Column() {
+          WithTheme({
+            theme: {
+              colors: {
+                compBackgroundFocus: Color.Transparent,
+                compFocusedPrimary: Color.Transparent,
+                compFocusedSecondary: Color.Transparent,
+                compFocusedTertiary: Color.Transparent,
+                interactiveFocus: Color.Transparent
+              }
+            }
+          }) {
+            TextInput({ placeholder: $r('app.string.study_type_answer_placeholder'), text: this.已输入答案 })
+              .width('100%')
+              .height(应用尺寸.行动按钮高度)
+              .fontSize(应用尺寸.字号_按钮)
+              .borderRadius(应用尺寸.圆角_面板)
+              .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
+              .backgroundColor($r('app.color.surface_card'))
+              // 聚焦视觉完全去主题色，三层处理：局部主题色、组件状态样式、系统焦点框。
+              .stateStyles({
+                focused: {
+                  .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
+                  .backgroundColor($r('app.color.surface_card'))
+                },
+                normal: {
+                  .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
+                  .backgroundColor($r('app.color.surface_card'))
+                }
+              })
+              .focusBox({
+                strokeWidth: LengthMetrics.vp(0),
+                margin: LengthMetrics.vp(0)
+              })
+              .enterKeyType(EnterKeyType.Done)
+              .onSubmit((): void => {
+                this.显示答案();
+              })
+              .onChange((value: string) => {
+                this.已输入答案 = value;
+              })
+          }
+        }
+        .width('100%')
+        .padding({
+          left: 应用尺寸.页面内边距_水平,
+          right: 应用尺寸.页面内边距_水平,
+          // 间距用 padding（在背景内），避免透出页面底色形成主题色横带
+          top: 应用尺寸.间距_8
+        })
+        .margin({
+          bottom: this.学习布局模式值 === 'float' ? 应用尺寸.页面内边距_水平 + this.导航条高度 : 0
+        })
+        // 与卡片区域/答案条同底色：此行原为透明，会透出整页的 页面底色微染（主题色浅色横带）
+        .backgroundColor($r('app.color.surface_card'))
       }
     }
     .width('100%')
@@ -1316,108 +1394,63 @@ export struct 学习页 {
       }
       if (this.阶段 === 'question' || this.阶段 === 'answer') {
         Row({ space: 应用尺寸.间距_8 }) {
-          Button($r('app.string.study_bury'))
-            .layoutWeight(1)
-            .height(应用尺寸.按钮高度)
-            .fontSize(应用尺寸.字号_正文_中)
-            .fontColor($r('app.color.text_secondary'))
-            .backgroundColor(this.按下评分 === BURY_RATING_TAG ? this.主色容器色 : $r('app.color.surface_card'))
-            .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-            .borderRadius(应用尺寸.圆角_面板)
-            .animation({ duration: 80, curve: Curve.EaseOut })
-            .onTouch((event: TouchEvent): void => {
-              if (event.type === TouchType.Down) { this.按下评分 = BURY_RATING_TAG; }
-              else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下评分 = -1; }
-            })
-            .onClick(() => {
+          StudyActionButton({
+            label: $r('app.string.study_bury'),
+            buttonHeight: 应用尺寸.按钮高度,
+            labelFontSize: 应用尺寸.字号_正文_中,
+            labelColor: $r('app.color.text_secondary'),
+            pressedBackground: this.主色容器色,
+            onActivate: (): void => {
               this.埋藏或暂停当前卡(BURY_SUSPEND_MODE_BURY_USER);
-            })
-          Button($r('app.string.study_suspend'))
-            .layoutWeight(1)
-            .height(应用尺寸.按钮高度)
-            .fontSize(应用尺寸.字号_正文_中)
-            .fontColor($r('app.color.text_secondary'))
-            .backgroundColor(this.按下评分 === SUSPEND_RATING_TAG ? this.主色容器色 : $r('app.color.surface_card'))
-            .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-            .borderRadius(应用尺寸.圆角_面板)
-            .animation({ duration: 80, curve: Curve.EaseOut })
-            .onTouch((event: TouchEvent): void => {
-              if (event.type === TouchType.Down) { this.按下评分 = SUSPEND_RATING_TAG; }
-              else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下评分 = -1; }
-            })
-            .onClick(() => {
+            }
+          })
+          StudyActionButton({
+            label: $r('app.string.study_suspend'),
+            buttonHeight: 应用尺寸.按钮高度,
+            labelFontSize: 应用尺寸.字号_正文_中,
+            labelColor: $r('app.color.text_secondary'),
+            pressedBackground: this.主色容器色,
+            onActivate: (): void => {
               this.埋藏或暂停当前卡(BURY_SUSPEND_MODE_SUSPEND);
-            })
+            }
+          })
         }
         .width('100%')
         .margin({ top: 应用尺寸.间距_8 })
       }
       if (this.阶段 === 'answer') {
         Row({ space: 应用尺寸.间距_8 }) {
-          Button(this.按钮文案位(RATING_AGAIN))
-            .layoutWeight(1)
-            .height(应用尺寸.行动按钮高度)
-            .fontSize(应用尺寸.字号_按钮)
-            .fontColor($r('app.color.error_text'))
-            .backgroundColor(this.按下评分 === RATING_AGAIN ? this.主色容器色 : $r('app.color.surface_card'))
-            .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-            .borderRadius(应用尺寸.圆角_面板)
-            .animation({ duration: 80, curve: Curve.EaseOut })
-            .onTouch((event: TouchEvent): void => {
-              if (event.type === TouchType.Down) { this.按下评分 = RATING_AGAIN; }
-              else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下评分 = -1; }
-            })
-            .onClick(() => {
+          StudyActionButton({
+            label: this.按钮文案位(RATING_AGAIN),
+            labelColor: $r('app.color.error_text'),
+            pressedBackground: this.主色容器色,
+            onActivate: (): void => {
               this.评分(RATING_AGAIN);
-            })
-          Button(this.按钮文案位(RATING_HARD))
-            .layoutWeight(1)
-            .height(应用尺寸.行动按钮高度)
-            .fontSize(应用尺寸.字号_按钮)
-            .fontColor($r('app.color.text_primary'))
-            .backgroundColor(this.按下评分 === RATING_HARD ? this.主色容器色 : $r('app.color.surface_card'))
-            .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-            .borderRadius(应用尺寸.圆角_面板)
-            .animation({ duration: 80, curve: Curve.EaseOut })
-            .onTouch((event: TouchEvent): void => {
-              if (event.type === TouchType.Down) { this.按下评分 = RATING_HARD; }
-              else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下评分 = -1; }
-            })
-            .onClick(() => {
+            }
+          })
+          StudyActionButton({
+            label: this.按钮文案位(RATING_HARD),
+            pressedBackground: this.主色容器色,
+            onActivate: (): void => {
               this.评分(RATING_HARD);
-            })
-          Button(this.按钮文案位(RATING_GOOD))
-            .layoutWeight(1)
-            .height(应用尺寸.行动按钮高度)
-            .fontSize(应用尺寸.字号_按钮)
-            .fontColor(this.动作主色)
-            .backgroundColor(this.按下评分 === RATING_GOOD ? this.主色容器色 : $r('app.color.surface_card'))
-            .border({ width: 应用尺寸.卡片边框, color: this.按下评分 === RATING_GOOD ? this.动作主色 : $r('app.color.border_subtle') })
-            .borderRadius(应用尺寸.圆角_面板)
-            .animation({ duration: 80, curve: Curve.EaseOut })
-            .onTouch((event: TouchEvent): void => {
-              if (event.type === TouchType.Down) { this.按下评分 = RATING_GOOD; }
-              else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下评分 = -1; }
-            })
-            .onClick(() => {
+            }
+          })
+          StudyActionButton({
+            label: this.按钮文案位(RATING_GOOD),
+            labelColor: this.动作主色,
+            pressedBackground: this.主色容器色,
+            pressedBorderColor: this.动作主色,
+            onActivate: (): void => {
               this.评分(RATING_GOOD);
-            })
-          Button(this.按钮文案位(RATING_EASY))
-            .layoutWeight(1)
-            .height(应用尺寸.行动按钮高度)
-            .fontSize(应用尺寸.字号_按钮)
-            .fontColor($r('app.color.text_primary'))
-            .backgroundColor(this.按下评分 === RATING_EASY ? this.主色容器色 : $r('app.color.surface_card'))
-            .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-            .borderRadius(应用尺寸.圆角_面板)
-            .animation({ duration: 80, curve: Curve.EaseOut })
-            .onTouch((event: TouchEvent): void => {
-              if (event.type === TouchType.Down) { this.按下评分 = RATING_EASY; }
-              else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.按下评分 = -1; }
-            })
-            .onClick(() => {
+            }
+          })
+          StudyActionButton({
+            label: this.按钮文案位(RATING_EASY),
+            pressedBackground: this.主色容器色,
+            onActivate: (): void => {
               this.评分(RATING_EASY);
-            })
+            }
+          })
         }
         .width('100%')
       }

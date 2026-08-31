@@ -30,6 +30,8 @@ import { 空卡列表面板 } from './settings/空卡列表面板';
 import { 查找重复对话框 } from './settings/查找重复对话框';
 import { 笔记类型管理面板 } from './settings/笔记类型管理面板';
 import { 笔记类型编辑器 } from './settings/笔记类型编辑器';
+import { AIAgent设置分组 } from './settings/AIAgent设置分组';
+import { 设置分组卡片 } from './settings/设置分组卡片';
 import { 简洁模式AppStorage键, 加载简洁模式, 保存简洁模式 } from '../model/简洁模式存储';
 import {
   TapZones开关AppStorage键,
@@ -40,14 +42,6 @@ import { 字段帮助面板 } from './字段帮助面板';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 按下态按钮 } from './common/按下态按钮';
-
-// 分组头部 的按引用传参载体：@Builder 按值参数会被快照，@State 变化不重跑 builder，
-// 三角形不转（数据库检查/关于分组曾因此不旋转）；ArkTS 要求字面量对应显式 interface。
-interface 分组头部参数 {
-  标题: string;
-  已展开: boolean;
-  切换回调: () => void;
-}
 
 // ========================================================
 // @块ID UI-SETTINGS-PANEL-001
@@ -138,6 +132,7 @@ export struct 设置面板 {
   @State private 术语分组展开: boolean = false;
   // AnkiWeb 云同步分组默认折叠：与 FSRS 一致，按需展开
   @State private 同步分组展开: boolean = false;
+  @State private AIAgent分组展开: boolean = false;
   // 关于分组内部两个子项展开状态（反馈/赞助）。
   @State private 反馈子项展开: boolean = false;
   @State private 赞助子项展开: boolean = false;
@@ -294,42 +289,6 @@ export struct 设置面板 {
   /** 按钮背景专用主色（配 #FFFFFF 文字 ≥ 4.5:1）。2.1.4.1 深色模式修复。 */
   private 解析主色按钮背景(): string {
     return this.主色按钮背景链接 !== '' ? this.主色按钮背景链接 : 设置面板色板_取(this.是否深色).主色按钮背景;
-  }
-
-  // ========================================================
-  // @块ID UI-SETTINGS-PANEL-003
-  // @名称 分组头部构建器
-  //
-  // @作用
-  // 渲染通用分组头部：标题 + ▼ 三角形（展开朝下/折叠朝右）。
-  // 接收 分组头部参数 字面量，按引用读 已展开 与 切换回调，让 @State 变化时三角形角度立即刷新。
-  //
-  // @输入
-  // $$.标题 / $$.已展开 / $$.切换回调：分组头部参数 字面量。
-  //
-  // @输出
-  // 渲染分组头部行；点击时调用 切换回调。
-  //
-  // @副作用
-  // 无。
-  // ========================================================
-  @Builder
-  private 分组头部($$: 分组头部参数) {
-    Row() {
-      Text($$.标题)
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(设置面板色板_取(this.是否深色).次文字)
-      Blank()
-      Text('▼')
-        .fontSize(11)
-        .fontColor(设置面板色板_取(this.是否深色).弱化文字)
-        .rotate({ angle: $$.已展开 ? 0 : -90 })
-        .animation({ duration: 150, curve: Curve.EaseOut })
-    }
-    .width('100%')
-    .height(40)
-    .onClick($$.切换回调)
   }
 
   // ========================================================
@@ -920,48 +879,34 @@ export struct 设置面板 {
           })
         }
 
+        // AI Agent：提供商/模型下拉、自定义端点、联网模式与 Asset Store 密钥。
+        ListItem() {
+          AIAgent设置分组({
+            是否深色: this.是否深色,
+            已展开: this.AIAgent分组展开,
+            切换展开回调: (): void => { this.AIAgent分组展开 = !this.AIAgent分组展开; }
+          })
+        }
+
         // 6. 数据库检查分组（内联：契约测试要求 import 集合服务 / 检查数据库 / 数据库检查中 等保留在主壳）
         // 头部内联带 ⓘ 按钮：与其他子分组（调度器分组/语音分组/术语分组）一致，
         // 点击 ⓘ 上抛到主壳根 Stack 的 字段帮助面板 浮层显示「数据库检查」官方说明。
         // 2026-07-22 上移两格：与云同步相邻，便于同步后顺手检查数据库
         ListItem() {
-          Column() {
-            Row() {
-              Text(this.取本地化文本($r('app.string.settings_database_check')))
-                .fontSize(14)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(设置面板色板_取(this.是否深色).次文字)
-              // 展开时才显示 ⓘ 按钮，点击弹出说明面板（与 调度器分组 等 打开说明回调 模式一致）
-              if (this.数据库分组展开) {
-                Button($r('app.string.field_help_button'))
-                  .type(ButtonType.Normal)
-                  .backgroundColor(Color.Transparent)
-                  .fontSize(14)
-                  .fontColor(设置面板色板_取(this.是否深色).三级文字)
-                  .width(28)
-                  .height(28)
-                  .padding(0)
-                  .onClick(() => {
-                    this.说明标题 = $r('app.string.check_db_title');
-                    this.说明正文 = $r('app.string.check_db_help');
-                    this.显示说明浮层 = true;
-                  })
-              }
-              Blank()
-              Text('▼')
-                .fontSize(11)
-                .fontColor(设置面板色板_取(this.是否深色).弱化文字)
-                .rotate({ angle: this.数据库分组展开 ? 0 : -90 })
-                .animation({ duration: 150, curve: Curve.EaseOut })
+          设置分组卡片({
+            标题: $r('app.string.settings_database_check'),
+            是否深色: this.是否深色,
+            是否展开: this.数据库分组展开,
+            帮助标题: $r('app.string.check_db_title'),
+            帮助正文: $r('app.string.check_db_help'),
+            切换展开回调: (): void => { this.数据库分组展开 = !this.数据库分组展开; },
+            打开说明回调: (标题: Resource, 正文: Resource): void => {
+              this.说明标题 = 标题;
+              this.说明正文 = 正文;
+              this.显示说明浮层 = true;
             }
-            .width('100%')
-            .height(40)
-            .onClick(() => {
-              this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => {
-                this.数据库分组展开 = !this.数据库分组展开;
-              });
-            })
-            if (this.数据库分组展开) {
+          }) {
+            Column() {
               Button(this.数据库检查中 ? $r('app.string.check_db_running') : $r('app.string.check_db_title'))
                 .width('100%')
                 .height(40)
@@ -998,11 +943,8 @@ export struct 设置面板 {
                 }
               }
             }
+            .width('100%')
           }
-          .width('100%')
-          .padding(16)
-          .backgroundColor(设置面板色板_取(this.是否深色).背景)
-          .borderRadius(12)
         }
 
         // 7. 术语表分组（简洁模式下隐藏）
@@ -1041,41 +983,27 @@ export struct 设置面板 {
 
         // 8. 关于分组（保留内联：含 feedback_email / sponsor_qrcode 资源引用）
         ListItem() {
-          Column() {
-            this.分组头部({
-              标题: this.取本地化文本($r('app.string.settings_about')),
-              已展开: this.关于分组展开,
-              切换回调: (): void => { this.关于分组展开 = !this.关于分组展开; }
-            })
-
-            if (this.关于分组展开) {
-              this.关于分组内容();
-            }
+          设置分组卡片({
+            标题: $r('app.string.settings_about'),
+            是否深色: this.是否深色,
+            是否展开: this.关于分组展开,
+            切换展开回调: (): void => { this.关于分组展开 = !this.关于分组展开; }
+          }) {
+            this.关于分组内容();
           }
-          .width('100%')
-          .padding(16)
-          .backgroundColor(设置面板色板_取(this.是否深色).背景)
-          .borderRadius(12)
         }
 
         // 9. 实验性功能分组：仅「实验版」模式下可见；包含 Tap Zones 快速答题。
         // 分组头部与其他分组同款（无 ⓘ）；开关行旁的 ⓘ 保留说明用法。
         if (!this.简洁模式) {
           ListItem() {
-            Column() {
-              // 分组头部：与其他分组同款（字号/字色/折叠箭头统一），不带 ⓘ
-              this.分组头部({
-                标题: this.取本地化文本($r('app.string.settings_experimental_group')),
-                已展开: this.实验性分组展开,
-                切换回调: (): void => {
-                  this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => {
-                    this.实验性分组展开 = !this.实验性分组展开;
-                  });
-                }
-              })
-
-              if (this.实验性分组展开) {
-                Column({ space: 12 }) {
+            设置分组卡片({
+              标题: $r('app.string.settings_experimental_group'),
+              是否深色: this.是否深色,
+              是否展开: this.实验性分组展开,
+              切换展开回调: (): void => { this.实验性分组展开 = !this.实验性分组展开; }
+            }) {
+              Column({ space: 12 }) {
                   // Tap Zones：点击屏幕区域快速答题
                   Row() {
                     Text(this.取本地化文本($r('app.string.settings_tap_zones_label')))
@@ -1103,14 +1031,9 @@ export struct 设置面板 {
                   }
                   .width('100%')
                   .height(48)
-                }
-                .width('100%')
               }
+              .width('100%')
             }
-            .width('100%')
-            .padding(16)
-            .backgroundColor(设置面板色板_取(this.是否深色).背景)
-            .borderRadius(12)
           }
         }
 

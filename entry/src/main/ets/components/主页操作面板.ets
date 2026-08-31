@@ -30,6 +30,8 @@ import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时
 export struct 主页操作面板 {
   创建牌组回调: () => void = (): void => {};
   导入牌组回调: () => void = (): void => {};
+  AI制卡回调: () => void = (): void => {};
+  AI改卡回调: () => void = (): void => {};
   关闭回调: () => void = (): void => {};
 
   build() {
@@ -61,6 +63,28 @@ export struct 主页操作面板 {
           .height(应用尺寸.行动按钮高度)
           .textAlign(TextAlign.Center)
           .onClick((): void => this.导入牌组回调())
+        Divider()
+          .color($r('app.color.border_subtle'))
+          .strokeWidth(应用尺寸.卡片边框)
+          .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+        Text($r('app.string.ai_card_title'))
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .height(应用尺寸.行动按钮高度)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => this.AI制卡回调())
+        Divider()
+          .color($r('app.color.border_subtle'))
+          .strokeWidth(应用尺寸.卡片边框)
+          .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+        Text($r('app.string.ai_card_edit'))
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .height(应用尺寸.行动按钮高度)
+          .textAlign(TextAlign.Center)
+          .onClick((): void => this.AI改卡回调())
       }
       .width(200)
       .backgroundColor($r('app.color.surface_card'))

@@ -29,7 +29,11 @@
 // ========================================================
 
 import { 协议读取器 } from '../core/ProtoReader';
-import { 协议写入器 } from '../core/ProtoWriter';
+import { 协议写入器, 线类型_长度分隔, 线类型_变长整数 } from '../core/ProtoWriter';
+
+/** `anki.notetypes.Notetype.Config.Kind` values. */
+export const NOTE_TYPE_KIND_NORMAL: number = 0;
+export const NOTE_TYPE_KIND_CLOZE: number = 1;
 
 export interface NotetypeNameId {
   id: number;
@@ -44,8 +48,18 @@ export interface NotetypeField {
 export interface NotetypeView {
   id: number;
   name: string;
+  kind: number;
   fields: NotetypeField[];
   fieldNames: string[];
+}
+
+/** Agent/UI shared structural capabilities for a note type. */
+export interface NotetypeCapabilities {
+  notetypeId: number;
+  name: string;
+  kind: number;
+  fieldNames: string[];
+  clozeFieldOrds: number[];
 }
 
 export function encodeNotetypeId(id: number): Uint8Array {
@@ -130,15 +144,37 @@ function decodeNotetypeField(bytes: Uint8Array): NotetypeField {
   return field;
 }
 
+function decodeNotetypeConfig(bytes: Uint8Array): number {
+  const reader = new 协议读取器(bytes);
+  let kind: number = NOTE_TYPE_KIND_NORMAL;
+  let tag;
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 === 1) {
+      kind = reader.读取变长整数();
+    } else {
+      reader.跳过字段(tag.线类型);
+    }
+  }
+  return kind;
+}
+
 export function decodeNotetype(bytes: Uint8Array): NotetypeView {
   const reader = new 协议读取器(bytes);
-  const result: NotetypeView = { id: 0, name: '', fields: [], fieldNames: [] };
+  const result: NotetypeView = {
+    id: 0,
+    name: '',
+    kind: NOTE_TYPE_KIND_NORMAL,
+    fields: [],
+    fieldNames: []
+  };
   let tag;
   while ((tag = reader.读取标签()) !== null) {
     if (tag.字段号 === 1) {
       result.id = reader.读取64位整数();
     } else if (tag.字段号 === 2) {
       result.name = reader.读取字符串();
+    } else if (tag.字段号 === 7) {
+      result.kind = decodeNotetypeConfig(reader.读取字节());
     } else if (tag.字段号 === 8) {
       result.fields.push(decodeNotetypeField(reader.读取字节()));
     } else {
@@ -149,6 +185,30 @@ export function decodeNotetype(bytes: Uint8Array): NotetypeView {
   result.fields.sort((left: NotetypeField, right: NotetypeField): number => left.ord - right.ord);
   result.fieldNames = result.fields.map((field: NotetypeField): string => field.name);
   return result;
+}
+
+/** Decode `GetClozeFieldOrdsResponse.ords`, accepting packed and unpacked uint32. */
+export function decodeClozeFieldOrds(bytes: Uint8Array): number[] {
+  const reader = new 协议读取器(bytes);
+  const unique: Set<number> = new Set<number>();
+  let tag;
+  while ((tag = reader.读取标签()) !== null) {
+    if (tag.字段号 !== 1) {
+      reader.跳过字段(tag.线类型);
+    } else if (tag.线类型 === 线类型_变长整数) {
+      unique.add(reader.读取变长整数());
+    } else if (tag.线类型 === 线类型_长度分隔) {
+      const packed = new 协议读取器(reader.读取字节());
+      while (!packed.已读完) {
+        unique.add(packed.读取变长整数());
+      }
+    } else {
+      reader.跳过字段(tag.线类型);
+    }
+  }
+  const ords: number[] = Array.from(unique);
+  ords.sort((left: number, right: number): number => left - right);
+  return ords;
 }
 
 function decodeNotetypeNameId(bytes: Uint8Array): NotetypeNameId {

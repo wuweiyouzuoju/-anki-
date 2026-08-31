@@ -2,6 +2,7 @@
 
 import { 设置面板色板, 设置面板色板_取 } from '../../utils/设置面板配色';
 import { 颜色键 } from '../../model/颜色主题';
+import { 设置分组卡片 } from './设置分组卡片';
 
 // ========================================================
 // @块ID UI-DATA-GROUP-001
@@ -47,32 +48,14 @@ export struct 数据分组 {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(资源.id);
   }
 
-  @Builder
-  private 分组头部() {
-    Row() {
-      Text(this.取本地化文本($r('app.string.settings_data_management')))
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(设置面板色板_取(this.是否深色).次文字)
-      Blank()
-      Text('▼')
-        .fontSize(11)
-        .fontColor(设置面板色板_取(this.是否深色).弱化文字)
-        .rotate({ angle: this.是否展开 ? 0 : -90 })
-    }
-    .width('100%')
-    .height(40)
-    .onClick(() => {
-      this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => { this.切换展开回调(); });
-    })
-  }
-
   build() {
-    Column() {
-      this.分组头部()
-
-      if (this.是否展开) {
-        Column() {
+    设置分组卡片({
+      标题: $r('app.string.settings_data_management'),
+      是否深色: this.是否深色,
+      是否展开: this.是否展开,
+      切换展开回调: this.切换展开回调
+    }) {
+      Column() {
           // 导出/导入数据行（合并原「导入数据」+「导出数据」两行；点开 DataTransferPanel 后用户在 Select 下拉切换四种模式）
           Row() {
             Column({ space: 2 }) {
@@ -236,13 +219,8 @@ export struct 数据分组 {
               this.点击清除未用标签回调();
             })
           }
-        }
-        .width('100%')
       }
+      .width('100%')
     }
-    .width('100%')
-    .padding(16)
-    .backgroundColor(设置面板色板_取(this.是否深色).背景)
-    .borderRadius(12)
   }
 }

@@ -66,3 +66,37 @@ test('personal replacement is confirmed twice and export is finalized by UI cont
     'top-right import failure detail must be assigned after opening the panel');
   assert.doesNotMatch(index, /throw new Error\('ability context unavailable'\)/);
 });
+
+test('add-note dropdown lists every notetype and type-answer submits on Enter', () => {
+  // 2026-08-29：对齐 Anki 桌面端——Basic 变种（附翻转卡片 / 可选附翻转卡片 / 输入答案）
+  // 不再从下拉列表隐藏，建卡下拉必须直接映射后端完整类型列表。
+  const addNote = read('entry/src/main/ets/pages/添加笔记页.ets');
+  assert.match(addNote, /笔记类型选项 = 名称列表\.map/);
+  assert.doesNotMatch(addNote, /是隐藏的笔记类型变种/);
+  assert.doesNotMatch(addNote, /暂不做 UI 适配/);
+  // 三种变体的专属帮助文案分发必须保留（下拉选中后展示用途说明）
+  assert.match(addNote, /Basic反转笔记类型名集合\.indexOf/);
+  assert.match(addNote, /Basic可选反转笔记类型名集合\.indexOf/);
+  assert.match(addNote, /Basic输入答案笔记类型名集合\.indexOf/);
+  // 默认类型直接加载：上游 defaults_for_adding 保证返回有效 ID，无需可见性 fallback
+  assert.match(addNote, /加载笔记类型\(默认值\.notetypeId\)/);
+  assert.doesNotMatch(addNote, /默认ID可见/);
+
+  // Type-in-the-Answer 对齐桌面端：输入框回车 = 显示答案（比对结果在背面注入）
+  const study = read('entry/src/main/ets/pages/学习页.ets');
+  assert.match(study, /enterKeyType\(EnterKeyType\.Done\)/);
+  assert.match(study, /onSubmit\(\(\): void => \{\s*this\.显示答案\(\);\s*\}\)/);
+});
+
+test('stock notetype restore covers basic, cloze and the three basic variants', () => {
+  // 2026-08-29：兜底恢复清单必须覆盖 stock kind 0/1/2/3/4；
+  // ImageOcclusion 走专用 RPC（AddImageOcclusionNotetype），不强行纳入 stock 路线。
+  const addNote = read('entry/src/main/ets/pages/添加笔记页.ets');
+  assert.match(addNote, /获取标准笔记类型JSON\(标准笔记类型种类\.BASIC\)/);
+  assert.match(addNote, /获取标准笔记类型JSON\(标准笔记类型种类\.BASIC_AND_REVERSED\)/);
+  assert.match(addNote, /获取标准笔记类型JSON\(标准笔记类型种类\.BASIC_OPTIONAL_REVERSED\)/);
+  assert.match(addNote, /获取标准笔记类型JSON\(标准笔记类型种类\.BASIC_TYPING\)/);
+  assert.match(addNote, /获取标准笔记类型JSON\(标准笔记类型种类\.CLOZE\)/);
+  assert.doesNotMatch(addNote, /获取标准笔记类型JSON\(标准笔记类型种类\.IMAGE_OCCLUSION\)/);
+  assert.match(addNote, /图片遮罩服务实例\.添加图片遮罩笔记类型\(\)/);
+});

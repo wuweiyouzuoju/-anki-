@@ -21,6 +21,7 @@ import type { 官方公告展示项 } from '../model/官方公告模型';
 import { 是否已确认官方公告, 标记已确认官方公告 } from '../model/官方公告存储';
 import { 牌组定制面板, 牌组定制结果 } from '../components/牌组定制面板';
 import { 添加笔记页, 添加笔记页参数, 添加笔记牌组选项 } from './添加笔记页';
+import { AI制卡页, AI制卡页参数, AI制卡牌组选项 } from './AI制卡页';
 import { 数据迁移意图, 数据迁移模式, 导出牌组选项 } from '../components/数据迁移面板';
 import { 同步面板 } from '../components/同步面板';
 import { 主页顶部工具栏 } from '../components/home/主页顶部工具栏';
@@ -1661,6 +1662,45 @@ struct 首页 {
     });
   }
 
+  /**
+   * 打开 AI 制卡页。不要求先选中牌组：页面内可自选，
+   * 入参传当前选中牌组（若有）与主页快照的牌组候选。
+   * 'AiCardPage' 字符串是 NavPathStack 跨页面寻址协议，保留英文。
+   */
+  private 打开AI制卡(): void {
+    const 已有选中: boolean = this.已选中牌组();
+    const params: AI制卡页参数 = {
+      mode: 'create',
+      deckId: 已有选中 ? this.选中的牌组ID : '',
+      deckName: 已有选中 ? 牌组显示名(this.选中牌组()) : '',
+      deckOptions: this.添加笔记的牌组选项()
+    };
+    this.暂停主页官方公告检查();
+    this.页面栈.pushPath({
+      name: 'AiCardPage',
+      param: params,
+      onPop: (): void => {
+        this.返回主页后刷新();
+      }
+    });
+  }
+
+  /** 从首页进入无预选对象的 AI 改卡会话；由用户发言后再搜索或指定范围。 */
+  private 打开AI改卡(): void {
+    const params: AI制卡页参数 = {
+      mode: 'edit',
+      deckId: this.已选中牌组() ? this.选中的牌组ID : '',
+      deckName: this.已选中牌组() ? 牌组显示名(this.选中牌组()) : '',
+      deckOptions: this.添加笔记的牌组选项(),
+      cardIds: [], noteIds: [], templateIdx: -1
+    };
+    this.暂停主页官方公告检查();
+    this.页面栈.pushPath({
+      name: 'AiCardPage', param: params,
+      onPop: (): void => { this.返回主页后刷新(); }
+    });
+  }
+
   private async 处理数据迁移(intent: 数据迁移意图): Promise<void> {
     if (this.数据迁移中) return;
     if (intent.kind === 'importDeck') {
@@ -2026,6 +2066,17 @@ struct 首页 {
         pageDeckOptions: (param as 添加笔记页参数).deckOptions ?? [],
         pathStack: this.页面栈
       })
+    } else if (name === 'AiCardPage') {
+      AI制卡页({
+        pageMode: (param as AI制卡页参数).mode ?? 'create',
+        pageDeckId: (param as AI制卡页参数).deckId ?? '',
+        pageDeckName: (param as AI制卡页参数).deckName ?? '',
+        pageDeckOptions: (param as AI制卡页参数).deckOptions ?? [],
+        pageCardIds: (param as AI制卡页参数).cardIds ?? [],
+        pageNoteIds: (param as AI制卡页参数).noteIds ?? [],
+        pageTemplateIdx: (param as AI制卡页参数).templateIdx ?? -1,
+        pathStack: this.页面栈
+      })
     } else if (name === 'ReminderPage') {
       学习提醒页({
         pathStack: this.页面栈
@@ -2042,11 +2093,18 @@ struct 首页 {
       Stack() {
         Column() {
           主页顶部工具栏({
+            排序模式中: this.排序模式中,
             on更多点击: (): void => {
               this.显示更多菜单 = true;
             },
             on创建牌组点击: (): void => {
               this.显示主页操作 = true;
+            },
+            on排序退出: (): void => {
+              this.退出排序模式();
+            },
+            on排序完成: (): void => {
+              this.退出排序模式();
             },
             主色容器色: this.主色容器色,
             页面底色微染值: this.页面底色微染值,
@@ -2114,9 +2172,6 @@ struct 首页 {
                   },
                   onItemCreateFilteredDeck: (): void => {
                     this.打开创建过滤牌组();
-                  },
-                  onExitReorder: (): void => {
-                    this.退出排序模式();
                   },
                   onRefresh: (): void => {
                     // 先置 刷新中=true 触发 @Watch 同步 刷新指示器开关=true（Refresh 内部已置 true，无副作用）；
@@ -2189,6 +2244,14 @@ struct 首页 {
             导入牌组回调: (): void => {
               this.显示主页操作 = false;
               this.从选择器导入牌组();
+            },
+            AI制卡回调: (): void => {
+              this.显示主页操作 = false;
+              this.打开AI制卡();
+            },
+            AI改卡回调: (): void => {
+              this.显示主页操作 = false;
+              this.打开AI改卡();
             },
             关闭回调: (): void => {
               this.显示主页操作 = false;

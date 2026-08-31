@@ -47,6 +47,7 @@ export struct 批量操作栏 {
   on设置到期日: () => void = (): void => {};
   on重新定位: () => void = (): void => {};
   on更改笔记类型: () => void = (): void => {};
+  onAI改卡: () => void = (): void => {};
   // 帮助按钮上抛：由父组件（浏览页）统一渲染 字段帮助面板
   onHelp: () => void = (): void => {};
 
@@ -204,6 +205,16 @@ export struct 批量操作栏 {
           .onClick((): void => { this.on更改笔记类型(); })
       }
       .width('100%')
+
+      Button($r('app.string.ai_card_edit'))
+        .width('100%')
+        .height(应用尺寸.按钮高度)
+        .fontSize(应用尺寸.字号_正文_小)
+        .fontColor($r('app.color.action_on_primary'))
+        .backgroundColor($r('app.color.action_primary'))
+        .borderRadius(应用尺寸.圆角_胶囊)
+        .enabled(!this.busy)
+        .onClick((): void => { this.onAI改卡(); })
     }
     .width('100%')
     .padding({

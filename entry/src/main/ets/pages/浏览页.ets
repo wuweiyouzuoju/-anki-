@@ -82,6 +82,7 @@ import { 卡片预览页 } from '../components/browser/卡片预览页';
 import { 颜色键 } from '../model/颜色主题';
 import { 加载主题模式 } from '../model/主题存储';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
+import type { AI制卡页参数 } from './AI制卡页';
 
 /** 浏览页阶段状态机：loading=加载中，list=列表展示，error=出错 */
 type 浏览阶段 = 'loading' | 'list' | 'error';
@@ -1472,6 +1473,20 @@ export struct 浏览页 {
     this.pathStack.pop();
   }
 
+  /** 把当前浏览模式下的稳定 ID 交给共享 AI 改卡页；打开本身不请求模型。 */
+  private 打开AI改卡(): void {
+    if (this.选中ID列表.length === 0) { return; }
+    const params: AI制卡页参数 = {
+      mode: 'edit', deckId: this.pageDeckId, deckName: '', deckOptions: [], templateIdx: -1,
+      cardIds: this.浏览模式值 === 'cards' ? this.选中ID列表.slice() : [],
+      noteIds: this.浏览模式值 === 'cards' ? [] : this.选中ID列表.slice()
+    };
+    this.pathStack.pushPath({
+      name: 'AiCardPage', param: params,
+      onPop: (): void => { this.执行搜索(); }
+    });
+  }
+
   @Builder
   private 顶部条() {
     // 与主页顶部工具栏同款布局：左 返回+筛选，右 查找替换，胶囊按钮 + 淡色边框
@@ -1595,6 +1610,7 @@ export struct 浏览页 {
               on设置到期日: (): void => { this.打开设置到期日弹层(); },
               on重新定位: (): void => { this.打开重新定位弹层(); },
               on更改笔记类型: (): void => { this.打开更改笔记类型弹层(); },
+              onAI改卡: (): void => { this.打开AI改卡(); },
               onHelp: (): void => {
                 this.说明标题 = $r('app.string.browser_help_batch_title');
                 this.说明正文 = $r('app.string.browser_help_batch_body');

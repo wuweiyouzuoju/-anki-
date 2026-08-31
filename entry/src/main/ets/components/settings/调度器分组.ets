@@ -3,6 +3,7 @@
 import { 加载FSRS开启状态, 设置FSRS开启状态 } from '../../model/FSRS控制器';
 import { 设置面板色板_取, 设置面板色板 } from '../../utils/设置面板配色';
 import { 颜色键 } from '../../model/颜色主题';
+import { 设置分组卡片 } from './设置分组卡片';
 
 // ========================================================
 // @块ID UI-SCHEDULER-001
@@ -101,46 +102,17 @@ export struct 调度器分组 {
     return this.主色按钮背景链接 !== '' ? this.主色按钮背景链接 : 设置面板色板_取(this.是否深色).主色按钮背景;
   }
 
-  @Builder
-  private 分组头部() {
-    Row() {
-      Text(this.取本地化文本($r('app.string.settings_scheduler')))
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(设置面板色板_取(this.是否深色).次文字)
-      // 展开时才显示 ⓘ 按钮，点击弹出说明面板（替代原内联说明小字）
-      if (this.是否展开) {
-        Button($r('app.string.field_help_button'))
-          .type(ButtonType.Normal)
-          .backgroundColor(Color.Transparent)
-          .fontSize(14)
-          .fontColor(设置面板色板_取(this.是否深色).三级文字)
-          .width(28)
-          .height(28)
-          .padding(0)
-          .onClick(() => {
-            this.打开说明回调($r('app.string.settings_fsrs_label'), $r('app.string.settings_fsrs_help'));
-          })
-      }
-      Blank()
-      Text('▼')
-        .fontSize(11)
-        .fontColor(设置面板色板_取(this.是否深色).弱化文字)
-        .rotate({ angle: this.是否展开 ? 0 : -90 })
-    }
-    .width('100%')
-    .height(40)
-    .onClick(() => {
-      this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => { this.切换展开回调(); });
-    })
-  }
-
   build() {
-    Column() {
-      this.分组头部()
-
-      if (this.是否展开) {
-        Column() {
+    设置分组卡片({
+      标题: $r('app.string.settings_scheduler'),
+      是否深色: this.是否深色,
+      是否展开: this.是否展开,
+      帮助标题: $r('app.string.settings_fsrs_label'),
+      帮助正文: $r('app.string.settings_fsrs_help'),
+      切换展开回调: this.切换展开回调,
+      打开说明回调: this.打开说明回调
+    }) {
+      Column() {
           // FSRS 开关行：label + Toggle。说明文字已移到 分组头部 的 ⓘ 按钮弹层中。
           // 注意：Toggle 的 isOn 必须用 $$ 双向绑定到 @State，否则开关不响应点击。
           // 但本场景需要乐观更新 + 失败回滚，所以改用单向绑定 + onChange 手动控制。
@@ -172,13 +144,8 @@ export struct 调度器分组 {
               .fontColor(设置面板色板_取(this.是否深色).错误色)
               .width('100%')
           }
-        }
-        .width('100%')
       }
+      .width('100%')
     }
-    .width('100%')
-    .padding(16)
-    .backgroundColor(设置面板色板_取(this.是否深色).背景)
-    .borderRadius(12)
   }
 }

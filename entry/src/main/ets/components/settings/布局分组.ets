@@ -4,16 +4,17 @@ import { 加载学习布局模式, 保存学习布局模式, 学习布局模式 
 import { 保存显示今日进度卡, 主页今日进度卡AppStorage键 } from '../../model/主页偏好';
 import { 设置面板色板, 设置面板色板_取 } from '../../utils/设置面板配色';
 import { 颜色键 } from '../../model/颜色主题';
+import { 设置分组卡片 } from './设置分组卡片';
 
 // ========================================================
 // @块ID UI-LAYOUT-001
-// @名称 复习页布局分组
+// @名称 学习页布局分组
 //
 // @作用
-// 提供底部固定 / 浮动可拖 两种复习页布局模式切换，
+// 提供底部固定 / 浮动可拖 两种学习页布局模式切换，
 // 以及主页「今日进度卡片」显示开关（B12-Y3 2026-07-25）。
 // 当前布局模式 = null 表示加载中；加载失败回退 'bottom'。
-// 切换后立即生效（下次进入复习页）。
+// 切换后立即生效（下次进入学习页）。
 //
 // @输入
 // 是否深色：当前是否深色模式（影响色板取值）。
@@ -67,7 +68,7 @@ export struct 布局分组 {
     return this.主色按钮背景链接 !== '' ? this.主色按钮背景链接 : 设置面板色板_取(this.是否深色).主色按钮背景;
   }
 
-  /** 复习页布局模式标签：bottom=底部固定；float=浮动可拖。 */
+  /** 学习页布局模式标签：bottom=底部固定；float=浮动可拖。 */
   private 布局模式标签(模式: 学习布局模式): string {
     if (模式 === 'float') {
       return this.取本地化文本($r('app.string.settings_study_layout_float'));
@@ -137,33 +138,15 @@ export struct 布局分组 {
   // @副作用
   // 点击触发 切换展开回调（父级注入）。
   // ========================================================
-  @Builder
-  private 分组头部() {
-    Row() {
-      Text(this.取本地化文本($r('app.string.settings_study_layout')))
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(设置面板色板_取(this.是否深色).次文字)
-      Blank()
-      Text('▼')
-        .fontSize(11)
-        .fontColor(设置面板色板_取(this.是否深色).弱化文字)
-        .rotate({ angle: this.是否展开 ? 0 : -90 })
-    }
-    .width('100%')
-    .height(40)
-    .onClick(() => {
-      this.getUIContext().animateTo({ duration: 150, curve: Curve.EaseOut }, () => { this.切换展开回调(); });
-    })
-  }
-
   build() {
-    Column() {
-      this.分组头部()
-
-      if (this.是否展开) {
-        Column({ space: 8 }) {
-          // 第 1 行：复习页布局（左侧标题+ⓘ，右侧 Select 选择框——与「当前模式」行同款对齐）
+    设置分组卡片({
+      标题: $r('app.string.settings_study_layout'),
+      是否深色: this.是否深色,
+      是否展开: this.是否展开,
+      切换展开回调: this.切换展开回调
+    }) {
+      Column({ space: 8 }) {
+          // 第 1 行：学习页布局（左侧标题+ⓘ，右侧 Select 选择框——与「当前模式」行同款对齐）
           Row() {
             Row() {
               Text(this.取本地化文本($r('app.string.settings_study_layout_row')))
@@ -238,13 +221,8 @@ export struct 布局分组 {
           }
           .width('100%')
           .height(48)
-        }
-        .width('100%')
       }
+      .width('100%')
     }
-    .width('100%')
-    .padding(16)
-    .backgroundColor(设置面板色板_取(this.是否深色).背景)
-    .borderRadius(12)
   }
 }

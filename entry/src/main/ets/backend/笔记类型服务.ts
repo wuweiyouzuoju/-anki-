@@ -26,8 +26,15 @@
 
 import { 后端会话 } from './后端会话';
 import { 笔记类型方法, 服务号 } from './服务索引';
-import type { NotetypeNameId, NotetypeView, 变更笔记类型信息, 变更笔记类型请求 } from '../proto/messages/NotetypeMessages';
+import type {
+  NotetypeCapabilities,
+  NotetypeNameId,
+  NotetypeView,
+  变更笔记类型信息,
+  变更笔记类型请求
+} from '../proto/messages/NotetypeMessages';
 import {
+  decodeClozeFieldOrds,
   decodeNotetype,
   decodeNotetypeNames,
   decodeJsonString,
@@ -37,7 +44,8 @@ import {
   encodeStockNotetype,
   encodeUpdateNotetypeLegacyRequest,
   encodeGetChangeNotetypeInfoRequest,
-  encodeChangeNotetypeRequest
+  encodeChangeNotetypeRequest,
+  NOTE_TYPE_KIND_CLOZE
 } from '../proto/messages/NotetypeMessages';
 
 /** AddNotePanel 所属页面使用的 Anki 笔记类型边界。 */
@@ -54,6 +62,29 @@ export class 笔记类型服务 {
     const 响应字节 = await this.会话.调用(
       服务号.后端笔记类型, 笔记类型方法.获取笔记类型, encodeNotetypeId(ID));
     return decodeNotetype(响应字节);
+  }
+
+  /** Return the exact field ordinals that accept cloze markers for this note type. */
+  async 获取填空字段序号(ID: number): Promise<number[]> {
+    const 响应字节 = await this.会话.调用(
+      服务号.后端笔记类型, 笔记类型方法.获取填空字段序号, encodeNotetypeId(ID));
+    return decodeClozeFieldOrds(响应字节);
+  }
+
+  /** Build one structural capability view without relying on localized note-type names. */
+  async 获取笔记类型能力(ID: number): Promise<NotetypeCapabilities> {
+    const 视图: NotetypeView = await this.获取笔记类型(ID);
+    let 填空字段序号: number[] = [];
+    if (视图.kind === NOTE_TYPE_KIND_CLOZE) {
+      填空字段序号 = await this.获取填空字段序号(ID);
+    }
+    return {
+      notetypeId: 视图.id,
+      name: 视图.name,
+      kind: 视图.kind,
+      fieldNames: 视图.fieldNames.slice(),
+      clozeFieldOrds: 填空字段序号
+    };
   }
 
   /**

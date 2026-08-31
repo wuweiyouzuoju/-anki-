@@ -583,15 +583,23 @@ export interface 拼写标记 {
 // - mode === 'nc'：fieldName 取 second，combining=false，cloze=false
 // - mode === 'cloze'：fieldName 取 second，combining=true，cloze=true
 // - 其他：fieldName 取 mode，combining=true，cloze=false
+// - 字段名段用 [^\]:]+ 宽松匹配：上游按建库时本地化字段名原样发出标记
+//   （如中文环境 [[type:背面]] / [[type:cloze:文字]]），ASCII 正则会漏检导致拼写输入静默失效。
+// - 标记在 text 节点而非 replacement：上游 type 过滤器由后端消费（apply_filters 返回
+//   remaining_filters=[]），render_into 走 append_str_to_nodes 输出 RenderedNode::Text——
+//   只扫 replacement.currentText 会永远漏检（Text/Replacement 两种节点都要扫）。
 //
 // @副作用
 // 无
 // ========================================================
 export function 提取拼写标记(节点列表: TemplateNode[]): 拼写标记 | null {
-  const 正则 = /\[\[type:([a-zA-Z0-9_]+)(?::([a-zA-Z0-9_]+))?\]\]/;
+  const 正则 = /\[\[type:([^\]:]+)(?::([^\]:]+))?\]\]/;
   for (const 节点 of 节点列表) {
-    if (节点.replacement !== null) {
-      const 匹配: RegExpMatchArray | null = 节点.replacement.currentText.match(正则);
+    const 节点文本: string | null = 节点.text !== null
+      ? 节点.text
+      : (节点.replacement !== null ? 节点.replacement.currentText : null);
+    if (节点文本 !== null) {
+      const 匹配: RegExpMatchArray | null = 节点文本.match(正则);
       if (匹配 !== null) {
         const 模式: string = 匹配[1];
         const 第二段: string | undefined = 匹配[2];

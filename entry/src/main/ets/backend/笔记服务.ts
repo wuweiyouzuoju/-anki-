@@ -31,14 +31,17 @@ import { 笔记方法, 服务号 } from './服务索引';
 import type { DeckAndNotetype, EditableNote } from '../proto/messages/NoteMessages';
 import {
   decodeAddNoteResponse,
+  decodeCardIds,
   decodeDeckAndNotetype,
   decodeNote,
   decodeNoteFieldsCheckResponse,
+  decodeNotetypeId,
   decodeUpdateNotesResponse,
   encodeAddNoteRequest,
   encodeDefaultsForAddingRequest,
   encodeNote,
   encodeNoteId,
+  encodeNoteIds,
   encodeUpdateNotesRequest
 } from '../proto/messages/NoteMessages';
 import { encodeNotetypeId } from '../proto/messages/NotetypeMessages';
@@ -96,6 +99,20 @@ export class 笔记服务 {
     const 响应 = await this.会话.调用(
       服务号.后端笔记, 笔记方法.获取笔记, encodeNoteId(笔记ID));
     return decodeNote(响应);
+  }
+
+  /** 返回该笔记实际生成的全部卡片 ID，用于在改卡前准确提示连带影响。 */
+  async 获取笔记的卡片(笔记ID: number): Promise<number[]> {
+    const 响应 = await this.会话.调用(
+      服务号.后端笔记, 笔记方法.某笔记的卡片, encodeNoteId(笔记ID));
+    return decodeCardIds(响应);
+  }
+
+  /** 多选笔记必须同属一个笔记类型；后端不满足时会明确报错。 */
+  async 获取笔记的唯一笔记类型(笔记ID列表: number[]): Promise<number> {
+    const 响应 = await this.会话.调用(
+      服务号.后端笔记, 笔记方法.笔记的唯一笔记类型, encodeNoteIds(笔记ID列表));
+    return decodeNotetypeId(响应);
   }
 
   /**

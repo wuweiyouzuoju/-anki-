@@ -1,0 +1,443 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import type {
+  AgentEvent,
+  AgentEventKind,
+  AgentToolCall,
+  AgentToolDiagnostic,
+  AgentToolTrace,
+  AgentTurnLimits,
+  ChangeDraft,
+  ProviderId
+} from '../../model/agent/AgentTypes';
+import {
+  DEFAULT_AGENT_TURN_LIMITS
+} from '../../model/agent/AgentTypes';
+import {
+  enforceSearchEvidence,
+  registerToolCallId
+} from '../../model/agent/AgentPolicy';
+import type { ProviderCapabilities } from '../../model/agent/AgentTypes';
+import {
+  DEEPSEEK_PROVIDER,
+  OPENAI_PROVIDER,
+  customProviderDefaults
+} from '../../model/agent/ProviderCatalog';
+import type { AgentSearchSourceEvent } from '../../model/agent/AgentPolicy';
+import type {
+  ProviderInputItem,
+  ProviderTurnRequest
+} from '../../model/agent/ProviderProtocol';
+import { AgentStreamObserver, AgentTransportError, AgentTransportSession } from './AgentTransport';
+import { DeepSeekAdapter } from './DeepSeekAdapter';
+import { OpenAIAdapter } from './OpenAIAdapter';
+import { CustomAdapter } from './CustomAdapter';
+import { AgentToolRegistry, AgentToolResult } from './AgentToolRegistry';
+import { AgentToolSchemaError } from '../../model/agent/AgentToolSchemas';
+import {
+  AgentToolFailureRecord,
+  AgentToolFailureTracker,
+  completeAgentToolTrace,
+  createStartedAgentToolTrace,
+  failAgentToolTrace,
+  sanitizeAgentToolJson
+} from '../../model/agent/AgentToolDiagnostics';
+
+export interface AgentRunObserver {
+  onEvent(event: AgentEvent): void;
+}
+
+export interface AgentRunResult {
+  drafts: ChangeDraft[];
+  providerCalls: number;
+  toolCalls: number;
+}
+
+export class AgentRunnerError extends Error {
+  readonly code: string;
+
+  constructor(code: string) {
+    super(code);
+    this.code = code;
+  }
+}
+
+function simpleEvent(kind: AgentEventKind, text: string = '', errorCode: string = ''): AgentEvent {
+  return { kind: kind, text: text, toolCall: null, toolTrace: null, source: null, errorCode: errorCode };
+}
+
+function toolStatusEvent(kind: 'tool_started' | 'tool_completed' | 'tool_failed',
+  call: AgentToolCall, trace: AgentToolTrace, errorCode: string = ''): AgentEvent {
+  return { kind: kind, text: '', toolCall: call, toolTrace: trace, source: null, errorCode: errorCode };
+}
+
+interface AgentToolErrorOutput {
+  tool_error: string;
+  errorPath: string;
+  message: string;
+  receivedKeys: string[];
+  allowedKeys: string[];
+  validTemplateJson: string;
+  repeatCount: number;
+  correction: string;
+}
+
+function toolErrorCode(error: Object): string {
+  if (error instanceof Error && /^[a-z0-9_]{1,64}$/.test(error.message)) { return error.message; }
+  return 'tool_failed';
+}
+
+function toolTemplate(request: ProviderTurnRequest, toolName: string): string {
+  for (const tool of request.functionTools) {
+    if (tool.name === toolName) { return tool.exampleArgumentsJson; }
+  }
+  return '{}';
+}
+
+function diagnosticForError(error: Object, call: AgentToolCall,
+  request: ProviderTurnRequest): AgentToolDiagnostic {
+  if (error instanceof AgentToolSchemaError) {
+    const schemaDiagnostic: AgentToolDiagnostic = error.diagnostic();
+    return {
+      code: schemaDiagnostic.code,
+      path: schemaDiagnostic.path,
+      message: schemaDiagnostic.message,
+      receivedKeys: schemaDiagnostic.receivedKeys.slice(),
+      allowedKeys: schemaDiagnostic.allowedKeys.slice(),
+      validTemplateJson: schemaDiagnostic.validTemplateJson.length > 0 ?
+        schemaDiagnostic.validTemplateJson : toolTemplate(request, call.name)
+    };
+  }
+  const code: string = toolErrorCode(error);
+  return {
+    code: code, path: '', message: `The tool failed with ${code}. Rebuild the arguments from the template.`,
+    receivedKeys: [], allowedKeys: [], validTemplateJson: toolTemplate(request, call.name)
+  };
+}
+
+function toolErrorJson(diagnostic: AgentToolDiagnostic, record: AgentToolFailureRecord): string {
+  const correction: string = record.requireCorrection ?
+    'Mandatory correction: do not repeat the same arguments. Rebuild them from validTemplateJson and remove every property rejected at errorPath.' : '';
+  const output: AgentToolErrorOutput = {
+    tool_error: diagnostic.code,
+    errorPath: diagnostic.path,
+    message: diagnostic.message,
+    receivedKeys: diagnostic.receivedKeys.slice(),
+    allowedKeys: diagnostic.allowedKeys.slice(),
+    validTemplateJson: diagnostic.validTemplateJson,
+    repeatCount: record.count,
+    correction: correction
+  };
+  return sanitizeAgentToolJson(JSON.stringify(output), 16384).text;
+}
+
+function copyInput(item: ProviderInputItem): ProviderInputItem {
+  return {
+    kind: item.kind,
+    role: item.role,
+    content: item.content,
+    callId: item.callId,
+    name: item.name,
+    argumentsJson: item.argumentsJson,
+    output: item.output
+  };
+}
+
+function copyRequest(request: ProviderTurnRequest): ProviderTurnRequest {
+  const input: ProviderInputItem[] = [];
+  for (const item of request.input) {
+    input.push(copyInput(item));
+  }
+  return {
+    apiKey: request.apiKey,
+    baseUrl: request.baseUrl,
+    model: request.model,
+    instructions: request.instructions,
+    input: input,
+    functionTools: request.functionTools.slice(),
+    searchMode: request.searchMode,
+    requiresSearchEvidence: request.requiresSearchEvidence,
+    requiresDraft: request.requiresDraft,
+    expectedDraftCount: request.expectedDraftCount,
+    reasoningEffort: request.reasoningEffort,
+    maxOutputTokens: request.maxOutputTokens
+  };
+}
+
+class RoundCollector implements AgentStreamObserver {
+  readonly toolCalls: AgentToolCall[] = [];
+  readonly searchSources: AgentSearchSourceEvent[] = [];
+  readonly continuationItems: string[] = [];
+  text: string = '';
+  reasoning: string = '';
+  searchStarted: boolean = false;
+  errorCode: string = '';
+  receivedOutput: boolean = false;
+  hasReasoningContinuation: boolean = false;
+  incompleteMaxOutput: boolean = false;
+  private readonly downstream: AgentRunObserver;
+
+  constructor(downstream: AgentRunObserver) {
+    this.downstream = downstream;
+  }
+
+  onEvent(event: AgentEvent): void {
+    if (event.kind === 'completed') {
+      return;
+    }
+    if (event.kind === 'tool_call' && event.toolCall !== null) {
+      this.receivedOutput = true;
+      this.toolCalls.push(event.toolCall);
+    } else if (event.kind === 'text_delta') {
+      this.receivedOutput = true;
+      this.text += event.text;
+    } else if (event.kind === 'reasoning_delta') {
+      this.receivedOutput = true;
+      this.reasoning += event.text;
+    } else if (event.kind === 'status') {
+      if (event.text.startsWith('web_search_')) { this.searchStarted = true; }
+      if (event.text === 'provider_response_incomplete_max_output_tokens') {
+        this.incompleteMaxOutput = true;
+      }
+    } else if (event.kind === 'search_source' && event.source !== null) {
+      this.receivedOutput = true;
+      const sourceEvent: AgentSearchSourceEvent = {
+        kind: 'search_source',
+        url: event.source.url,
+        title: event.source.title
+      };
+      this.searchSources.push(sourceEvent);
+    } else if (event.kind === 'continuation_item') {
+      this.receivedOutput = true;
+      if (event.text.length <= 65536) {
+        this.continuationItems.push(event.text);
+        try {
+          const item: ProviderContinuationItem = JSON.parse(event.text) as ProviderContinuationItem;
+          if (item.type === 'reasoning') { this.hasReasoningContinuation = true; }
+        } catch (error) {
+          // 归一化器只会产生已验证的 JSON；失败时交由协议层拒绝。
+        }
+      }
+    } else if (event.kind === 'error') {
+      this.errorCode = event.errorCode.length === 0 ? 'provider_response_failed' : event.errorCode;
+    }
+    this.downstream.onEvent(event);
+  }
+}
+
+interface ProviderContinuationItem {
+  type?: string;
+}
+
+function shouldRetryTransport(error: AgentTransportError): boolean {
+  if (error.kind === 'network') { return true; }
+  return error.kind === 'http' && (error.statusCode === 429 || error.statusCode >= 500);
+}
+
+function waitBeforeRetry(attempt: number): Promise<void> {
+  return new Promise<void>((resolve: () => void): void => {
+    setTimeout(resolve, Math.min(1000, 250 * attempt));
+  });
+}
+
+function createDraftNoteCount(drafts: ChangeDraft[]): number {
+  const ids: Set<string> = new Set<string>();
+  for (let draftIndex: number = 0; draftIndex < drafts.length; draftIndex++) {
+    const draft: ChangeDraft = drafts[draftIndex];
+    for (const operation of draft.operations) {
+      if (operation.kind === 'create_note') {
+        ids.add(`${draftIndex}:${operation.noteId}`);
+      }
+    }
+  }
+  return ids.size;
+}
+
+function appendRoundContinuation(request: ProviderTurnRequest, collector: RoundCollector): void {
+  for (const continuationItem of collector.continuationItems) {
+    request.input.push({
+      kind: 'output_item', role: '', content: continuationItem,
+      callId: '', name: '', argumentsJson: '', output: ''
+    });
+  }
+  if (collector.reasoning.length > 0 && !collector.hasReasoningContinuation) {
+    request.input.push({
+      kind: 'reasoning', role: '', content: collector.reasoning,
+      callId: '', name: '', argumentsJson: '', output: ''
+    });
+  }
+  if (collector.text.length > 0) {
+    request.input.push({
+      kind: 'message', role: 'assistant', content: collector.text,
+      callId: '', name: '', argumentsJson: '', output: ''
+    });
+  }
+}
+
+/** 有界 Agent 循环。读工具可执行，写工具只能由注册表返回 ChangeDraft。 */
+export class AgentRunner {
+  private readonly registry: AgentToolRegistry;
+  private readonly limits: AgentTurnLimits;
+  private activeSession: AgentTransportSession | null = null;
+  private cancelled: boolean = false;
+
+  constructor(registry: AgentToolRegistry, limits: AgentTurnLimits = DEFAULT_AGENT_TURN_LIMITS) {
+    this.registry = registry;
+    this.limits = limits;
+  }
+
+  async run(provider: ProviderId, originalRequest: ProviderTurnRequest,
+    observer: AgentRunObserver): Promise<AgentRunResult> {
+    this.cancelled = false;
+    const request: ProviderTurnRequest = copyRequest(originalRequest);
+    const capabilities: ProviderCapabilities = provider === 'deepseek' ?
+      DEEPSEEK_PROVIDER.capabilities : (provider === 'openai' ?
+        OPENAI_PROVIDER.capabilities : customProviderDefaults().capabilities);
+    if (!capabilities.toolCalls) {
+      throw new AgentRunnerError('agent_tools_unsupported');
+    }
+    if (!capabilities.webSearch) {
+      if (request.searchMode === 'always' || request.requiresSearchEvidence) {
+        throw new AgentRunnerError('web_search_unsupported');
+      }
+      request.searchMode = 'off';
+    }
+    const drafts: ChangeDraft[] = [];
+    const seenToolCallIds: Set<string> = new Set<string>();
+    const failureTracker: AgentToolFailureTracker = new AgentToolFailureTracker();
+    let providerCalls: number = 0;
+    let toolCalls: number = 0;
+    let transientRetries: number = 0;
+    while (providerCalls < this.limits.maxProviderCalls) {
+      if (this.cancelled) {
+        throw new AgentRunnerError('cancelled');
+      }
+      providerCalls += 1;
+      const collector: RoundCollector = new RoundCollector(observer);
+      this.activeSession = this.createSession(provider, request, collector);
+      try {
+        await this.activeSession.start();
+      } catch (error) {
+        this.activeSession = null;
+        if (error instanceof AgentTransportError && !collector.receivedOutput &&
+          shouldRetryTransport(error) && transientRetries < 2 &&
+          providerCalls < this.limits.maxProviderCalls) {
+          transientRetries += 1;
+          observer.onEvent(simpleEvent('status', 'provider_retry'));
+          await waitBeforeRetry(transientRetries);
+          continue;
+        }
+        if (error instanceof Error) { throw error; }
+        throw new AgentRunnerError('provider_transport_failed');
+      }
+      this.activeSession = null;
+      transientRetries = 0;
+      if (collector.errorCode.length > 0) {
+        throw new AgentRunnerError(collector.errorCode);
+      }
+      if (collector.toolCalls.length === 0) {
+        const createdCount: number = createDraftNoteCount(drafts);
+        const countMismatch: boolean = request.expectedDraftCount > 0 && createdCount > 0 &&
+          createdCount !== request.expectedDraftCount;
+        if (countMismatch) { drafts.splice(0, drafts.length); }
+        const draftRequired: boolean = request.requiresDraft && drafts.length === 0;
+        if (draftRequired || collector.incompleteMaxOutput) {
+          if (providerCalls >= this.limits.maxProviderCalls) {
+            throw new AgentRunnerError(draftRequired ? 'agent_no_valid_draft' : 'agent_provider_limit');
+          }
+          appendRoundContinuation(request, collector);
+          const correction: string = countMismatch ?
+            `The task is incomplete: the user requested exactly ${request.expectedDraftCount} cards, but the draft contained ${createdCount}. Call the appropriate propose_ tool again with exactly ${request.expectedDraftCount} valid notes.` :
+            (draftRequired ?
+              'The task is incomplete: no valid editable draft was created. Call the appropriate propose_ tool now. Do not merely describe or claim that a draft exists.' :
+              'Continue from the truncated response and finish the requested tool-based work. Do not repeat completed work.');
+          request.input.push({
+            kind: 'message', role: 'user',
+            content: correction,
+            callId: '', name: '', argumentsJson: '', output: ''
+          });
+          observer.onEvent(simpleEvent('status', draftRequired ? 'draft_correction' : 'provider_continuation'));
+          continue;
+        }
+        enforceSearchEvidence(
+          request.requiresSearchEvidence || collector.searchStarted,
+          collector.searchSources
+        );
+        observer.onEvent(simpleEvent('completed'));
+        return { drafts: drafts, providerCalls: providerCalls, toolCalls: toolCalls };
+      }
+      appendRoundContinuation(request, collector);
+      const acceptedToolCalls: AgentToolCall[] = [];
+      for (const call of collector.toolCalls) {
+        if (!registerToolCallId(seenToolCallIds, call.id)) {
+          const duplicateStarted: AgentToolTrace = createStartedAgentToolTrace(call, providerCalls, toolCalls + 1);
+          const duplicateDiagnostic: AgentToolDiagnostic = {
+            code: 'duplicate_tool_call', path: 'callId', message: 'Tool call IDs must be unique in one turn.',
+            receivedKeys: [], allowedKeys: [], validTemplateJson: toolTemplate(request, call.name)
+          };
+          observer.onEvent(toolStatusEvent('tool_failed', call,
+            failAgentToolTrace(duplicateStarted, duplicateDiagnostic, 1), 'duplicate_tool_call'));
+          continue;
+        }
+        if (toolCalls >= this.limits.maxToolCalls) {
+          observer.onEvent(simpleEvent('error', '', 'agent_tool_limit'));
+          throw new AgentRunnerError('agent_tool_limit');
+        }
+        toolCalls += 1;
+        acceptedToolCalls.push(call);
+        request.input.push({
+          kind: 'function_call', role: '', content: '', callId: call.id,
+          name: call.name, argumentsJson: call.argumentsJson, output: ''
+        });
+      }
+      for (const call of acceptedToolCalls) {
+        const sequence: number = toolCalls - acceptedToolCalls.length + acceptedToolCalls.indexOf(call) + 1;
+        const startedTrace: AgentToolTrace = createStartedAgentToolTrace(call, providerCalls, sequence);
+        observer.onEvent(toolStatusEvent('tool_started', call, startedTrace));
+        try {
+          const result: AgentToolResult = await this.registry.execute(call);
+          if (result.draft !== null) { drafts.push(result.draft); }
+          const completedTrace: AgentToolTrace = completeAgentToolTrace(startedTrace, result.outputJson);
+          observer.onEvent(toolStatusEvent('tool_completed', call, completedTrace));
+          request.input.push({
+            kind: 'function_call_output', role: '', content: '', callId: call.id,
+            name: '', argumentsJson: '', output: sanitizeAgentToolJson(result.outputJson, 32768).text
+          });
+        } catch (error) {
+          const diagnostic: AgentToolDiagnostic = diagnosticForError(error as Object, call, request);
+          const record: AgentToolFailureRecord = failureTracker.record(call.name, call.argumentsJson, diagnostic);
+          const failedTrace: AgentToolTrace = failAgentToolTrace(startedTrace, diagnostic, record.count);
+          observer.onEvent(toolStatusEvent('tool_failed', call, failedTrace, diagnostic.code));
+          request.input.push({
+            kind: 'function_call_output', role: '', content: '', callId: call.id,
+            name: '', argumentsJson: '', output: toolErrorJson(diagnostic, record)
+          });
+          if (record.shouldAbort) {
+            observer.onEvent(simpleEvent('error', '', 'agent_repeated_tool_failure'));
+            throw new AgentRunnerError('agent_repeated_tool_failure');
+          }
+        }
+      }
+    }
+    observer.onEvent(simpleEvent('error', '', 'agent_provider_limit'));
+    throw new AgentRunnerError('agent_provider_limit');
+  }
+
+  cancel(): void {
+    this.cancelled = true;
+    if (this.activeSession !== null) {
+      this.activeSession.cancel();
+    }
+  }
+
+  private createSession(provider: ProviderId, request: ProviderTurnRequest,
+    observer: AgentStreamObserver): AgentTransportSession {
+    if (provider === 'deepseek') {
+      return new DeepSeekAdapter().createSession(request, observer);
+    }
+    if (provider === 'openai') {
+      return new OpenAIAdapter().createSession(request, observer);
+    }
+    return new CustomAdapter().createSession(request, observer);
+  }
+}

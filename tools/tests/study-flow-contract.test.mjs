@@ -13,6 +13,7 @@ import { decodeCountsForDeckToday } from '../../entry/src/main/ets/proto/message
 import { 协议写入器 } from '../../entry/src/main/ets/proto/core/ProtoWriter.ts';
 import {
   构建卡片HTML,
+  提取拼写标记,
   媒体基地址,
   原始侧HTML,
   重写媒体地址
@@ -125,6 +126,37 @@ test('html builder strips [sound:] tags, playback left to native player', () => 
   assert.ok(!html.includes('<audio'), 'no web audio elements in native player scheme');
   assert.match(html, /class="sound-flag"/, 'a small marker stays where audio was');
   assert.match(原始侧HTML(rendered, 'answer'), /\[sound:word\.mp3\]/, 'raw side keeps tags for extraction');
+});
+
+test('type marker extraction accepts localized field names', () => {
+  // 上游 type_filter 按建库时本地化字段名原样发出 [[type:...]]（rslib template_filters.rs），
+  // 中文环境为 [[type:背面]] / [[type:cloze:文字]]，正则必须匹配非 ASCII 字段名。
+  const 节点 = (文本) => [{ text: null, replacement: { fieldName: 'X', currentText: 文本, filters: [] } }];
+  const 文本节点 = (文本) => [{ text: 文本, replacement: null }];
+
+  // 生产路径：type 过滤器被后端消费后走 append_str_to_nodes 输出文本节点（rslib template.rs render_into）
+  const 文本节点英文 = 提取拼写标记(文本节点('{{Front}}\n\n[[type:Back]]'));
+  assert.ok(文本节点英文 !== null && 文本节点英文.fieldName === 'Back' && 文本节点英文.combining && !文本节点英文.cloze,
+    'marker in a TEXT node must be found — this is how the backend actually delivers it');
+  const 文本节点中文 = 提取拼写标记(文本节点('[[type:背面]]'));
+  assert.ok(文本节点中文 !== null && 文本节点中文.fieldName === '背面' && 文本节点中文.combining && !文本节点中文.cloze);
+
+  const 英文 = 提取拼写标记(节点('[[type:Back]]'));
+  assert.ok(英文 !== null && 英文.fieldName === 'Back' && 英文.combining && !英文.cloze);
+
+  const 中文 = 提取拼写标记(节点('[[type:背面]]'));
+  assert.ok(中文 !== null && 中文.fieldName === '背面' && 中文.combining && !中文.cloze,
+    'localized field name must be extracted or typing input silently disappears');
+
+  const 填空 = 提取拼写标记(节点('[[type:cloze:文字]]'));
+  assert.ok(填空 !== null && 填空.fieldName === '文字' && 填空.cloze && 填空.combining);
+
+  const 不合并 = 提取拼写标记(节点('[[type:nc:Back]]'));
+  assert.ok(不合并 !== null && 不合并.fieldName === 'Back' && !不合并.combining && !不合并.cloze);
+
+  assert.equal(提取拼写标记(节点('plain text')), null);
+  assert.equal(提取拼写标记(文本节点('no marker here')), null);
+  assert.equal(提取拼写标记([{ text: null, replacement: null }]), null);
 });
 
 test('extract av tags wire format round-trips sound files in order', () => {

@@ -16,8 +16,8 @@
 // 加载状态: 主页加载状态  'loading' / 'ready' / 'empty' / 'error'
 // 刷新中: boolean  下拉刷新指示器开关
 // 牌组列表滚动器: Scroller  List 滚动控制器
-// 动作主色: string  LoadingProgress 颜色 + 完成按钮背景色
-// 主色按钮背景色: string  完成按钮背景色
+// 动作主色: string  LoadingProgress 颜色
+// 主色按钮背景色: string  预留（与主页主色联动）
 // onMove: (from: number, to: number) => void  拖拽排序回调
 // onItemSelect: (deckId: string) => void  点击牌组项回调
 // onItemToggle: (deckId: string) => void  展开/折叠牌组项回调
@@ -29,12 +29,11 @@
 // onItemDoubleTap: (deckId: string) => void  递归展开回调
 // onItemCustomStudy: (deckId: string) => void  打开自定义学习对话框回调
 // onItemCreateFilteredDeck: () => void  打开创建过滤牌组面板回调
-// onExitReorder: () => void  退出排序模式回调（"完成"按钮）
 // onRefresh: () => void  下拉刷新回调
 // onRetry: () => void  错误态重试回调
 //
 // @输出
-// 渲染 Column(标题行 + 提示条 + Refresh(List(LazyForEach + 三态 ListItem)))
+// 渲染 Column(Refresh(List(LazyForEach + 三态 ListItem)))
 //
 // @业务规则
 // LazyForEach keyItem 必须含全部可变字段（id/tone/displayName/newCount/learningCount/reviewCount/totalCards/backgroundImage + 排序模式中?1:0），
@@ -86,7 +85,6 @@ export struct 主页牌组列表 {
   onItemDoubleTap: (deckId: string) => void = (deckId: string): void => {};
   onItemCustomStudy: (deckId: string) => void = (deckId: string): void => {};
   onItemCreateFilteredDeck: () => void = (): void => {};
-  onExitReorder: () => void = (): void => {};
   onRefresh: () => void = (): void => {};
   onRetry: () => void = (): void => {};
 
@@ -102,30 +100,7 @@ export struct 主页牌组列表 {
 
   build() {
     Column({ space: 应用尺寸.间距_10 }) {
-      // 标题行隐藏（用户决策 2026-08-12）：仅在排序模式时显示"完成"按钮
-      if (this.排序模式中) {
-        Row({ space: 应用尺寸.间距_8 }) {
-          Blank().layoutWeight(1)
-          Button($r('app.string.deck_reorder_done'))
-            .height(应用尺寸.按钮高度)
-            .fontSize(应用尺寸.字号_按钮)
-            .fontColor($r('app.color.surface_page'))
-            .backgroundColor(this.主色按钮背景色)
-            .borderRadius(应用尺寸.圆角_胶囊)
-            .onClick(() => {
-              this.onExitReorder();
-            })
-        }
-        .width('100%')
-
-        // 排序模式提示条：告知"长按卡片拖动，仅同级可拖"。
-        Text($r('app.string.deck_reorder_hint'))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-          .maxLines(2)
-      }
-
+      // 排序模式的退出/完成入口在顶部工具栏（主页顶部工具栏 排序模式分支），此处不再渲染操作行。
       // 下拉刷新容器：onRefreshing 触发后调 onRefresh；
       // 父组件加载完毕置 刷新中=false → @Watch 同步 刷新指示器开关=false 收起指示器。
       Refresh({ refreshing: $$this.刷新指示器开关 }) {
