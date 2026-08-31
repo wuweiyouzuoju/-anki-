@@ -105,6 +105,11 @@ export interface AI制卡页参数 {
 
 interface 页面AI配置 { apiKey: string; baseUrl: string; model: string; }
 
+/** Select 组件使用的通用选项结构。 */
+interface AI制卡下拉选项 {
+  value: string;
+}
+
 /** 单张待确认卡片：fields 与当前笔记类型字段顺序一一对应。 */
 interface 卡片草稿 {
   fields: string[];

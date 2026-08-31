@@ -32,6 +32,12 @@ test('shared Agent page has explicit mode and sends no provider request while ap
   assert.match(page, /ai_agent_edit_search_welcome/);
 });
 
+test('shared Agent page keeps the Select option type used by provider models', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  assert.match(page, /interface AI制卡下拉选项\s*\{\s*value:\s*string;/);
+  assert.match(page, /页面模型选项\(\): AI制卡下拉选项\[\]/);
+});
+
 test('study current-card entry passes stable context and rerenders only that card on return', () => {
   const study = read('entry/src/main/ets/pages/学习页.ets');
   assert.match(study, /ai_card_edit/);
