@@ -92,6 +92,16 @@ test('reasoning is visibly labelled and HTTP failures keep their status code', (
     'raw provider codes must not be duplicated before the localized catch message');
 });
 
+test('draft correction keeps earlier visible model text instead of clearing the bubble', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  assert.match(page,
+    /event\.kind === 'status' && event\.text === 'draft_correction'[\s\S]*message\.正文 \+= '\\n\\n'/,
+    'a correction round must separate and retain the previous visible reply');
+  assert.doesNotMatch(page,
+    /event\.kind === 'status' && event\.text === 'draft_correction'[\s\S]*message\.正文 = ''/,
+    'a correction round must not erase the previous visible reply');
+});
+
 test('AI configuration is localized and has no acknowledgement gate or explanatory banner', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
   const settings = read('entry/src/main/ets/components/settings/AIAgent设置分组.ets');
