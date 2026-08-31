@@ -238,3 +238,10 @@ test('cloud deck retries preserve earlier successful imports and select only fai
   assert.match(downloadMethod, /if \(successIds\.indexOf\(deck\.id\) < 0\) \{/);
   assert.match(downloadMethod, /this\.云端牌组选中ID列表 = failedIds\.concat\(\[\]\)/);
 });
+
+test('home enters automatically after every selected cloud deck imports successfully', () => {
+  const source = read('../../entry/src/main/ets/pages/首页.ets');
+  const downloadMethod = source.match(/private async 下载选中云端牌组\(\)[\s\S]*?\n  private async 从选择器导入牌组/)?.[0] ?? '';
+  assert.match(downloadMethod,
+    /this\.云端牌组忙碌 = false;[\s\S]*if \(failedIds\.length === 0 && successIds\.length > 0\) \{\s*await this\.完成云端牌组首次引导\(\);/);
+});

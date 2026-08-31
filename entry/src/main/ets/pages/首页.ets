@@ -1547,6 +1547,9 @@ struct 首页 {
       this.云端牌组服务实例.清理残留下载(context.filesDir);
       this.显示提示(failedIds.length > 0 ?
         $r('app.string.cloud_deck_install_partial') : $r('app.string.cloud_deck_install_complete'));
+      if (failedIds.length === 0 && successIds.length > 0) {
+        await this.完成云端牌组首次引导();
+      }
     }
   }
 
