@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   buildClarificationAnswerText,
@@ -13,6 +16,9 @@ import { AgentToolSchemaError } from '../../entry/src/main/ets/model/agent/Agent
 import { AgentToolRegistry } from '../../entry/src/main/ets/backend/agent/AgentToolRegistry.ets';
 import { agentFunctionTools } from '../../entry/src/main/ets/model/agent/AgentToolCatalog.ts';
 import { toolRiskOf } from '../../entry/src/main/ets/model/agent/AgentPolicy.ts';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
 
 const validJson = JSON.stringify({
   clarificationId: 'scope-1',
@@ -45,6 +51,17 @@ test('registry returns clarification without an Anki handler or draft', async ()
   assert.equal(result.draft, null);
   assert.equal(result.clarification?.id, 'scope-1');
   assert.match(result.outputJson, /awaiting_user/);
+});
+
+test('runner exposes clarification as a legal pause before draft correction', () => {
+  const source = read('entry/src/main/ets/backend/agent/AgentRunner.ets');
+  assert.match(source, /AgentRunStatus\s*=\s*'completed'\s*\|\s*'awaiting_clarification'/);
+  assert.match(source, /clarification:\s*AgentClarificationRequest\s*\|\s*null/);
+  assert.match(source, /result\.clarification\s*!==\s*null/);
+  assert.match(source, /status:\s*'awaiting_clarification'/);
+  assert.match(source, /clarification_must_be_only_tool/);
+  assert.ok(source.indexOf("status: 'awaiting_clarification'") <
+    source.indexOf('agent_no_valid_draft'));
 });
 
 test('clarification decoder trims accepted values and clones nested options', () => {

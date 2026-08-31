@@ -103,3 +103,9 @@ test('create mode cannot finish by merely claiming that a draft exists in text',
   assert.match(source, /createDraftNoteCount/);
   assert.match(source, /createdCount\s*!==\s*request\.expectedDraftCount/);
 });
+
+test('runner returns completed status with no clarification after ordinary work', () => {
+  const source = read('entry/src/main/ets/backend/agent/AgentRunner.ets');
+  assert.match(source, /status:\s*'completed'/);
+  assert.match(source, /clarification:\s*null/);
+});
