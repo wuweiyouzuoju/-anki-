@@ -21,6 +21,9 @@
 
 # Temporary / debug
 /.tmp_*
+/.tmp-*
+/tmp/
+/output/
 /hap-check-tmp/
 build_log.txt
 /file
