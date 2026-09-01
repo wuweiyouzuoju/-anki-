@@ -2311,16 +2311,15 @@ export struct AI制卡页 {
         Column({ space: 应用尺寸.间距_8 }) {
           Button() {
             Stack() {
-              // 始终用完整“导入”文案参与布局，解析中仅隐藏它，按钮宽度不会随“...”缩短。
+              // 两条文案都常驻布局、只切透明度：按钮宽度恒为较宽者，解析切换时不抖动。
               Text($r('app.string.ai_agent_import_files'))
                 .fontSize(应用尺寸.字号_按钮)
                 .fontColor(this.动作主色)
                 .opacity(this.文件解析中 ? 0 : 1)
-              if (this.文件解析中) {
-                Text('...')
-                  .fontSize(应用尺寸.字号_按钮)
-                  .fontColor(this.动作主色)
-              }
+              Text($r('app.string.ai_agent_file_parsing'))
+                .fontSize(应用尺寸.字号_按钮)
+                .fontColor(this.动作主色)
+                .opacity(this.文件解析中 ? 1 : 0)
             }
             .alignContent(Alignment.Center)
           }

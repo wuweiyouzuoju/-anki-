@@ -1178,7 +1178,7 @@
     { "name": "ai_agent_import_files", "value": "Import" },
     { "name": "ai_agent_file_remove", "value": "Remove" },
     { "name": "ai_agent_file_ready", "value": "Parsed · %s KB" },
-    { "name": "ai_agent_file_parsing", "value": "..." },
+    { "name": "ai_agent_file_parsing", "value": "Parsing…" },
     { "name": "ai_agent_file_warning_truncated", "value": "Parsed the sendable portion · %s KB" },
     { "name": "ai_agent_file_warning_partial", "value": "Parsed; some pages had no extractable text · %s KB" },
     { "name": "ai_agent_file_warning_ocr", "value": "Recognized with OCR · %s KB" },

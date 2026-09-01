@@ -1783,7 +1783,7 @@
     { "name": "ai_agent_import_files", "value": "导入" },
     { "name": "ai_agent_file_remove", "value": "移除" },
     { "name": "ai_agent_file_ready", "value": "已解析 · %s KB" },
-    { "name": "ai_agent_file_parsing", "value": "..." },
+    { "name": "ai_agent_file_parsing", "value": "解析中…" },
     { "name": "ai_agent_file_warning_truncated", "value": "已解析可发送部分 · %s KB" },
     { "name": "ai_agent_file_warning_partial", "value": "已解析；部分页面无可提取文字 · %s KB" },
     { "name": "ai_agent_file_warning_ocr", "value": "已通过 OCR 识别 · %s KB" },

@@ -11,8 +11,8 @@ jobs:
     name: Repository tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - run: npm test
@@ -21,13 +21,14 @@ jobs:
     name: Rust workspace check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Clone Anki source (required for path dependency resolution)
         run: git clone --depth 1 https://github.com/ankitects/anki.git third_party/anki
       - uses: dtolnay/rust-toolchain@1.92.0
         with:
           components: rustfmt, clippy
-      - uses: arduino/setup-protoc@v3
+      - name: Install protoc (arduino/setup-protoc v3 has no Node 24 release)
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - name: Check jidecards_core (without anki-core)
         run: cargo check -p jidecards_core
       - name: Run FFI unit tests
