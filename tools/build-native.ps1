@@ -20,13 +20,16 @@ $AnkiPatch = Join-Path $Workspace 'tools\patches\anki-compact-import-log.patch'
 if (-not (Test-Path $AnkiRoot)) {
     throw 'third_party\anki is missing; clone the Anki source before building native code.'
 }
-& git -C $Workspace apply --check --reverse --directory=third_party/anki $AnkiPatch 2>$null
+& git -C $Workspace apply --check --reverse --recount --ignore-space-change --ignore-whitespace `
+    --directory=third_party/anki $AnkiPatch 2>$null
 if ($LASTEXITCODE -ne 0) {
-    & git -C $Workspace apply --check --directory=third_party/anki $AnkiPatch
+    & git -C $Workspace apply --check --recount --ignore-space-change --ignore-whitespace `
+        --directory=third_party/anki $AnkiPatch
     if ($LASTEXITCODE -ne 0) {
         throw 'Anki compact import-log patch does not apply to the current vendored source.'
     }
-    & git -C $Workspace apply --directory=third_party/anki $AnkiPatch
+    & git -C $Workspace apply --recount --ignore-space-change --ignore-whitespace `
+        --directory=third_party/anki $AnkiPatch
     if ($LASTEXITCODE -ne 0) {
         throw 'Failed to apply the Anki compact import-log patch.'
     }

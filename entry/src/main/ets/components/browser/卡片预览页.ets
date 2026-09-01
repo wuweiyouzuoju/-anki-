@@ -48,6 +48,7 @@ import { 解码文件名, 取MIME类型, 读取媒体文件 } from '../../utils/
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 取全屏转场曲线, 取全屏转场时长 } from '../../utils/转场时长';
 import { 颜色键 } from '../../model/颜色主题';
+import { 按下态按钮 } from '../common/按下态按钮';
 
 /** 预览阶段：正面 / 背面 */
 type 预览面 = 'question' | 'answer';
@@ -58,6 +59,7 @@ export struct 卡片预览页 {
   @Prop 卡片ID列表: number[] = [];
   @Prop 初始索引: number = 0;
   @Prop 媒体目录: string = '';
+  @Prop @Watch('预览刷新版本变化') 刷新版本: number = 0;
   onClose: () => void = (): void => {};
   onEditField: (卡片ID: number) => void = (_卡片ID: number): void => {};
 
@@ -79,10 +81,17 @@ export struct 卡片预览页 {
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   // 状态栏高度（沉浸式全屏下，预览层全屏铺开，顶部条需让出状态栏区域，与主页顶栏同一水平面）
   @StorageProp('状态栏高度') private 状态栏高度: number = 0;
+  // 手势导航条高度（底部固定操作区需整体抬高，避免按钮落入系统手势区域）
+  @StorageProp('导航条高度') private 导航条高度: number = 0;
   @State private 已按下编辑: boolean = false;
 
   aboutToAppear(): void {
     this.当前索引值 = this.初始索引;
+    this.加载当前卡();
+  }
+
+  /** 字段保存后父级递增刷新版本，重新渲染当前仍在预览中的卡片。 */
+  private 预览刷新版本变化(): void {
     this.加载当前卡();
   }
 
@@ -300,29 +309,37 @@ export struct 卡片预览页 {
   @Builder
   private 顶部条() {
     Row() {
-      Text(this.取位置文案())
-        .fontSize(应用尺寸.字号_正文_中)
-        .fontColor($r('app.color.text_primary'))
-        .fontWeight(FontWeight.Medium)
+      Row() {
+        Text(this.取位置文案())
+          .fontSize(应用尺寸.字号_正文_中)
+          .fontColor($r('app.color.text_primary'))
+          .fontWeight(FontWeight.Medium)
+          .maxLines(1)
+      }
+      .width('35%')
+      .justifyContent(FlexAlign.Start)
 
-      Blank()
+      Row() {
+        Text($r('app.string.browser_preview_title'))
+          .fontSize(应用尺寸.字号_正文_中)
+          .fontColor($r('app.color.text_secondary'))
+          .textAlign(TextAlign.Center)
+          .maxLines(1)
+      }
+      .width('30%')
+      .justifyContent(FlexAlign.Center)
 
-      Text($r('app.string.browser_preview_title'))
-        .fontSize(应用尺寸.字号_正文_中)
-        .fontColor($r('app.color.text_secondary'))
-
-      Blank()
-
-      // 关闭按钮：与 学习页 顶部条返回同款
-      Text($r('app.string.browser_preview_close'))
-        .fontSize(应用尺寸.字号_按钮)
-        .fontColor($r('app.color.text_primary'))
-        .padding({ left: 应用尺寸.间距_12, right: 应用尺寸.间距_12,
-          top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
-        .backgroundColor($r('app.color.surface_card'))
-        .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-        .borderRadius(应用尺寸.圆角_胶囊)
-        .onClick((): void => { this.onClose(); })
+      Row() {
+        // 与主页“更多”复用同一按下态按钮，保持尺寸、描边和反馈一致。
+        按下态按钮({
+          文案: $r('app.string.browser_preview_close'),
+          选中态背景: this.主色容器色,
+          字色: $r('app.color.text_primary'),
+          点击回调: (): void => { this.onClose(); }
+        })
+      }
+      .width('35%')
+      .justifyContent(FlexAlign.End)
     }
     .width('100%')
     .height(应用尺寸.工具栏高度 + this.状态栏高度)
@@ -449,8 +466,13 @@ export struct 卡片预览页 {
       .width('100%')
     }
     .width('100%')
-    .padding({ left: 应用尺寸.页面内边距_水平, right: 应用尺寸.页面内边距_水平,
-      top: 应用尺寸.间距_8, bottom: 应用尺寸.页面内边距_水平 })
+    .padding({
+      left: 应用尺寸.页面内边距_水平,
+      right: 应用尺寸.页面内边距_水平,
+      top: 应用尺寸.间距_8,
+      // 与其他固定底栏一致：保留原间距并叠加系统导航条高度。
+      bottom: 应用尺寸.页面内边距_水平 + this.导航条高度
+    })
   }
 
   build() {

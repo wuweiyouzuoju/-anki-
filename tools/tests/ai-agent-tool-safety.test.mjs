@@ -6,6 +6,7 @@ import test from 'node:test';
 import {
   AgentToolSchemaError,
   decodeAgentToolArguments,
+  resolveCreateNoteFields,
 } from '../../entry/src/main/ets/model/agent/AgentToolSchemas.ts';
 import {
   AgentScope,
@@ -37,36 +38,55 @@ test('tool arguments reject malformed JSON, invalid IDs and oversized arrays', (
   ), /tool_batch_too_large/);
 });
 
-test('create-note schema reports the exact nested property and a valid correction template', () => {
-  const valid = decodeAgentToolArguments('propose_create_notes', JSON.stringify({
-    targetDeckId: 1,
-    targetNotetypeId: 2,
-    notes: [{ fields: ['front', 'back'] }],
-    draftId: 'draft-1',
-    reason: 'batch reason',
+test('create-flashcards schema accepts content only and rejects model-supplied app context', () => {
+  const valid = decodeAgentToolArguments('create_flashcards', JSON.stringify({
+    cards: [{ fields: ['front', 'back'] }],
   }));
-  assert.equal(valid.reason, 'batch reason');
+  assert.deepEqual(valid.createNotes[0].fields, ['front', 'back']);
 
   assert.throws(
-    () => decodeAgentToolArguments('propose_create_notes', JSON.stringify({
+    () => decodeAgentToolArguments('create_flashcards', JSON.stringify({
+      cards: [{ fields: ['front', 'back'] }],
       targetDeckId: 1,
-      targetNotetypeId: 2,
-      notes: [{ fields: ['front', 'back'], reason: 'wrong level' }],
-      draftId: 'draft-1',
-      reason: 'batch reason',
     })),
     (error) => {
       assert.equal(error instanceof AgentToolSchemaError, true);
       assert.equal(error.code, 'unexpected_property');
-      assert.equal(error.path, 'notes[0].reason');
-      assert.deepEqual(error.receivedKeys, ['fields', 'reason']);
-      assert.deepEqual(error.allowedKeys, ['fields']);
+      assert.equal(error.path, 'targetDeckId');
+      assert.deepEqual(error.receivedKeys, ['cards', 'targetDeckId']);
+      assert.deepEqual(error.allowedKeys, ['cards']);
       const template = JSON.parse(error.validTemplateJson);
-      assert.deepEqual(Object.keys(template.notes[0]), ['fields']);
-      assert.equal(typeof template.reason, 'string');
+      assert.deepEqual(Object.keys(template), ['cards']);
+      assert.deepEqual(Object.keys(template.cards[0]), ['fields']);
       return true;
     },
   );
+});
+
+test('create-flashcards accepts exact selected field names and normalizes them in note-type order', () => {
+  const decoded = decodeAgentToolArguments('create_flashcards', JSON.stringify({
+    cards: [{ 正面: '问题', 背面: '答案', 增加翻转的卡片: '' }],
+  }));
+  assert.deepEqual(decoded.createNotes[0].fields, []);
+  assert.deepEqual(resolveCreateNoteFields(decoded.createNotes[0], ['正面', '背面', '增加翻转的卡片']),
+    ['问题', '答案', '']);
+  assert.throws(
+    () => resolveCreateNoteFields(decoded.createNotes[0], ['Front', 'Back']),
+    (error) => error instanceof AgentToolSchemaError && error.code === 'missing_property',
+  );
+});
+
+test('create target and draft identity are generated locally per turn', () => {
+  const scope = new AgentScope();
+  scope.configureCreateTarget(30, 40);
+  assert.equal(scope.createTargetDeckId(), 30);
+  assert.equal(scope.createTargetNotetypeId(), 40);
+  const first = scope.nextCreateDraftId();
+  const second = scope.nextCreateDraftId();
+  assert.match(first, /^create-/);
+  assert.notEqual(first, second);
+  scope.reset();
+  assert.throws(() => scope.createTargetDeckId(), /create_target_out_of_scope/);
 });
 
 test('schema diagnostics retain precise root, array and scalar paths', () => {
@@ -98,6 +118,31 @@ test('scope accepts only stable positive IDs registered in the current turn', ()
     (error) => error instanceof AgentScopeError && error.code === 'id_out_of_scope',
   );
   assert.throws(() => scope.registerNoteIds([0]), /invalid_stable_id/);
+});
+
+test('read-only discoveries never grant write authorization', () => {
+  const scope = new AgentScope();
+  scope.registerReadableCardIds([12]);
+  scope.registerReadableNoteIds([22]);
+  scope.registerReadableDeckIds([32]);
+  scope.registerReadableNotetypeIds([42]);
+
+  assert.doesNotThrow(() => scope.assertReadableCardIds([12]));
+  assert.doesNotThrow(() => scope.assertReadableNoteIds([22]));
+  assert.doesNotThrow(() => scope.assertReadableDeckIds([32]));
+  assert.doesNotThrow(() => scope.assertReadableNotetypeIds([42]));
+  assert.throws(() => scope.assertCardIdsInScope([12]), /id_out_of_scope/);
+  assert.throws(() => scope.assertNoteIdsInScope([22]), /id_out_of_scope/);
+});
+
+test('edit search scope is applied locally and reset between turns', () => {
+  const scope = new AgentScope();
+  scope.configureCardSearchPrefix('deck:"Chinese" note:"Basic"');
+  assert.equal(scope.scopedCardSearchQuery('tag:hard'),
+    'deck:"Chinese" note:"Basic" (tag:hard)');
+  assert.equal(scope.scopedCardSearchQuery(''), 'deck:"Chinese" note:"Basic"');
+  scope.reset();
+  assert.equal(scope.scopedCardSearchQuery('tag:hard'), 'tag:hard');
 });
 
 test('draft IDs can be registered only once per turn', () => {

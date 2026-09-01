@@ -51,7 +51,7 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 | 模块 | 路径 | 关键不变量 |
 |---|---|---|
 | ArkUI 页面 | `entry/src/main/ets/pages/` | NavPathStack(非 router)；StudyPage phase 状态机 loading→question→answer→done/error；切换卡片时必须回到 loading；BrowserPage phase 状态机 loading→list→error |
-| 浏览页组件 | `entry/src/main/ets/components/browser/` | 搜索框(TextInput+模式切换) + 卡片表格(List+多选+空态) + 浏览编辑区(Stack+if 弹层纯展示)；回调上抛不直接调 Service |
+| 浏览页组件 | `entry/src/main/ets/components/browser/` | 搜索框(TextInput+模式切换) + 卡片表格(List+多选+空态) + 浏览编辑区(Stack+if 弹层纯展示)；多选计数和退出入口统一位于浏览页顶栏，表格不重复渲染白色计数条；回调上抛不直接调 Service |
 | Service 层 | `entry/src/main/ets/backend/` | 不持有 UI 状态；经 BackendSession 单例；失败抛 BackendError |
 | Proto 编解码 | `entry/src/main/ets/proto/` | 纯函数；proto3 optional 用 null；**SchedulingStates raw passthrough 字节级保真** |
 | BackendSession | `entry/src/main/ets/backend/后端会话.ts` | 单例；幂等打开；`closeCollection` vs `markCollectionConsumed` 不可混用 |
@@ -164,10 +164,11 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 
 - Agent 位于 ArkTS 应用层；不允许模型调用裸 RPC、数据库、文件系统或 shell。Anki Rust 核心、protobuf、NAPI ABI 与数据库结构不因 Agent 改动。
 - `AgentRunner` 只负责 Responses/SSE 与有界工具循环；语义工具先生成可编辑 `ChangeDraft`，`AgentDraftExecutor` 是唯一写入边界，并且只调用现有 ArkTS 服务。
-- 每轮重建稳定 ID scope；创建目标锁定为 UI 选择的牌组/笔记类型。普通写入一次确认，高风险删除/结构/模板操作两次独立确认；确认后写入前再次读取 baseline，冲突即中止。
+- 每轮重建稳定 ID scope，并把读取授权与修改授权分开维护：语义搜索可读取全库数据，新加入的卡片、笔记和笔记类型搜索所发现的 ID 只加入可读 scope；卡片和笔记内容修改仍只接受 UI 明确选择或锁定的稳定 ID。原有牌组目标选择及高风险操作授权不扩张。创建目标锁定为 UI 选择的牌组/笔记类型。普通写入一次确认，高风险删除/结构/模板操作两次独立确认；确认后写入前再次读取 baseline，冲突即中止。
 - DeepSeek 默认；DeepSeek/OpenAI 使用固定 HTTPS Responses 端点和模型下拉，Custom 才允许输入 HTTPS 地址/模型。密钥只存 Asset Store，Preferences 只保存非敏感选项。
-- AI 制卡与 AI 改卡是两个入口、共享同一 Agent 页面；从学习卡片进入时只在本地装载该卡上下文，用户发送消息后才调用 API。历史只保存可见文本、工具审计、HTTPS 来源和执行结果，不保存密钥、原始推理或媒体字节。
-- `model/agent/AgentToolCatalog.ts` 是模型可见工具契约的唯一来源：每项同时包含 JSON Schema、标准参数模板和禁止规则。`AgentToolSchemas.ts` 返回精确字段路径；`AgentToolDiagnostics.ts` 负责统一脱敏、截断、稳定失败指纹和 `AgentToolTrace` 构造。
+- 用户可见入口统一命名为 Agent 制卡与 Agent 改卡；制卡直接进入共享 Agent 页，主页改卡先进入浏览页多选，选定稳定 ID 后才进入 Agent 页。从学习卡片进入时只在本地装载该卡上下文，用户发送消息后才调用 API。历史只保存可见文本、工具审计、HTTPS 来源和执行结果，不保存密钥、原始推理、导入文件内容或媒体字节。
+- Agent 文件导入统一走本地多格式解析：文本/源码（含 UTF-8、UTF-16、GB18030、HTML/XML、RTF）、PDF 文本层与按需 OCR、DOCX/PPTX/XLSX、ODT/ODS/ODP、EPUB/MOBI/AZW/AZW3，以及常见图片 OCR；解析后只把规范化纯文本交给 Provider，不依赖 Provider 文件上传。Reader Kit 不得静态导入：MOBI/AZW/AZW3 先检查 `SystemCapability.Reader.ReaderService.BookParser` 再按需动态加载，EPUB 有独立 ZIP/HTML 回退，模拟器或不支持设备显示具体错误而不影响启动。单次最多 10 个，单文件 20 MB、纯文本读取 4 MB、压缩展开 48 MB、合计上下文 160000 字符；PDF 上限 120 页、OCR 上限 30 页。每个文件独立显示成功、截断、部分解析、OCR 或具体失败原因，只有成功内容进入上下文；附件是参考材料而非指令或授权，历史不保存原文。旧版二进制 Office、APKG、音视频、加密或无文字文件明确拒绝，禁止交给 Provider 猜测。
+- `model/agent/AgentToolCatalog.ts` 是模型可见工具契约的唯一来源：每项同时包含 JSON Schema、标准参数模板和禁止规则。完整只读能力包含卡片/笔记搜索、牌组/笔记类型/标签枚举、笔记类型结构、上下文、卡片统计与复习历史和图片搜索；不开放裸数据库、文件系统、shell、密钥或任意 RPC。Provider 工具 ID 保持英文 `snake_case`，用户界面的工具过程显示详细本地化中文。`AgentToolSchemas.ts` 返回精确字段路径；`AgentToolDiagnostics.ts` 负责统一脱敏、截断、稳定失败指纹和 `AgentToolTrace` 构造。
 - `AgentRunner` 对完全相同的工具失败第二次强制模板纠错、第三次提前熔断。AI 页按 callId 更新一条工具追踪，成功/失败均可展开查看完整安全参数和结果，默认折叠；历史保存净化后的 trace 并兼容旧摘要记录。
 - 用户明确要求“年份作为填空”时，`AgentRequestIntent.ts` 激活每轮约束，`CardAgentTools` 在草稿登记前要求每张卡的允许 cloze 字段含四位年份；该约束不判断开放语义事实。
 - 2026-08-31 Agent 工具契约收尾验证：Agent 聚焦测试 105/105、完整 `npm test` 662/662、Rust 双架构 + ArkTS 完整构建成功。模拟器 5555 真实 DeepSeek 请求已生成恰好 5 条中国现代史年份 cloze 合法草稿；参数/输出在当轮及历史恢复后均默认展开。草稿未保存，实体手机不在线；精确非法字段纠错/重复失败熔断由确定性测试覆盖。
@@ -175,6 +176,8 @@ ArkUI 页面 → Service 层 → BackendSession(单例) → BackendClient(open/r
 - 2026-08-31 按压态回归复查：v2.0.1 与当前学习页六按钮原实现一致，先前把问题归因于原生 `stateEffect` 且用静态截图验证的结论已作废。真正新增的跨页影响是 `EntryAbility` 里的 Ability 级 `ThemeControl.setDefaultTheme`；现已移除并用 `WithTheme` 仅包住 Type-in-the-Answer 输入框。设置分组展开不再用 `animateTo` 包裹整棵条件子树，仅箭头自身保留 150ms 动画；六个学习操作改为六个 `StudyActionButton` 实例，各自持有局部 `isPressed`。不改变评分值、埋藏/暂停调用、队列、调度或 Anki 后端。完整测试 667/667、Rust 双架构与 ArkTS 签名 HAP 构建成功；覆盖安装两台模拟器。5555 设置展开 8 帧突发采样未出现帮助按钮灰底；保持按压实测“埋藏”和第三评分按钮时，UI 树均只有目标按钮为 `#FF7FA6EA`，其余五个为 `#FFFFFFFF`。实体手机不在线，且模拟器没有 Type-in-the-Answer 卡，输入框局部主题仍待真机相应卡型复核。
 - 2026-08-31 v3.0.0 验证：应用为 `versionCode=3000` / `versionName=3.0.0`，正式公告 ID 为 `20260831-v3.0.0-release`。完整 `npm test` 632/632；完整 Rust+ArkTS `npm run build:app` 成功。签名 HAP 仅用 `install -r` 覆盖安装两台模拟器；目视确认 AI 制卡标题位于屏幕中线、右侧为“历史/配置”、DeepSeek 三模型、自定义中文化、三个配置输入框同样式且无隐私提示/勾选。Agent 安全写入边界不变。没有在线实体手机，且本轮未使用真实 API 请求，不能宣称真机生成、在线续传或高风险写入已通过。
 - 2026-08-31 Agent 对话式配置：固定顶部牌组/笔记类型选择已移入本地助手设置气泡；设置本身不进入 Provider 历史，发送时冻结结构化任务快照。Runner 可用 `request_clarification` 合法暂停，澄清答案在同一回放会话中继续；已解决澄清自动折叠并持久化。设置、澄清和工具过程共用 `AgentDisclosureCard`，工具默认折叠且保留展开状态。安全写入、scope、草稿确认和 baseline 校验边界不变。
+- 2026-08-31 Agent 完成状态重构：取消“无草稿后自动伪造用户纠错指令”的 `draft_correction` 循环；无合法草稿时保留模型原文并立即终止，仅 max-token 截断可自动续写。Runner 只执行当前 Provider 请求中声明的工具，未声明工具绝不进入注册表；连续两轮工具全部失败即熔断。页面将原始 Provider 文本与本地错误文案分离，失败前已有的模型输出会进入实时会话回放和历史恢复。新增拒绝保留、单次终止、工具白名单、跨参数失败预算和历史回放回归测试；完整 `npm test` 705/705、Rust 双架构与 ArkTS/HAP 完整构建成功，未做实体设备交互验证。
+- 2026-08-31 Agent 制卡工具重构：模型只见 `create_flashcards`，`propose_create_notes` 已从创建模式契约移除。工具只接受卡片内容，可用 `fields` 数组或笔记类型的精确字段名；牌组/笔记类型/草稿标识由应用本地注入。成功建立合法草稿后 Runner 立即完成，不再二次请求模型。联网偏好与强制来源证据已解耦，只有用户明确要求联网/引用才会因缺少来源失败。UI 顺序为思考→正文→工具→来源→草稿。完整测试 711/711，ArkTS 类型检查及签名 HAP 构建成功；最终设备交互由用户自行验证。
 
 - [x] 补建 `AGENTS.md` 与 `.agents/rules/{context,naming,comments,workflow,testing}.md` + `.agents/adapters/arkts.md`（2026-08-01 从归档项目 jidecards 复制）
 - [x] 引入 `third_party/anki` submodule（jidecards01 已自带，2026-08-06 核实）

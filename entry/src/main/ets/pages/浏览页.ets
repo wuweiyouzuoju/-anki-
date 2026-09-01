@@ -96,6 +96,8 @@ export interface 浏览页参数 {
   deckId?: string;
   /** 可选：初始搜索串（如查找重复对话框跳转时传入 `note:"Basic" "字段值"`） */
   initialSearch?: string;
+  /** 可选：从主页 Agent 改卡进入时，列表加载后直接进入多选。 */
+  selectForAgentEdit?: boolean;
 }
 
 /** T8 改牌组选择器列表项（扁平化后的牌组树节点）。 */
@@ -110,6 +112,8 @@ export struct 浏览页 {
   pageDeckId: string = '';
   /** Navigation 入栈参数：初始搜索串（空=默认搜索；查找重复对话框跳转时传入） */
   pageInitialSearch: string = '';
+  /** Navigation 入栈参数：是否为 Agent 改卡直接进入多选。 */
+  pageSelectForAgentEdit: boolean = false;
   /** 页面栈：返回主页时 pop */
   pathStack: NavPathStack = new NavPathStack();
   private readonly 搜索服务实例: 搜索服务 = new 搜索服务();
@@ -211,10 +215,11 @@ export struct 浏览页 {
   @State private 重命名新标签名: string = '';
   @State private 标签操作忙碌: boolean = false;
 
-  // T5 卡片预览状态：Cards 模式下点击行 → 弹全屏预览；底部「编辑字段」→ 关闭预览并打开 浏览编辑区
+  // T5 卡片预览状态：Cards 模式下点击行 → 弹全屏预览；底部「编辑字段」→ 在预览上方打开 浏览编辑区
   @State private 显示预览: boolean = false;
   @State private 预览初始索引: number = 0;
   @State private 预览媒体目录: string = '';
+  @State private 预览刷新版本: number = 0;
 
   // 主题模式：编辑区 isDark 判断用（与 学习页/添加笔记页 同语义）
   @State private 主题模式值: 主题模式 = 'system';
@@ -246,6 +251,9 @@ export struct 浏览页 {
     // 应用入栈传入的初始搜索串（如查找重复对话框跳转时），再触发搜索
     if (this.pageInitialSearch !== '') {
       this.搜索文本 = this.pageInitialSearch;
+    }
+    if (this.pageSelectForAgentEdit) {
+      this.多选模式值 = true;
     }
     await this.执行搜索();
     // 顶部牌组选择器：加载牌组树（失败不阻塞搜索，Select 仅显示"全部"）
@@ -327,6 +335,7 @@ export struct 浏览页 {
     if (this.显示编辑区) { this.显示编辑区 = false; return true; }
     if (this.显示卡片信息) { this.显示卡片信息 = false; return true; }
     if (this.显示说明浮层) { this.显示说明浮层 = false; return true; }
+    if (this.多选模式值) { this.退出多选(); return true; }
     return false;
   }
 
@@ -583,9 +592,8 @@ export struct 浏览页 {
     this.显示预览 = true;
   }
 
-  /** T5 预览页「编辑字段」回调：关闭预览，复用 行点击 进编辑区（Cards 模式下 行ID 即 cardId）。 */
+  /** T5 预览页「编辑字段」回调：保留预览并在其上方打开编辑区（Cards 模式下 行ID 即 cardId）。 */
   private 打开编辑区For(卡片ID: number): void {
-    this.显示预览 = false;
     this.行点击(卡片ID);
   }
 
@@ -641,6 +649,9 @@ export struct 浏览页 {
       this.显示编辑区 = false;
       this.编辑区当前笔记 = null;
       await this.执行搜索();
+      if (this.显示预览) {
+        this.预览刷新版本 += 1;
+      }
       return true;
     } catch (错误) {
       this.编辑区错误 = this.取本地化文案($r('app.string.browser_detail_save_error'));
@@ -1075,6 +1086,7 @@ export struct 浏览页 {
   private 退出多选(): void {
     this.选中ID列表 = [];
     this.多选模式值 = false;
+    this.pageSelectForAgentEdit = false;
     this.退出多选信号 += 1;
   }
 
@@ -1468,8 +1480,12 @@ export struct 浏览页 {
     this.标签操作忙碌 = false;
   }
 
-  /** 返回主页。 */
+  /** 顶栏返回：多选态优先退出多选，普通浏览态才返回主页。 */
   private 返回(): void {
+    if (this.多选模式值) {
+      this.退出多选();
+      return;
+    }
     this.pathStack.pop();
   }
 
@@ -1481,16 +1497,22 @@ export struct 浏览页 {
       cardIds: this.浏览模式值 === 'cards' ? this.选中ID列表.slice() : [],
       noteIds: this.浏览模式值 === 'cards' ? [] : this.选中ID列表.slice()
     };
+    this.退出多选();
     this.pathStack.pushPath({
       name: 'AiCardPage', param: params,
       onPop: (): void => { this.执行搜索(); }
     });
   }
 
+  /** 顶栏选中计数：使用可变长字符串，让两位及以上数量自然撑宽同款按钮。 */
+  private 取选中计数文案(): string {
+    const 模板: string = this.取本地化文案($r('app.string.browser_select_count'));
+    return `${模板.replace('%d', `${this.选中ID列表.length}`)} ×`;
+  }
+
   @Builder
   private 顶部条() {
-    // 与主页顶部工具栏同款布局：左 返回+筛选，右 查找替换，胶囊按钮 + 淡色边框
-    // 帮助说明不在顶部条挂 ⓘ：筛选无 ⓘ；查找替换的 ⓘ 收纳进弹窗内部
+    // 普通模式沿用返回/筛选/查找替换；多选模式只显示返回与可变宽的选中计数退出按钮。
     Row() {
       按下态按钮({
         文案: $r('app.string.study_back'),
@@ -1499,34 +1521,44 @@ export struct 浏览页 {
         点击回调: (): void => this.返回()
       })
 
-      按下态按钮({
-        文案: $r('app.string.browser_action_sidebar'),
-        选中态背景: this.主色容器色,
-        字色: $r('app.color.text_primary'),
-        点击回调: (): void => {
-          if (this.阶段 !== 'list') {
-            return;
+      if (this.多选模式值) {
+        Blank()
+        按下态按钮({
+          文案: this.取选中计数文案(),
+          选中态背景: this.主色容器色,
+          字色: $r('app.color.text_primary'),
+          点击回调: (): void => this.退出多选()
+        })
+      } else {
+        按下态按钮({
+          文案: $r('app.string.browser_action_sidebar'),
+          选中态背景: this.主色容器色,
+          字色: $r('app.color.text_primary'),
+          点击回调: (): void => {
+            if (this.阶段 !== 'list') {
+              return;
+            }
+            this.侧边栏错误 = '';
+            this.打开侧边栏();
           }
-          this.侧边栏错误 = '';
-          this.打开侧边栏();
-        }
-      })
+        })
 
-      Blank()
+        Blank()
 
-      // T9 查找替换入口：点击弹出对话框，帮助说明在弹窗标题旁的 ⓘ 内
-      按下态按钮({
-        文案: $r('app.string.browser_action_find_replace'),
-        选中态背景: this.主色容器色,
-        字色: $r('app.color.text_primary'),
-        点击回调: (): void => {
-          if (this.阶段 !== 'list') {
-            return;
+        // T9 查找替换入口：点击弹出对话框，帮助说明在弹窗标题旁的 ⓘ 内
+        按下态按钮({
+          文案: $r('app.string.browser_action_find_replace'),
+          选中态背景: this.主色容器色,
+          字色: $r('app.color.text_primary'),
+          点击回调: (): void => {
+            if (this.阶段 !== 'list') {
+              return;
+            }
+            this.查找替换错误 = '';
+            this.显示查找替换 = true;
           }
-          this.查找替换错误 = '';
-          this.显示查找替换 = true;
-        }
-      })
+        })
+      }
     }
     .width('100%')
     .height(应用尺寸.工具栏高度 + this.状态栏高度)
@@ -1574,6 +1606,7 @@ export struct 浏览页 {
               行列表: this.行列表,
               结果总数: this.结果ID列表.length,
               已加载行数: this.行列表.length,
+              初始多选模式: this.pageSelectForAgentEdit,
               onRowClick: (行ID: number): void => { this.行点击处理(行ID); },
               onLongPress: (): void => {},
               onLoadMore: (): void => { this.加载更多(); },
@@ -1641,6 +1674,7 @@ export struct 浏览页 {
             卡片ID列表: this.结果ID列表,
             初始索引: this.预览初始索引,
             媒体目录: this.预览媒体目录,
+            刷新版本: this.预览刷新版本,
             onClose: (): void => {
               this.显示预览 = false;
             },
@@ -2380,6 +2414,7 @@ export struct 浏览页 {
       .height('100%')
     }
     .hideTitleBar(true)
+    .onBackPressed((): boolean => this.onBackPress())
     .opacity(this.转场透明度)
   }
 }

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { common } from '@kit.AbilityKit';
 import type { Card } from '../../proto/messages/CardsMessages';
 import type { DeckTreeNode } from '../../proto/messages/DeckMessages';
 import type { EditableNote } from '../../proto/messages/NoteMessages';
 import type { NotetypeCapabilities, 变更笔记类型请求 } from '../../proto/messages/NotetypeMessages';
-import type { ChangeDraft, DraftOperation } from '../../model/agent/AgentTypes';
+import type { AgentImageAttachment, AgentImageCandidate, ChangeDraft, DraftOperation } from '../../model/agent/AgentTypes';
 import {
   AgentConfirmationManager,
   AgentConfirmationToken
@@ -13,6 +14,8 @@ import { 卡片服务 } from '../卡片服务';
 import { 牌组服务 } from '../牌组服务';
 import { 笔记服务 } from '../笔记服务';
 import { 笔记类型服务 } from '../笔记类型服务';
+import { 媒体服务 } from '../媒体服务';
+import { WikimediaImageService } from './WikimediaImageService';
 
 interface TemplateUpdatePayload {
   templates: string;
@@ -112,6 +115,8 @@ export class AgentDraftExecutor {
   private readonly cards: 卡片服务 = new 卡片服务();
   private readonly decks: 牌组服务 = new 牌组服务();
   private readonly notetypes: 笔记类型服务 = new 笔记类型服务();
+  private readonly media: 媒体服务 = new 媒体服务();
+  private readonly images: WikimediaImageService = new WikimediaImageService();
   private readonly confirmations: AgentConfirmationManager;
 
   constructor(confirmations: AgentConfirmationManager = new AgentConfirmationManager()) {
@@ -222,6 +227,14 @@ export class AgentDraftExecutor {
         }
       }
     }
+    for (const attachment of draft.imageAttachments ?? []) {
+      if (attachment.noteId <= 0) { continue; }
+      const note: EditableNote = await this.notes.获取笔记(attachment.noteId);
+      if (attachment.fieldOrd < 0 || attachment.fieldOrd >= note.fields.length ||
+        (attachment.before !== undefined && note.fields[attachment.fieldOrd] !== attachment.before)) {
+        throw new AgentDraftExecutorError('draft_conflict');
+      }
+    }
   }
 
   private async revalidateForExecution(draft: ChangeDraft): Promise<void> {
@@ -268,17 +281,93 @@ export class AgentDraftExecutor {
     result.items.push({ operation: operation, targetId: targetId, succeeded: false, errorCode: errorCode(error) });
   }
 
+  private getAbilityContext(): common.UIAbilityContext {
+    const context: common.UIAbilityContext | undefined =
+      AppStorage.get<common.UIAbilityContext>('abilityContext');
+    if (context === undefined) {
+      throw new AgentDraftExecutorError('context_unavailable');
+    }
+    return context;
+  }
+
+  private escapeHtmlAttribute(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  private mediaDesiredName(draftId: string, noteIndex: number, imageIndex: number,
+    extension: string): string {
+    const safeId: string = draftId.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 80);
+    return `ai-agent-${safeId}-${noteIndex}-${imageIndex}.${extension}`;
+  }
+
+  private async appendImages(note: EditableNote, attachments: AgentImageAttachment[],
+    draftId: string, noteIndex: number): Promise<string[]> {
+    const addedMedia: string[] = [];
+    if (attachments.length === 0) { return addedMedia; }
+    const context: common.UIAbilityContext = this.getAbilityContext();
+    for (let index: number = 0; index < attachments.length; index++) {
+      const attachment: AgentImageAttachment = attachments[index];
+      const candidate: AgentImageCandidate | undefined = attachment.candidate;
+      if (candidate === undefined) {
+        throw new AgentDraftExecutorError('image_candidate_out_of_scope');
+      }
+      const bytes: Uint8Array = await this.images.download(context, candidate, draftId, noteIndex * 10 + index);
+      const extension: string = WikimediaImageService.extensionForBytes(bytes);
+      if (extension.length === 0) {
+        throw new AgentDraftExecutorError('invalid_image');
+      }
+      const desiredName: string = this.mediaDesiredName(draftId, noteIndex, index, extension);
+      const 最终文件名: string = await this.media.添加媒体文件(desiredName, bytes);
+      if (最终文件名.length === 0) {
+        throw new AgentDraftExecutorError('media_write_failed');
+      }
+      addedMedia.push(最终文件名);
+      const altText: string = this.escapeHtmlAttribute(attachment.altText);
+      const imageTag: string = altText.length === 0
+        ? `<img src="${this.escapeHtmlAttribute(最终文件名)}">`
+        : `<img src="${this.escapeHtmlAttribute(最终文件名)}" alt="${altText}">`;
+      const current: string = note.fields[attachment.fieldOrd];
+      note.fields[attachment.fieldOrd] = current.length === 0 ? imageTag : `${current}<br>${imageTag}`;
+    }
+    return addedMedia;
+  }
+
+  private async compensateMedia(fileNames: string[]): Promise<string> {
+    if (fileNames.length === 0) { return ''; }
+    try {
+      await this.media.媒体文件进回收站(fileNames);
+      return '';
+    } catch (error) {
+      return `media_compensation_failed:${fileNames.join(',')}`;
+    }
+  }
+
+  private async failureWithMediaCompensation(error: Error, media: string[]): Promise<Error> {
+    const compensationError: string = await this.compensateMedia(media);
+    return compensationError.length === 0 ? error : new Error(`${errorCode(error)};${compensationError}`);
+  }
+
   private async executeOrdinaryOperations(draft: ChangeDraft): Promise<AgentDraftExecutionResult> {
     const result: AgentDraftExecutionResult = this.emptyResult(draft);
     if (draft.operations.length > 0 && draft.operations[0].kind === 'create_note') {
       const groups: CreateOperationGroup[] = this.groupCreateOperations(draft.operations);
-      for (const group of groups) {
+      for (let groupIndex: number = 0; groupIndex < groups.length; groupIndex++) {
+        const group: CreateOperationGroup = groups[groupIndex];
+        const writtenMedia: string[] = [];
         try {
           const note: EditableNote = await this.notes.新建笔记(draft.affectedNotetypeIds[0]);
           for (const operation of group.operations) { note.fields[operation.fieldOrd] = operation.after; }
+          const imageAttachments: AgentImageAttachment[] = (draft.imageAttachments ?? []).filter(
+            (attachment: AgentImageAttachment): boolean => attachment.noteId === group.noteId);
+          writtenMedia.push(...await this.appendImages(note, imageAttachments, draft.id, groupIndex));
           const noteId: number = await this.notes.添加笔记(note, draft.affectedDeckIds[0]);
           this.appendSuccess(result, 'create_note', noteId);
-        } catch (error) { this.appendFailure(result, 'create_note', group.noteId, error as Error); }
+        } catch (error) {
+          const finalError: Error = await this.failureWithMediaCompensation(
+            error instanceof Error ? error : new Error(`${error}`), writtenMedia);
+          this.appendFailure(result, 'create_note', group.noteId, finalError);
+        }
       }
       return result;
     }
@@ -287,16 +376,24 @@ export class AgentDraftExecutor {
       const noteOperations: DraftOperation[] = draft.operations.filter(
         (operation: DraftOperation): boolean => operation.noteId === noteId &&
           (operation.kind === 'update_field' || operation.kind === 'update_tags'));
-      if (noteOperations.length === 0) { continue; }
+      const imageAttachments: AgentImageAttachment[] = (draft.imageAttachments ?? []).filter(
+        (attachment: AgentImageAttachment): boolean => attachment.noteId === noteId);
+      if (noteOperations.length === 0 && imageAttachments.length === 0) { continue; }
+      const writtenMedia: string[] = [];
       try {
         const note: EditableNote = await this.notes.获取笔记(noteId);
         for (const operation of noteOperations) {
           if (operation.kind === 'update_field') { note.fields[operation.fieldOrd] = operation.after; }
           if (operation.kind === 'update_tags') { note.tags = JSON.parse(operation.after) as string[]; }
         }
+        writtenMedia.push(...await this.appendImages(note, imageAttachments, draft.id, noteId));
         await this.notes.更新笔记([note], false);
         this.appendSuccess(result, 'update_note', noteId);
-      } catch (error) { this.appendFailure(result, 'update_note', noteId, error as Error); }
+      } catch (error) {
+        const finalError: Error = await this.failureWithMediaCompensation(
+          error instanceof Error ? error : new Error(`${error}`), writtenMedia);
+        this.appendFailure(result, 'update_note', noteId, finalError);
+      }
     }
     for (const operation of draft.operations) {
       if (operation.kind !== 'move_card') { continue; }

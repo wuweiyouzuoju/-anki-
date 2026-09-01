@@ -7,8 +7,12 @@ import {
   DEFAULT_BATCH_LIMIT,
   MAX_BATCH_LIMIT,
   SearchEvidenceError,
+  SearchExecutionError,
   enforceSearchEvidence,
+  enforceSearchExecution,
   normalizeBatchLimit,
+  explicitSourceEvidenceRequested,
+  explicitWebSearchForbidden,
   explicitWebSearchRequested,
   registerToolCallId,
   splitAffectedCardIds,
@@ -54,7 +58,8 @@ test('custom provider starts with conservative capabilities and editable coordin
 test('tool risks keep reads automatic, ordinary writes draft-only, and structural writes high-risk', () => {
   assert.equal(toolRiskOf('get_note_context'), 'read');
   assert.equal(toolRiskOf('web_search'), 'read');
-  assert.equal(toolRiskOf('propose_create_notes'), 'write');
+  assert.equal(toolRiskOf('create_flashcards'), 'write');
+  assert.equal(toolRiskOf('propose_create_notes'), 'blocked');
   assert.equal(toolRiskOf('propose_update_notes'), 'write');
   assert.equal(toolRiskOf('remove_notes'), 'high_risk');
   assert.equal(toolRiskOf('update_note_type_templates'), 'high_risk');
@@ -88,13 +93,26 @@ test('requested web search must have a real source event', () => {
   }]));
   assert.throws(
     () => enforceSearchEvidence(true, [{ kind: 'text_delta', text: 'I searched the web.' }]),
-    (error) => error instanceof SearchEvidenceError && error.code === 'web_search_unsupported',
+    (error) => error instanceof SearchEvidenceError && error.code === 'web_search_sources_missing',
   );
+});
+
+test('required web search distinguishes execution from source-link evidence', () => {
+  assert.doesNotThrow(() => enforceSearchExecution(true, true));
+  assert.throws(() => enforceSearchExecution(true, false),
+    (error) => error instanceof SearchExecutionError && error.code === 'web_search_not_executed');
+  assert.equal(explicitSourceEvidenceRequested('请联网查一下最新资料'), false);
+  assert.equal(explicitSourceEvidenceRequested('请联网查并给出来源链接'), true);
+  assert.equal(explicitSourceEvidenceRequested('search the web and cite sources'), true);
 });
 
 test('explicit web-search intent is detected without treating local card search as web access', () => {
   assert.equal(explicitWebSearchRequested('请联网搜索最新资料并标注来源'), true);
+  assert.equal(explicitWebSearchRequested('请上网查一下这些资料'), true);
   assert.equal(explicitWebSearchRequested('去有道词典网站查这些单词'), true);
   assert.equal(explicitWebSearchRequested('search the web and cite sources'), true);
   assert.equal(explicitWebSearchRequested('搜索卡库里带 biology 标签的卡片'), false);
+  assert.equal(explicitWebSearchRequested('不要上网，只修改本地这 5 张卡'), false);
+  assert.equal(explicitWebSearchForbidden('不要联网，只用本地内容'), true);
+  assert.equal(explicitWebSearchForbidden('请上网查资料'), false);
 });

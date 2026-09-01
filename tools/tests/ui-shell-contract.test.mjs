@@ -16,6 +16,23 @@ function readJson(relativePath) {
   return JSON.parse(read(relativePath));
 }
 
+test('home popup menus start below the status-aware toolbar', () => {
+  const moreMenu = read('entry/src/main/ets/components/home/主页更多面板.ets');
+  const actionMenu = read('entry/src/main/ets/components/主页操作面板.ets');
+  for (const menu of [moreMenu, actionMenu]) {
+    assert.match(menu, /@StorageProp\('状态栏高度'\)\s+private\s+状态栏高度:\s*number\s*=\s*0/);
+    assert.match(menu,
+      /top:\s*应用尺寸\.工具栏高度\s*\+\s*this\.状态栏高度\s*\+\s*应用尺寸\.间距_4/);
+    assert.doesNotMatch(menu, /margin\(\{\s*top:\s*64/);
+  }
+});
+
+test('regular settings entry always supplies a non-AI navigation parameter', () => {
+  const home = read('entry/src/main/ets/pages/首页.ets');
+  assert.match(home,
+    /设置回调:[\s\S]*?const params:\s*设置页参数\s*=\s*\{\s*openAiSettings:\s*false\s*\}[\s\S]*?name:\s*'SettingsPage',[\s\S]*?param:\s*params/);
+});
+
 test('home shell keeps adaptive breakpoints and a virtualized deck list', () => {
   const page = read('entry/src/main/ets/pages/首页.ets');
   const deckList = read('entry/src/main/ets/components/home/主页牌组列表.ets');
@@ -572,7 +589,8 @@ test('Schulte-style settings keep the approved full-screen page architecture and
 
   const panel = read(panelPath);
   assert.match(panel, /Stack\(\)/);
-  assert.match(panel, /List\(\{ space: 12 \}\)/);
+  // 内容 List 挂滚动器：openAiSettings 跳转进来时 scrollToIndex 直接定位到 AI 智能体分组
+  assert.match(panel, /List\(\{ space: 12, scroller: this\.内容滚动器 \}\)/);
   assert.match(panel, /外观分组展开/);
   assert.match(panel, /数据分组展开/);
   assert.match(panel, /数据库分组展开/);

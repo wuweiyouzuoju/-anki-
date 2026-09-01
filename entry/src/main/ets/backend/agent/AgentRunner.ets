@@ -14,6 +14,7 @@ import {
   DEFAULT_AGENT_TURN_LIMITS
 } from '../../model/agent/AgentTypes';
 import {
+  enforceSearchExecution,
   enforceSearchEvidence,
   registerToolCallId
 } from '../../model/agent/AgentPolicy';
@@ -99,6 +100,24 @@ function toolTemplate(request: ProviderTurnRequest, toolName: string): string {
   return '{}';
 }
 
+function isToolDeclared(request: ProviderTurnRequest, toolName: string): boolean {
+  for (const tool of request.functionTools) {
+    if (tool.name === toolName) { return true; }
+  }
+  return false;
+}
+
+function undeclaredToolDiagnostic(request: ProviderTurnRequest,
+  call: AgentToolCall): AgentToolDiagnostic {
+  const declaredNames: string[] = [];
+  for (const tool of request.functionTools) { declaredNames.push(tool.name); }
+  return {
+    code: 'tool_not_declared', path: 'name',
+    message: `The tool ${call.name} is not available in this turn. Available tools: ${declaredNames.join(', ')}.`,
+    receivedKeys: [call.name], allowedKeys: declaredNames, validTemplateJson: '{}'
+  };
+}
+
 function diagnosticForError(error: Object, call: AgentToolCall,
   request: ProviderTurnRequest): AgentToolDiagnostic {
   if (error instanceof AgentToolSchemaError) {
@@ -169,6 +188,7 @@ function copyRequest(request: ProviderTurnRequest): ProviderTurnRequest {
     input: input,
     functionTools: request.functionTools.slice(),
     searchMode: request.searchMode,
+    requiresWebSearch: request.requiresWebSearch,
     requiresSearchEvidence: request.requiresSearchEvidence,
     requiresDraft: request.requiresDraft,
     expectedDraftCount: request.expectedDraftCount,
@@ -227,6 +247,7 @@ class RoundCollector implements AgentStreamObserver {
         try {
           const item: ProviderContinuationItem = JSON.parse(event.text) as ProviderContinuationItem;
           if (item.type === 'reasoning') { this.hasReasoningContinuation = true; }
+          if (item.type === 'web_search_call') { this.searchStarted = true; }
         } catch (error) {
           // 归一化器只会产生已验证的 JSON；失败时交由协议层拒绝。
         }
@@ -309,18 +330,35 @@ export class AgentRunner {
     if (!capabilities.toolCalls) {
       throw new AgentRunnerError('agent_tools_unsupported');
     }
+    const configuredSearchMode: string = request.searchMode;
+    const searchRequired: boolean = request.requiresWebSearch || request.requiresSearchEvidence;
+    const searchForced: boolean = configuredSearchMode === 'always' || searchRequired;
+    if (configuredSearchMode === 'off' &&
+      (request.requiresWebSearch || request.requiresSearchEvidence)) {
+      throw new AgentRunnerError('web_search_disabled');
+    }
     if (!capabilities.webSearch) {
-      if (request.searchMode === 'always' || request.requiresSearchEvidence) {
-        throw new AgentRunnerError('web_search_unsupported');
+      if (searchRequired) {
+        throw new AgentRunnerError('web_search_provider_unsupported');
       }
+      request.searchMode = 'off';
+    } else if (searchForced) {
+      // 明确联网或“总是搜索”只强制首个搜索阶段；后续轮次必须能调用本地制卡工具。
+      request.searchMode = 'always';
+    } else {
+      // 自动模式由应用根据本轮原始用户意图确定，禁止模型在普通本地任务中随机联网。
       request.searchMode = 'off';
     }
     const drafts: ChangeDraft[] = [];
+    const allSearchSources: AgentSearchSourceEvent[] = [];
     const seenToolCallIds: Set<string> = new Set<string>();
     const failureTracker: AgentToolFailureTracker = new AgentToolFailureTracker();
     let providerCalls: number = 0;
     let toolCalls: number = 0;
     let transientRetries: number = 0;
+    let failedToolRounds: number = 0;
+    let searchExecuted: boolean = false;
+    let searchHandoffPending: boolean = searchForced && request.requiresDraft;
     while (providerCalls < this.limits.maxProviderCalls) {
       if (this.cancelled) {
         throw new AgentRunnerError('cancelled');
@@ -345,43 +383,72 @@ export class AgentRunner {
       }
       this.activeSession = null;
       transientRetries = 0;
+      if (collector.searchStarted) { searchExecuted = true; }
+      for (const source of collector.searchSources) { allSearchSources.push(source); }
+      if (searchExecuted && request.searchMode === 'always') {
+        request.searchMode = 'auto';
+      }
       if (collector.errorCode.length > 0) {
         throw new AgentRunnerError(collector.errorCode);
+      }
+      if (collector.searchStarted) {
+        const searchCall: AgentToolCall = {
+          id: `builtin-web-search-${providerCalls}`,
+          name: 'web_search',
+          argumentsJson: '{}'
+        };
+        const searchTrace: AgentToolTrace = completeAgentToolTrace(
+          createStartedAgentToolTrace(searchCall, providerCalls, 0),
+          `{"sourceCount":${collector.searchSources.length}}`
+        );
+        observer.onEvent(toolStatusEvent('tool_completed', searchCall, searchTrace));
       }
       if (collector.toolCalls.length === 0) {
         const createdCount: number = createDraftNoteCount(drafts);
         const countMismatch: boolean = request.expectedDraftCount > 0 && createdCount > 0 &&
           createdCount !== request.expectedDraftCount;
-        if (countMismatch) { drafts.splice(0, drafts.length); }
-        const draftRequired: boolean = request.requiresDraft && drafts.length === 0;
-        if (draftRequired || collector.incompleteMaxOutput) {
+        if (collector.incompleteMaxOutput) {
           if (providerCalls >= this.limits.maxProviderCalls) {
-            throw new AgentRunnerError(draftRequired ? 'agent_no_valid_draft' : 'agent_provider_limit');
+            throw new AgentRunnerError('agent_provider_limit');
           }
           appendRoundContinuation(request, collector);
-          const correction: string = countMismatch ?
-            `The task is incomplete: the user requested exactly ${request.expectedDraftCount} cards, but the draft contained ${createdCount}. Call the appropriate propose_ tool again with exactly ${request.expectedDraftCount} valid notes.` :
-            (draftRequired ?
-              'The task is incomplete: no valid editable draft was created. Call the appropriate propose_ tool now. Do not merely describe or claim that a draft exists.' :
-              'Continue from the truncated response and finish the requested tool-based work. Do not repeat completed work.');
           request.input.push({
             kind: 'message', role: 'user',
-            content: correction,
+            content: 'Continue from the truncated response and finish the requested work. Do not repeat completed work.',
             callId: '', name: '', argumentsJson: '', output: ''
           });
-          observer.onEvent(simpleEvent('status', draftRequired ? 'draft_correction' : 'provider_continuation'));
+          observer.onEvent(simpleEvent('status', 'provider_continuation'));
           continue;
         }
-        enforceSearchEvidence(
-          request.requiresSearchEvidence || collector.searchStarted,
-          collector.searchSources
-        );
+        if (searchHandoffPending && searchExecuted && drafts.length === 0 &&
+          providerCalls < this.limits.maxProviderCalls) {
+          searchHandoffPending = false;
+          appendRoundContinuation(request, collector);
+          request.input.push({
+            kind: 'message', role: 'user',
+            content: 'The required web search is complete. Use its results now and finish the original task. ' +
+              'Call the appropriate declared local draft tool when the task requires a draft.',
+            callId: '', name: '', argumentsJson: '', output: ''
+          });
+          observer.onEvent(simpleEvent('status', 'web_search_handoff'));
+          continue;
+        }
+        if (countMismatch) {
+          drafts.splice(0, drafts.length);
+          throw new AgentRunnerError('agent_no_valid_draft');
+        }
+        if (request.requiresDraft && drafts.length === 0) {
+          throw new AgentRunnerError('agent_no_valid_draft');
+        }
+        enforceSearchExecution(searchRequired, searchExecuted);
+        enforceSearchEvidence(request.requiresSearchEvidence, allSearchSources);
         observer.onEvent(simpleEvent('completed'));
         return {
           status: 'completed', clarification: null,
           drafts: drafts, providerCalls: providerCalls, toolCalls: toolCalls
         };
       }
+      searchHandoffPending = false;
       appendRoundContinuation(request, collector);
       const hasClarification: boolean = collector.toolCalls.some((call: AgentToolCall): boolean =>
         call.name === 'request_clarification');
@@ -440,11 +507,27 @@ export class AgentRunner {
           name: call.name, argumentsJson: call.argumentsJson, output: ''
         });
       }
+      let completedToolsInRound: number = 0;
+      let failedToolsInRound: number = 0;
       for (const call of acceptedToolCalls) {
         const sequence: number = toolCalls - acceptedToolCalls.length + acceptedToolCalls.indexOf(call) + 1;
         const startedTrace: AgentToolTrace = createStartedAgentToolTrace(call, providerCalls, sequence);
         observer.onEvent(toolStatusEvent('tool_started', call, startedTrace));
         try {
+          if (!isToolDeclared(request, call.name)) {
+            const undeclared: AgentToolDiagnostic = undeclaredToolDiagnostic(request, call);
+            const undeclaredRecord: AgentToolFailureRecord =
+              failureTracker.record(call.name, call.argumentsJson, undeclared);
+            const undeclaredTrace: AgentToolTrace =
+              failAgentToolTrace(startedTrace, undeclared, undeclaredRecord.count);
+            observer.onEvent(toolStatusEvent('tool_failed', call, undeclaredTrace, undeclared.code));
+            request.input.push({
+              kind: 'function_call_output', role: '', content: '', callId: call.id,
+              name: '', argumentsJson: '', output: toolErrorJson(undeclared, undeclaredRecord)
+            });
+            failedToolsInRound += 1;
+            continue;
+          }
           const result: AgentToolResult = await this.registry.execute(call);
           if (result.draft !== null) { drafts.push(result.draft); }
           const completedTrace: AgentToolTrace = completeAgentToolTrace(startedTrace, result.outputJson);
@@ -453,6 +536,7 @@ export class AgentRunner {
             kind: 'function_call_output', role: '', content: '', callId: call.id,
             name: '', argumentsJson: '', output: sanitizeAgentToolJson(result.outputJson, 32768).text
           });
+          completedToolsInRound += 1;
           if (result.clarification !== null) {
             if (this.cancelled) {
               throw new AgentRunnerError('cancelled');
@@ -471,11 +555,35 @@ export class AgentRunner {
             kind: 'function_call_output', role: '', content: '', callId: call.id,
             name: '', argumentsJson: '', output: toolErrorJson(diagnostic, record)
           });
+          failedToolsInRound += 1;
           if (record.shouldAbort) {
             observer.onEvent(simpleEvent('error', '', 'agent_repeated_tool_failure'));
             throw new AgentRunnerError('agent_repeated_tool_failure');
           }
         }
+      }
+      if (request.requiresDraft && drafts.length > 0) {
+        const createdCount: number = createDraftNoteCount(drafts);
+        if (request.expectedDraftCount > 0 && createdCount !== request.expectedDraftCount) {
+          drafts.splice(0, drafts.length);
+          throw new AgentRunnerError('agent_no_valid_draft');
+        }
+        enforceSearchExecution(searchRequired, searchExecuted);
+        enforceSearchEvidence(request.requiresSearchEvidence, allSearchSources);
+        observer.onEvent(simpleEvent('completed'));
+        return {
+          status: 'completed', clarification: null,
+          drafts: drafts, providerCalls: providerCalls, toolCalls: toolCalls
+        };
+      }
+      if (failedToolsInRound > 0 && completedToolsInRound === 0) {
+        failedToolRounds += 1;
+        if (failedToolRounds >= 2) {
+          observer.onEvent(simpleEvent('error', '', 'agent_repeated_tool_failure'));
+          throw new AgentRunnerError('agent_repeated_tool_failure');
+        }
+      } else if (completedToolsInRound > 0) {
+        failedToolRounds = 0;
       }
     }
     observer.onEvent(simpleEvent('error', '', 'agent_provider_limit'));

@@ -24,8 +24,8 @@
 // @业务规则
 // - 结果总数 === 0 时显示 统一空态（标题 browser_empty）
 // - 非多选模式：点击行 → onRowClick(id)
-// - 多选模式：长按行进入并选中该行；点击行切换选中（不触发 onRowClick）；
-//   顶部显示「已选 N 项」（browser_select_count，%d 替换），✕ 退出多选
+// - 多选模式：长按行进入并选中该行；点击行切换选中（不触发 onRowClick）
+// - 选中计数和退出入口由浏览页顶栏统一渲染，本组件不额外占用列表空间
 // - 选中ID集合用 Set<number>；切换时整体重新赋值以触发 @State 刷新
 // - 滚动到底部且 已加载行数 < 结果总数 时触发 onLoadMore
 //
@@ -50,6 +50,8 @@ export struct 卡片表格 {
   @Prop 行列表: 浏览行数据[] = [];
   @Prop 结果总数: number = 0;
   @Prop 已加载行数: number = 0;
+  /** 从 Agent 改卡入口进入时，首次挂载即显示多选框。 */
+  @Prop 初始多选模式: boolean = false;
   onRowClick: (id: number) => void = (): void => {};
   onLongPress: () => void = (): void => {};
   onLoadMore: () => void = (): void => {};
@@ -67,6 +69,12 @@ export struct 卡片表格 {
   @State private 多选模式: boolean = false;
   @State private 选中ID集合: Set<number> = new Set<number>();
   @State private 加载中: boolean = false;
+
+  aboutToAppear(): void {
+    if (this.初始多选模式) {
+      this.多选模式 = true;
+    }
+  }
 
   /** 退出多选信号变化时清空内部选中（宿主已清自己的，这里同步组件内部状态）。 */
   private 当退出多选信号变化(): void {
@@ -109,13 +117,6 @@ export struct 卡片表格 {
     return 行.color === BrowserRowColor.COLOR_SUSPENDED;
   }
 
-  /** 多选模式下取选中计数文案（browser_select_count，替换 %d）。 */
-  private 取选中计数文案(): string {
-    const 模板: string = this.getUIContext().getHostContext()!.resourceManager
-      .getStringSync($r('app.string.browser_select_count').id);
-    return 模板.replace('%d', `${this.选中ID集合.size}`);
-  }
-
   /** 点击行：多选模式下切换选中，否则触发 onRowClick。 */
   private 处理行点击(id: number): void {
     if (this.多选模式) {
@@ -149,43 +150,6 @@ export struct 卡片表格 {
     this.onSelectionChange(Array.from(新集合));
   }
 
-  /** 退出多选模式，清空选中。 */
-  private 退出多选(): void {
-    this.多选模式 = false;
-    this.选中ID集合 = new Set<number>();
-    this.onMultiSelectChange(false);
-    this.onSelectionChange([]);
-  }
-
-  @Builder
-  private 选中计数条() {
-    Row({ space: 应用尺寸.间距_8 }) {
-      Text(this.取选中计数文案())
-        .fontSize(应用尺寸.字号_正文)
-        .fontColor($r('app.color.text_primary'))
-        .layoutWeight(1)
-
-      Text('✕')
-        .fontSize(应用尺寸.字号_标题)
-        .fontColor($r('app.color.text_secondary'))
-        .padding({
-          left: 应用尺寸.间距_8,
-          right: 应用尺寸.间距_8,
-          top: 应用尺寸.间距_4,
-          bottom: 应用尺寸.间距_4
-        })
-        .onClick((): void => this.退出多选())
-    }
-    .width('100%')
-    .padding({
-      left: 应用尺寸.间距_16,
-      right: 应用尺寸.间距_16,
-      top: 应用尺寸.间距_12,
-      bottom: 应用尺寸.间距_12
-    })
-    .backgroundColor($r('app.color.surface_card'))
-  }
-
   build() {
     Column() {
       if (this.结果总数 === 0) {
@@ -193,10 +157,6 @@ export struct 卡片表格 {
           标题: $r('app.string.browser_empty')
         })
       } else {
-        if (this.多选模式) {
-          this.选中计数条()
-        }
-
         List({ space: 1 }) {
           ForEach(this.行列表, (行: 浏览行数据, index: number) => {
             ListItem() {

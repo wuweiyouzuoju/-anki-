@@ -29,13 +29,15 @@ import { CustomTransition } from '../utils/自定义转场';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { 浏览页参数 } from './浏览页';
 
-interface 设置页参数 {
+export interface 设置页参数 {
   pathStack?: NavPathStack;
+  openAiSettings?: boolean;
 }
 
 @Component
 export struct 设置页 {
   pathStack?: NavPathStack;
+  openAiSettings: boolean = false;
   private readonly 牌组服务实例: 牌组服务 = new 牌组服务();
 
   @StorageLink('systemDarkMode') private 系统暗黑模式: boolean = false;
@@ -381,6 +383,7 @@ export struct 设置页 {
     NavDestination() {
       Stack() {
         设置面板({
+          openAiSettings: this.openAiSettings,
           当前主题模式: this.主题模式值,
           是否深色: this.是否深色(),
           当前颜色主题: this.颜色主题值,

@@ -50,9 +50,16 @@ const { AgentRunner } = await import('../../entry/src/main/ets/backend/agent/Age
 function providerRequest(overrides = {}) {
   return {
     apiKey: 'test-key', baseUrl: 'https://example.test/v1', model: 'test-model', instructions: '',
-    input: [], functionTools: [], searchMode: 'off', requiresSearchEvidence: false,
+    input: [], functionTools: [], searchMode: 'off', requiresWebSearch: false,
+    requiresSearchEvidence: false,
     requiresDraft: false, expectedDraftCount: 0, reasoningEffort: '', maxOutputTokens: 1024,
     ...overrides,
+  };
+}
+
+function functionTool(name) {
+  return {
+    name, description: '', parametersJson: '{}', exampleArgumentsJson: '{}', rules: '',
   };
 }
 
@@ -69,7 +76,9 @@ function runnerHarness(rounds, results) {
     calls: [],
     async execute(call) {
       this.calls.push(call);
-      return results.shift();
+      const result = results.shift();
+      if (result instanceof Error) { throw result; }
+      return result;
     },
   };
   const runner = new AgentRunner(registry);
@@ -161,9 +170,16 @@ test('parallel DeepSeek tool calls are replayed before any tool output', () => {
 
 test('runner enforces explicit-search evidence and disables unavailable optional web search', () => {
   const source = read('entry/src/main/ets/backend/agent/AgentRunner.ets');
-  assert.match(source, /request\.requiresSearchEvidence\s*\|\|\s*collector\.searchStarted/);
-  assert.match(source, /web_search_unsupported/);
+  assert.match(source, /enforceSearchExecution\(searchRequired, searchExecuted\)/);
+  assert.match(source, /enforceSearchEvidence\(\s*request\.requiresSearchEvidence/);
+  assert.match(source, /web_search_disabled/);
+  assert.match(source, /web_search_provider_unsupported/);
+  assert.match(source, /allSearchSources/);
   assert.match(source, /request\.searchMode\s*=\s*'off'/);
+  assert.match(source, /const searchRequired:\s*boolean\s*=\s*request\.requiresWebSearch\s*\|\|\s*request\.requiresSearchEvidence/,
+    'the Always preference must not become a mandatory completion condition');
+  assert.match(source, /name:\s*'web_search'/,
+    'a confirmed built-in web search must become a visible auditable tool trace');
 });
 
 test('runner replays provider continuation items and retries only before meaningful output', () => {
@@ -179,13 +195,20 @@ test('runner replays provider continuation items and retries only before meaning
   assert.match(source, /Continue from the truncated response/);
 });
 
-test('create mode cannot finish by merely claiming that a draft exists in text', () => {
+test('create mode terminates instead of automatically forcing a proposal tool', () => {
   const source = read('entry/src/main/ets/backend/agent/AgentRunner.ets');
   assert.match(source, /request\.requiresDraft\s*&&\s*drafts\.length\s*===\s*0/);
   assert.match(source, /agent_no_valid_draft/);
-  assert.match(source, /Call the appropriate propose_ tool now/);
+  assert.doesNotMatch(source, /Call the appropriate propose_ tool now/);
+  assert.doesNotMatch(source, /draft_correction/);
   assert.match(source, /createDraftNoteCount/);
   assert.match(source, /createdCount\s*!==\s*request\.expectedDraftCount/);
+});
+
+test('runner rejects tools that were not declared for the current provider turn', () => {
+  const source = read('entry/src/main/ets/backend/agent/AgentRunner.ets');
+  assert.match(source, /isToolDeclared/);
+  assert.match(source, /tool_not_declared/);
 });
 
 test('runner returns completed status with no clarification after ordinary work', () => {
@@ -194,12 +217,14 @@ test('runner returns completed status with no clarification after ordinary work'
   assert.match(source, /clarification:\s*null/);
 });
 
-test('sole clarification pauses before create-mode draft correction with completed trace and output', async () => {
+test('sole clarification pauses before create-mode no-draft termination with completed trace and output', async () => {
   const call = toolCall('clarify-1', 'request_clarification', '{"clarificationId":"scope-1"}');
   const { runner, registry, requests } = runnerHarness([[toolCallEvent(call)]], [clarificationResult()]);
   const events = [];
 
-  const result = await runner.run('deepseek', providerRequest({ requiresDraft: true }), {
+  const result = await runner.run('deepseek', providerRequest({
+    requiresDraft: true, functionTools: [functionTool('request_clarification')],
+  }), {
     onEvent(event) { events.push(event); },
   });
 
@@ -212,12 +237,227 @@ test('sole clarification pauses before create-mode draft correction with complet
   assert.deepEqual(requests[0].input.map((item) => item.kind), ['function_call', 'function_call_output']);
 });
 
-test('create mode rejects an ordinary no-tool completion without a draft', async () => {
-  const { runner } = runnerHarness([[]], []);
+test('create mode rejects an ordinary no-tool completion after exactly one provider call', async () => {
+  const { runner, requests } = runnerHarness([[], []], []);
   await assert.rejects(
     () => runner.run('deepseek', providerRequest({ requiresDraft: true }), { onEvent() {} }),
     (error) => error instanceof Error && error.message === 'agent_no_valid_draft',
   );
+  assert.equal(requests.length, 1);
+});
+
+test('a successful create tool ends the turn without asking the model to submit or summarize again', async () => {
+  const call = toolCall('create-1', 'create_flashcards', '{"cards":[{"fields":["Q","A"]}]}');
+  const draft = {
+    id: 'local-create-1', risk: 'write', summary: '生成 1 张闪卡', baselineHash: '',
+    confirmationLevel: 1, status: 'pending', affectedNoteIds: [], affectedCardIds: [],
+    affectedDeckIds: [1], affectedNotetypeIds: [2],
+    operations: [
+      { kind: 'create_note', noteId: -1, cardId: 0, deckId: 1, fieldOrd: 0, before: '', after: 'Q' },
+      { kind: 'create_note', noteId: -1, cardId: 0, deckId: 1, fieldOrd: 1, before: '', after: 'A' },
+    ],
+  };
+  const { runner, requests } = runnerHarness(
+    [[toolCallEvent(call)], []],
+    [{ outputJson: '{"draft":"local-create-1"}', draft, clarification: null }],
+  );
+  const result = await runner.run('deepseek', providerRequest({
+    requiresDraft: true, expectedDraftCount: 1,
+    functionTools: [functionTool('create_flashcards')],
+  }), { onEvent() {} });
+  assert.equal(result.drafts.length, 1);
+  assert.equal(result.providerCalls, 1);
+  assert.equal(requests.length, 1);
+});
+
+test('an optional provider search status cannot discard a successful local draft', async () => {
+  const searchStatus = { kind: 'status', text: 'web_search_started', toolCall: null,
+    toolTrace: null, source: null, errorCode: '' };
+  const call = toolCall('create-optional-search', 'create_flashcards',
+    '{"cards":[{"fields":["Q","A"]}]}');
+  const draft = {
+    id: 'local-create-search', risk: 'write', summary: '生成 1 张闪卡', baselineHash: '',
+    confirmationLevel: 1, status: 'pending', affectedNoteIds: [], affectedCardIds: [],
+    affectedDeckIds: [1], affectedNotetypeIds: [2],
+    operations: [{ kind: 'create_note', noteId: -1, cardId: 0, deckId: 1,
+      fieldOrd: 0, before: '', after: 'Q' }],
+  };
+  const { runner, requests } = runnerHarness(
+    [[searchStatus, toolCallEvent(call)]],
+    [{ outputJson: '{}', draft, clarification: null }],
+  );
+  const events = [];
+  const result = await runner.run('deepseek', providerRequest({
+    searchMode: 'auto', requiresDraft: true, expectedDraftCount: 1, requiresWebSearch: false,
+    requiresSearchEvidence: false,
+    functionTools: [functionTool('create_flashcards')],
+  }), { onEvent(event) { events.push(event); } });
+  assert.equal(result.drafts[0].id, 'local-create-search');
+  assert.equal(requests[0].searchMode, 'off',
+    'Auto must not expose web search for an ordinary local turn');
+  assert.equal(events.some((event) => event.kind === 'tool_completed' &&
+    event.toolCall?.name === 'web_search'), true,
+  'a real provider search event must be visible as an auditable tool trace');
+});
+
+test('Always search is best-effort unless this turn explicitly requested web access', async () => {
+  const { runner, requests } = runnerHarness([[]], []);
+  const result = await runner.run('deepseek', providerRequest({
+    searchMode: 'always', requiresWebSearch: false, requiresSearchEvidence: false,
+  }), { onEvent() {} });
+  assert.equal(result.status, 'completed');
+  assert.equal(requests[0].searchMode, 'always');
+});
+
+test('explicit web search accepts verified execution without requiring source URLs', async () => {
+  const searchStatus = { kind: 'status', text: 'web_search_completed', toolCall: null,
+    toolTrace: null, source: null, errorCode: '' };
+  const call = toolCall('create-searched', 'create_flashcards',
+    '{"cards":[{"fields":["Q","A"]}]}');
+  const draft = {
+    id: 'searched-draft', risk: 'write', summary: '生成 1 张闪卡', baselineHash: '',
+    confirmationLevel: 1, status: 'pending', affectedNoteIds: [], affectedCardIds: [],
+    affectedDeckIds: [1], affectedNotetypeIds: [2],
+    operations: [{ kind: 'create_note', noteId: -1, cardId: 0, deckId: 1,
+      fieldOrd: 0, before: '', after: 'Q' }],
+  };
+  const { runner } = runnerHarness([[searchStatus, toolCallEvent(call)]],
+    [{ outputJson: '{}', draft, clarification: null }]);
+  const result = await runner.run('deepseek', providerRequest({
+    searchMode: 'auto', requiresWebSearch: true, requiresDraft: true, expectedDraftCount: 1,
+    functionTools: [functionTool('create_flashcards')],
+  }), { onEvent() {} });
+  assert.equal(result.drafts[0].id, 'searched-draft');
+});
+
+test('search evidence is accumulated across local tool rounds', async () => {
+  const searchStatus = { kind: 'status', text: 'web_search_completed', toolCall: null,
+    toolTrace: null, source: null, errorCode: '' };
+  const sourceEvent = { kind: 'search_source', text: '', toolCall: null, toolTrace: null,
+    source: { url: 'https://example.com/source', title: 'Source' }, errorCode: '' };
+  const readCall = toolCall('read-after-search', 'list_decks', '{"query":"","limit":20}');
+  const createCall = toolCall('create-after-search', 'create_flashcards',
+    '{"cards":[{"fields":["Q","A"]}]}');
+  const draft = {
+    id: 'cross-round-draft', risk: 'write', summary: '生成 1 张闪卡', baselineHash: '',
+    confirmationLevel: 1, status: 'pending', affectedNoteIds: [], affectedCardIds: [],
+    affectedDeckIds: [1], affectedNotetypeIds: [2],
+    operations: [{ kind: 'create_note', noteId: -1, cardId: 0, deckId: 1,
+      fieldOrd: 0, before: '', after: 'Q' }],
+  };
+  const { runner } = runnerHarness(
+    [[searchStatus, sourceEvent, toolCallEvent(readCall)], [toolCallEvent(createCall)]],
+    [{ outputJson: '{"decks":[]}', draft: null, clarification: null },
+      { outputJson: '{}', draft, clarification: null }],
+  );
+  const result = await runner.run('deepseek', providerRequest({
+    searchMode: 'auto', requiresWebSearch: true, requiresSearchEvidence: true,
+    requiresDraft: true, expectedDraftCount: 1,
+    functionTools: [functionTool('list_decks'), functionTool('create_flashcards')],
+  }), { onEvent() {} });
+  assert.equal(result.drafts[0].id, 'cross-round-draft');
+  assert.equal(result.providerCalls, 2);
+});
+
+test('a search-only provider phase hands off to a local draft phase once', async () => {
+  const searchStatus = { kind: 'status', text: 'web_search_completed', toolCall: null,
+    toolTrace: null, source: null, errorCode: '' };
+  const continuation = { kind: 'continuation_item',
+    text: JSON.stringify({ type: 'web_search_call', id: 'ws-1', status: 'completed' }),
+    toolCall: null, toolTrace: null, source: null, errorCode: '' };
+  const createCall = toolCall('create-after-handoff', 'create_flashcards',
+    '{"cards":[{"fields":["Q","A"]}]}');
+  const draft = {
+    id: 'handoff-draft', risk: 'write', summary: '生成 1 张闪卡', baselineHash: '',
+    confirmationLevel: 1, status: 'pending', affectedNoteIds: [], affectedCardIds: [],
+    affectedDeckIds: [1], affectedNotetypeIds: [2],
+    operations: [{ kind: 'create_note', noteId: -1, cardId: 0, deckId: 1,
+      fieldOrd: 0, before: '', after: 'Q' }],
+  };
+  const { runner, requests } = runnerHarness(
+    [[searchStatus, continuation], [toolCallEvent(createCall)]],
+    [{ outputJson: '{}', draft, clarification: null }],
+  );
+  const result = await runner.run('deepseek', providerRequest({
+    searchMode: 'auto', requiresWebSearch: true, requiresDraft: true, expectedDraftCount: 1,
+    functionTools: [functionTool('create_flashcards')],
+  }), { onEvent() {} });
+  assert.equal(result.drafts[0].id, 'handoff-draft');
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].input.some((item) => item.kind === 'output_item'), true);
+  assert.equal(requests[1].input.some((item) => item.content.includes('required web search is complete')), true);
+});
+
+test('disabled and unsupported required web search fail before network access', async () => {
+  const disabled = runnerHarness([], []);
+  await assert.rejects(
+    () => disabled.runner.run('deepseek', providerRequest({
+      searchMode: 'off', requiresWebSearch: true,
+    }), { onEvent() {} }),
+    (error) => error instanceof Error && error.message === 'web_search_disabled',
+  );
+  assert.equal(disabled.requests.length, 0);
+
+  const unsupported = runnerHarness([], []);
+  await assert.rejects(
+    () => unsupported.runner.run('custom', providerRequest({
+      searchMode: 'auto', requiresWebSearch: true,
+    }), { onEvent() {} }),
+    (error) => error instanceof Error && error.message === 'web_search_provider_unsupported',
+  );
+  assert.equal(unsupported.requests.length, 0);
+});
+
+test('create mode preserves refusal text and never injects a hidden draft correction', async () => {
+  const refusal = { kind: 'text_delta', text: '当前条件下无法生成。', toolCall: null,
+    toolTrace: null, source: null, errorCode: '' };
+  const { runner, requests } = runnerHarness([[refusal], []], []);
+  const events = [];
+  await assert.rejects(
+    () => runner.run('deepseek', providerRequest({ requiresDraft: true }), {
+      onEvent(event) { events.push(event); },
+    }),
+    (error) => error instanceof Error && error.message === 'agent_no_valid_draft',
+  );
+  assert.equal(requests.length, 1);
+  assert.equal(events.filter((event) => event.kind === 'text_delta').map((event) => event.text).join(''),
+    '当前条件下无法生成。');
+  assert.equal(events.some((event) => event.kind === 'status' && event.text === 'draft_correction'), false);
+});
+
+test('undeclared tools are reported but never reach the registry', async () => {
+  const invented = toolCall('invented-1', 'Purpose', '{"cards":[]}');
+  const { runner, registry, requests } = runnerHarness([[toolCallEvent(invented)], []], []);
+  const events = [];
+  await assert.rejects(
+    () => runner.run('deepseek', providerRequest({
+      requiresDraft: true, functionTools: [functionTool('create_flashcards')],
+    }), { onEvent(event) { events.push(event); } }),
+    (error) => error instanceof Error && error.message === 'agent_no_valid_draft',
+  );
+  assert.equal(registry.calls.length, 0);
+  assert.equal(requests.length, 2);
+  const failure = events.find((event) => event.kind === 'tool_failed');
+  assert.equal(failure?.errorCode, 'tool_not_declared');
+  const output = requests[0].input.find((item) => item.kind === 'function_call_output');
+  assert.equal(JSON.parse(output.output).tool_error, 'tool_not_declared');
+});
+
+test('two wholly failed tool rounds exhaust the repair budget even with changed arguments', async () => {
+  const first = toolCall('draft-1', 'create_flashcards', '{"cards":[]}');
+  const second = toolCall('draft-2', 'create_flashcards', '{"cards":[{}]}');
+  const { runner, registry, requests } = runnerHarness(
+    [[toolCallEvent(first)], [toolCallEvent(second)], []],
+    [new Error('invalid_value'), new Error('unexpected_property')],
+  );
+  await assert.rejects(
+    () => runner.run('deepseek', providerRequest({
+      requiresDraft: true, functionTools: [functionTool('create_flashcards')],
+    }), { onEvent() {} }),
+    (error) => error instanceof Error && error.message === 'agent_repeated_tool_failure',
+  );
+  assert.equal(registry.calls.length, 2);
+  assert.equal(requests.length, 2);
 });
 
 test('mixed clarification batches execute no registry calls and return protocol failures', async () => {
@@ -266,7 +506,9 @@ test('cancellation triggered by a completed clarification trace wins over the pa
   const events = [];
 
   await assert.rejects(
-    () => runner.run('deepseek', providerRequest({ requiresDraft: true }), {
+    () => runner.run('deepseek', providerRequest({
+      requiresDraft: true, functionTools: [functionTool('request_clarification')],
+    }), {
       onEvent(event) {
         events.push(event);
         if (event.kind === 'tool_completed') { runner.cancel(); }

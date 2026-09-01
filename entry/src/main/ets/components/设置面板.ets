@@ -71,6 +71,7 @@ import { 按下态按钮 } from './common/按下态按钮';
 // ========================================================
 @Component
 export struct 设置面板 {
+  @Prop openAiSettings: boolean = false;
   @Prop 当前主题模式: 主题模式 = 'system';
   @Prop 是否深色: boolean = false;
   @Prop 当前颜色主题: 颜色主题 = 'aurora';
@@ -164,18 +165,41 @@ export struct 设置面板 {
   @StorageLink(TapZones开关AppStorage键) private TapZones开关: boolean = false;
   // 清除未用标签状态：数据管理分组入口 → 确认对话框 → 调后端
   @State private 清除标签忙碌: boolean = false;
+  // 内容 List 滚动器：openAiSettings 跳转进来时无动画直接定位到 AI 智能体分组
+  private readonly 内容滚动器: Scroller = new Scroller();
 
   private readonly 集合服务实例: 集合服务 = new 集合服务();
   private readonly 标签服务实例: 标签服务 = new 标签服务();
   private readonly 链接服务实例: 链接服务 = new 链接服务();
 
   async aboutToAppear(): Promise<void> {
+    if (this.openAiSettings) { this.AIAgent分组展开 = true; }
     // 加载持久化的简洁模式值到 AppStorage，让 @StorageLink 跨重启保持一致
     const 持久化值: boolean = await 加载简洁模式();
     AppStorage.setOrCreate<boolean>(简洁模式AppStorage键, 持久化值);
     // 实验性功能开关同样加载持久化值，让 @StorageLink 跨重启保持一致
     const TapZones值: boolean = await 加载TapZones开关();
     AppStorage.setOrCreate<boolean>(TapZones开关AppStorage键, TapZones值);
+    // 未配置 AI 从制卡/改卡跳转进来：悬浮 Toast 提示 + 直接定位到 AI 智能体分组
+    if (this.openAiSettings) {
+      this.getUIContext().getPromptAction().showToast({
+        message: this.取本地化文本($r('app.string.ai_agent_config_required'))
+      });
+      // 等简洁模式恢复与内容 List 首帧布局完成后无动画定位；转场动画内完成，打开即在分组处
+      setTimeout((): void => {
+        this.内容滚动器.scrollToIndex(this.AIAgent分组索引());
+      }, 50);
+    }
+  }
+
+  /** AI 智能体分组在内容 List 中的索引：外观/布局/同步恒显，调度器仅实验版渲染（须与 build 分组顺序一致）。 */
+  private AIAgent分组索引(): number {
+    let index: number = 0;
+    index += 1; // 1. 外观与语言分组
+    if (!this.简洁模式) { index += 1; } // 2. FSRS 调度器分组（简洁模式下隐藏）
+    index += 1; // 3. 学习布局分组
+    index += 1; // 4. AnkiWeb 云同步分组
+    return index;
   }
 
   private 取本地化文本(资源: Resource): string {
@@ -817,7 +841,7 @@ export struct 设置面板 {
         .alignContent(Alignment.Center)
 
         // 内容区
-        List({ space: 12 }) {
+        List({ space: 12, scroller: this.内容滚动器 }) {
         // 1. 外观与语言分组
         ListItem() {
           外观分组({

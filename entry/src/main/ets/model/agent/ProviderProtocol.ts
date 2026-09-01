@@ -33,9 +33,11 @@ export interface ProviderTurnRequest {
   input: ProviderInputItem[];
   functionTools: ProviderFunctionTool[];
   searchMode: SearchMode;
-  /** 用户是否明确要求联网；为 true 时必须观察到真实 HTTPS 来源。 */
+  /** 用户是否明确要求联网；为 true 时必须观察到真实服务端搜索过程。 */
+  requiresWebSearch: boolean;
+  /** 用户是否明确要求引用/来源；为 true 时必须观察到真实 HTTPS 来源。 */
   requiresSearchEvidence: boolean;
-  /** 制卡模式必须产生真实 ChangeDraft，不接受模型在正文中声称已完成。 */
+  /** 制卡成功必须产生真实 ChangeDraft；无草稿正常结束时立即失败，不自动补救。 */
   requiresDraft: boolean;
   /** 0=未显式指定；正数=最终创建草稿必须恰好等于该数量。 */
   expectedDraftCount: number;

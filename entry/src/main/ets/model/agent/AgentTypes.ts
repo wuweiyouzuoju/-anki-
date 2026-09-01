@@ -22,6 +22,30 @@ export interface SearchSource {
   title: string;
 }
 
+/** Wikimedia Commons 图片候选；候选只在当前 AgentScope 中有效。 */
+export interface AgentImageCandidate {
+  candidateId: string;
+  title: string;
+  thumbnailUrl: string;
+  downloadUrl: string;
+  sourceUrl: string;
+  mime: string;
+  license: string;
+  credit: string;
+}
+
+/** 草稿阶段的图片引用，不包含二进制数据或本地路径。 */
+export interface AgentImageAttachment {
+  noteId: number;
+  fieldOrd: number;
+  candidateId: string;
+  placement: 'append';
+  altText: string;
+  before?: string;
+  /** 提案时的只读快照，避免用户确认前发生下一轮 scope reset。 */
+  candidate?: AgentImageCandidate;
+}
+
 export interface AgentToolCall {
   id: string;
   name: string;
@@ -108,6 +132,8 @@ export interface ChangeDraft {
   affectedDeckIds: number[];
   affectedNotetypeIds: number[];
   operations: DraftOperation[];
+  /** 兼容旧草稿；新建/更新图片草稿会填充此数组。 */
+  imageAttachments?: AgentImageAttachment[];
 }
 
 export interface AgentTurnLimits {

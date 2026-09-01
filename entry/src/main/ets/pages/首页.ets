@@ -27,7 +27,7 @@ import { 同步面板 } from '../components/同步面板';
 import { 主页顶部工具栏 } from '../components/home/主页顶部工具栏';
 import { 主页更多面板 } from '../components/home/主页更多面板';
 import { 学习提醒页 } from './学习提醒页';
-import { 设置页 } from './设置页';
+import { 设置页, 设置页参数 } from './设置页';
 import { 主页摘要分页 } from '../components/home/主页摘要分页';
 import { 主页牌组列表 } from '../components/home/主页牌组列表';
 import { 牌组选项协调器 } from '../components/home/牌组选项协调器';
@@ -86,6 +86,12 @@ import { 云端牌组目录, 云端牌组目录项 } from '../model/云端牌组
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { CustomTransition } from '../utils/自定义转场';
 import { 当前语言模式 } from '../model/语言存储';
+import {
+  AgentSettings,
+  isAgentProviderConfigured,
+  loadAgentSettings
+} from '../backend/agent/AgentSettingsStore';
+import { loadAgentSecret } from '../backend/agent/AgentSecretStore';
 
 /** 窄屏详情页推栈参数：牌组 id 经 param 传递，页面内按 id 取最新快照数据 */
 interface 牌组详情页参数 {
@@ -1680,7 +1686,11 @@ struct 首页 {
    * 入参传当前选中牌组（若有）与主页快照的牌组候选。
    * 'AiCardPage' 字符串是 NavPathStack 跨页面寻址协议，保留英文。
    */
-  private 打开AI制卡(): void {
+  private async 打开AI制卡(): Promise<void> {
+    if (!await this.isAIConfigured()) {
+      this.openAISettings();
+      return;
+    }
     const 已有选中: boolean = this.已选中牌组();
     const params: AI制卡页参数 = {
       mode: 'create',
@@ -1698,18 +1708,38 @@ struct 首页 {
     });
   }
 
-  /** 从首页进入无预选对象的 AI 改卡会话；由用户发言后再搜索或指定范围。 */
-  private 打开AI改卡(): void {
-    const params: AI制卡页参数 = {
-      mode: 'edit',
-      deckId: this.已选中牌组() ? this.选中的牌组ID : '',
-      deckName: this.已选中牌组() ? 牌组显示名(this.选中牌组()) : '',
-      deckOptions: this.添加笔记的牌组选项(),
-      cardIds: [], noteIds: [], templateIdx: -1
-    };
+  /** 从首页进入浏览页多选卡片；选定目标后再打开 Agent 改卡。 */
+  private async 打开AI改卡(): Promise<void> {
+    if (!await this.isAIConfigured()) {
+      this.openAISettings();
+      return;
+    }
+    const params: 浏览页参数 = { selectForAgentEdit: true };
     this.暂停主页官方公告检查();
     this.页面栈.pushPath({
-      name: 'AiCardPage', param: params,
+      name: 'BrowserPage', param: params,
+      onPop: (): void => { this.返回主页后刷新(); }
+    });
+  }
+
+  /** 两个主页 AI 入口共用配置预检；读取失败按未配置处理。 */
+  private async isAIConfigured(): Promise<boolean> {
+    try {
+      const settings: AgentSettings = await loadAgentSettings();
+      const secret: string = await loadAgentSecret(settings.selectedProvider);
+      return isAgentProviderConfigured(settings, secret);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /** 未配置时从主页直接进入设置，并展开 AI 智能体分组。 */
+  private openAISettings(): void {
+    const params: 设置页参数 = { openAiSettings: true };
+    this.暂停主页官方公告检查();
+    this.页面栈.pushPath({
+      name: 'SettingsPage',
+      param: params,
       onPop: (): void => { this.返回主页后刷新(); }
     });
   }
@@ -2066,6 +2096,7 @@ struct 首页 {
       浏览页({
         pageDeckId: (param as 浏览页参数).deckId ?? '',
         pageInitialSearch: (param as 浏览页参数).initialSearch ?? '',
+        pageSelectForAgentEdit: (param as 浏览页参数).selectForAgentEdit ?? false,
         pathStack: this.页面栈
       })
     } else if (name === 'StatsPage') {
@@ -2096,6 +2127,7 @@ struct 首页 {
       })
     } else if (name === 'SettingsPage') {
       设置页({
+        openAiSettings: (param as 设置页参数).openAiSettings ?? false,
         pathStack: this.页面栈
       })
     }
@@ -2278,8 +2310,10 @@ struct 首页 {
             设置回调: (): void => {
               this.显示更多菜单 = false;
               this.暂停主页官方公告检查();
+              const params: 设置页参数 = { openAiSettings: false };
               this.页面栈.pushPath({
                 name: 'SettingsPage',
+                param: params,
                 onPop: (): void => { this.返回主页后刷新(); }
               });
             },

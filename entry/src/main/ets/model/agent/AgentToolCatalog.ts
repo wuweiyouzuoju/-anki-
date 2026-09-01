@@ -11,9 +11,15 @@ function exampleArgumentsFor(name: string): string {
     case 'get_note_type_capabilities': return '{"notetypeIds":[1]}';
     case 'get_note_context': return '{"cardIds":[1],"noteIds":[1]}';
     case 'search_cards': return '{"query":"deck:example","limit":20}';
+    case 'search_notes': return '{"query":"tag:important","limit":20}';
     case 'list_decks': return '{"query":"example","limit":20}';
-    case 'propose_create_notes':
-      return '{"targetDeckId":1,"targetNotetypeId":1,"notes":[{"fields":["<field-1>","<field-2>"]}],"draftId":"draft-1","reason":"<batch reason>"}';
+    case 'list_notetypes': return '{"query":"basic","limit":20}';
+    case 'list_tags': return '{"query":"important","limit":50}';
+    case 'get_notetype_details': return '{"notetypeIds":[1]}';
+    case 'get_card_statistics': return '{"cardIds":[1],"limit":50}';
+    case 'search_images': return '{"query":"中国传统文化","limit":5}';
+    case 'create_flashcards':
+      return '{"cards":[{"fields":["<field-1>","<field-2>"]}]}';
     case 'propose_update_notes':
       return '{"noteIds":[1],"fieldUpdatesJson":"[{\\"noteId\\":1,\\"fieldOrd\\":0,\\"after\\":\\"updated\\"}]","draftId":"draft-1","reason":"<batch reason>"}';
     case 'propose_move_cards':
@@ -35,10 +41,13 @@ function rulesFor(name: string): string {
   if (name === 'request_clarification') {
     return 'Use only for blocking ambiguity. This tool must be called alone and never writes.';
   }
-  if (name === 'propose_create_notes') {
-    return 'reason is allowed only at the top level. Every notes[] item may contain only fields. ' +
+  if (name === 'create_flashcards') {
+    return 'Submit only card content. Every cards[] item may contain fields and optional images. The application supplies ' +
+      'the selected deck, note type, draft identity, and summary; never include those values in arguments. ' +
+      'A card may use a fields array or exact selected note-type field names with string values. ' +
       'fields must follow the real note-type field order. Cloze markup is allowed only in backend-declared ' +
-      'cloze fields. Match an explicit requested card count exactly. This creates a draft, never a saved note.';
+      'cloze fields. Match an explicit requested card count exactly. Use only candidateId values from search_images. ' +
+      'This creates a draft, never a saved note.';
   }
   if (name.startsWith('propose_')) {
     return 'Use only stable in-scope IDs. This tool creates a draft and never writes immediately. ' +
@@ -46,7 +55,12 @@ function rulesFor(name: string): string {
       name === 'propose_update_note_type_templates' ?
         'This high-risk draft requires separate user confirmations.' : 'User confirmation is required before writing.');
   }
-  if (name === 'search_cards') { return 'This searches the local collection, not the public web.'; }
+  if (name === 'search_cards' || name === 'search_notes') {
+    return 'This searches the local collection, not the public web. Search results are readable only and never expand write scope.';
+  }
+  if (name === 'search_images') {
+    return 'Search only Wikimedia Commons. This is read-only. Use returned candidateId values in image drafts; never invent URLs.';
+  }
   return 'Use only stable IDs and values obtained from the current turn; never invent backend identifiers.';
 }
 
@@ -64,11 +78,15 @@ function tool(name: string, description: string, properties: string,
 const ID_ARRAY: string = '{"type":"array","items":{"type":"integer"},"maxItems":1000}';
 const TEXT: string = '{"type":"string"}';
 const ID: string = '{"type":"integer","minimum":1}';
+const IMAGE_ATTACHMENT: string =
+  '{"type":"object","properties":{"candidateId":{"type":"string","minLength":1,"maxLength":200},' +
+  '"fieldOrd":{"type":"integer","minimum":0},"placement":{"type":"string","enum":["append"]},' +
+  '"altText":{"type":"string","maxLength":200}},"required":["candidateId","fieldOrd"],"additionalProperties":false}';
 
 /** 模型可见的完整语义工具表；不存在 RPC、数据库、文件或任意 HTTP 工具。 */
 export function agentFunctionTools(batchLimit: number = 100, mode: AgentMode = 'edit'): ProviderFunctionTool[] {
   const createLimit: number = normalizeBatchLimit(batchLimit);
-  const notes: string = `{"type":"array","minItems":1,"maxItems":${createLimit},"items":{"type":"object","properties":{"fields":{"type":"array","items":{"type":"string"}}},"required":["fields"],"additionalProperties":false}}`;
+  const notes: string = `{"type":"array","minItems":1,"maxItems":${createLimit},"items":{"type":"object","properties":{"fields":{"type":"array","items":{"type":"string"}},"images":{"type":"array","maxItems":1,"items":${IMAGE_ATTACHMENT}}},"required":[],"additionalProperties":{"type":"string"}}}`;
   const tools: ProviderFunctionTool[] = [
     tool('request_clarification', '提出一个需要用户选择的澄清问题；只等待回答，绝不写入。',
       '"clarificationId":{"type":"string","minLength":1,"maxLength":64},"question":{"type":"string","minLength":1,"maxLength":600},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"id":{"type":"string","minLength":1,"maxLength":64},"label":{"type":"string","minLength":1,"maxLength":80},"description":{"type":"string","maxLength":240}},"required":["id","label"],"additionalProperties":false}},"recommendedOptionId":{"type":"string","maxLength":64},"allowFreeText":{"type":"boolean"}',
@@ -79,13 +97,25 @@ export function agentFunctionTools(batchLimit: number = 100, mode: AgentMode = '
       `"cardIds":${ID_ARRAY},"noteIds":${ID_ARRAY}`, '"cardIds","noteIds"'),
     tool('search_cards', '在当前 Anki 集合中搜索卡片，返回稳定 ID。',
       `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
+    tool('search_notes', '在当前 Anki 集合中搜索笔记，返回稳定 ID；结果只读，不扩大修改范围。',
+      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
     tool('list_decks', '列出或按名称筛选牌组。',
       `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
-    tool('propose_create_notes', '提出一批可编辑笔记草稿；fields 必须按笔记类型字段顺序给出，只能提出，不能保存。',
-      `"targetDeckId":${ID},"targetNotetypeId":${ID},"notes":${notes},"draftId":${TEXT},"reason":${TEXT}`,
-      '"targetDeckId","targetNotetypeId","notes","draftId","reason"'),
-    tool('propose_update_notes', '提出字段或标签修改草稿；只能提出，不能保存。',
-      `"noteIds":${ID_ARRAY},"fieldUpdatesJson":${TEXT},"tags":{"type":"array","items":{"type":"string"}},"draftId":${TEXT},"reason":${TEXT}`,
+    tool('list_notetypes', '列出或按名称筛选笔记类型，返回稳定 ID 与结构摘要。',
+      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
+    tool('list_tags', '列出或按名称筛选标签。',
+      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
+    tool('get_notetype_details', '读取指定笔记类型的字段、填空能力、模板和 CSS 原始结构。',
+      `"notetypeIds":${ID_ARRAY}`, '"notetypeIds"'),
+    tool('get_card_statistics', '读取指定卡片的调度统计与最近复习历史；limit 是每张卡最多返回的历史条数。',
+      `"cardIds":${ID_ARRAY},"limit":{"type":"integer","minimum":1,"maximum":200}`, '"cardIds","limit"'),
+    tool('search_images', '搜索 Wikimedia Commons 图片候选；只读，返回候选 ID、预览、来源和许可证。',
+      `"query":{"type":"string","minLength":1,"maxLength":200},"limit":{"type":"integer","minimum":1,"maximum":10}`,
+      '"query","limit"'),
+    tool('create_flashcards', '生成一批待确认闪卡；只提交 cards 内容，目标牌组、笔记类型和草稿标识由应用注入。可引用 search_images 返回的图片候选。',
+      `"cards":${notes}`, '"cards"'),
+    tool('propose_update_notes', '提出字段、标签或图片修改草稿；imagesJson 使用 search_images 返回的 candidateId；只能提出，不能保存。',
+      `"noteIds":${ID_ARRAY},"fieldUpdatesJson":${TEXT},"imagesJson":${TEXT},"tags":{"type":"array","items":{"type":"string"}},"draftId":${TEXT},"reason":${TEXT}`,
       '"noteIds","fieldUpdatesJson","draftId","reason"'),
     tool('propose_move_cards', '提出移动卡片到牌组的草稿。',
       `"cardIds":${ID_ARRAY},"targetDeckId":${ID},"draftId":${TEXT},"reason":${TEXT}`,
@@ -105,11 +135,12 @@ export function agentFunctionTools(batchLimit: number = 100, mode: AgentMode = '
     tool('propose_delete_note_type', '提出永久删除笔记类型及关联内容的高风险草稿。',
       `"notetypeIds":${ID_ARRAY},"draftId":${TEXT},"reason":${TEXT}`, '"notetypeIds","draftId","reason"')
   ];
-  if (mode === 'edit') { return tools; }
+  if (mode === 'edit') {
+    return tools.filter((value: ProviderFunctionTool): boolean => value.name !== 'create_flashcards');
+  }
   const createTools: ProviderFunctionTool[] = [];
   for (const value of tools) {
-    if (value.name === 'request_clarification' || value.name === 'get_note_type_capabilities' || value.name === 'list_decks' ||
-      value.name === 'propose_create_notes') {
+    if (!value.name.startsWith('propose_')) {
       createTools.push(value);
     }
   }

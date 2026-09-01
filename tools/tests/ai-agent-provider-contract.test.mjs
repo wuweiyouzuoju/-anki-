@@ -36,6 +36,7 @@ function baseRequest(searchMode = 'auto') {
       rules: 'Search only the local collection.',
     }],
     searchMode,
+    requiresWebSearch: false,
     requiresSearchEvidence: false,
     requiresDraft: true,
     expectedDraftCount: 5,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { ChangeDraft, DraftOperation } from './AgentTypes';
+import type { AgentImageAttachment, ChangeDraft, DraftOperation } from './AgentTypes';
 
 interface RetryItemResult {
   targetId: number;
@@ -48,12 +48,18 @@ export function buildFailedOperationsRetryDraft(original: ChangeDraft,
   const targets: Set<number> = failedTargets(result);
   const operations: DraftOperation[] = original.operations.filter(
     (operation: DraftOperation): boolean => operationNeedsRetry(operation, result, targets));
-  if (operations.length === 0) { return null; }
-  const noteIds: number[] = uniquePositive(operations.map((value: DraftOperation): number => value.noteId));
+  const imageAttachments: AgentImageAttachment[] = (original.imageAttachments ?? []).filter(
+    (attachment: AgentImageAttachment): boolean => targets.has(attachment.noteId));
+  if (operations.length === 0 && imageAttachments.length === 0) { return null; }
+  const noteIds: number[] = uniquePositive(
+    operations.map((value: DraftOperation): number => value.noteId)
+      .concat(imageAttachments.map((value: AgentImageAttachment): number => value.noteId)));
   const cardIds: number[] = uniquePositive(operations.map((value: DraftOperation): number => value.cardId));
   const deckIds: number[] = uniquePositive(operations.map((value: DraftOperation): number => value.deckId));
-  const retriesNoteMutation: boolean = operations.some((value: DraftOperation): boolean =>
-    value.kind === 'update_field' || value.kind === 'update_tags');
+  const retriesNoteMutation: boolean = imageAttachments.some(
+    (value: AgentImageAttachment): boolean => value.noteId > 0) ||
+    operations.some((value: DraftOperation): boolean =>
+      value.kind === 'update_field' || value.kind === 'update_tags');
   return {
     id: retryId, risk: original.risk,
     summary: original.summary,
@@ -61,6 +67,7 @@ export function buildFailedOperationsRetryDraft(original: ChangeDraft,
     status: 'pending', affectedNoteIds: noteIds,
     affectedCardIds: retriesNoteMutation ? original.affectedCardIds.slice() : cardIds,
     affectedDeckIds: deckIds.length > 0 ? deckIds : original.affectedDeckIds.slice(),
-    affectedNotetypeIds: original.affectedNotetypeIds.slice(), operations: operations
+    affectedNotetypeIds: original.affectedNotetypeIds.slice(), operations: operations,
+    imageAttachments: imageAttachments.length > 0 ? imageAttachments : undefined
   };
 }

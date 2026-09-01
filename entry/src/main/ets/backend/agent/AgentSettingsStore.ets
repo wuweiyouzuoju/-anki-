@@ -48,6 +48,14 @@ export function defaultAgentSettings(): AgentSettings {
   };
 }
 
+/** 判断当前选中的 Provider 是否具备可发起请求的完整配置。 */
+export function isAgentProviderConfigured(settings: AgentSettings, secret: string): boolean {
+  const model: string = settings.selectedProvider === 'deepseek' ? settings.deepseekModel :
+    (settings.selectedProvider === 'openai' ? settings.openaiModel : settings.customModel);
+  if (secret.trim().length === 0 || model.trim().length === 0) { return false; }
+  return settings.selectedProvider !== 'custom' || settings.customBaseUrl.trim().startsWith('https://');
+}
+
 function getContext(): common.UIAbilityContext | null {
   const context: common.UIAbilityContext | undefined =
     AppStorage.get<common.UIAbilityContext>(CONTEXT_KEY);

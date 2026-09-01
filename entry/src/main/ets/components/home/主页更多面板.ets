@@ -36,6 +36,7 @@ export struct 主页更多面板 {
   统计回调: () => void = (): void => {};
   提醒回调: () => void = (): void => {};
   关闭回调: () => void = (): void => {};
+  @StorageProp('状态栏高度') private 状态栏高度: number = 0;
 
   build() {
     Stack() {
@@ -93,7 +94,10 @@ export struct 主页更多面板 {
       .backgroundColor($r('app.color.surface_card'))
       .borderRadius(应用尺寸.圆角_卡片)
       .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-      .margin({ top: 64, left: 应用尺寸.页面内边距_水平 })
+      .margin({
+        top: 应用尺寸.工具栏高度 + this.状态栏高度 + 应用尺寸.间距_4,
+        left: 应用尺寸.页面内边距_水平
+      })
       .onClick(() => {
         // 阻断点击穿透到遮罩
       })

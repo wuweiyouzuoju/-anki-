@@ -26,14 +26,40 @@ test('every Agent tool exposes one parseable schema, template and forbidden-rule
   }
 });
 
-test('create-note template makes the only valid reason placement unambiguous', () => {
-  const tool = agentFunctionTools(5, 'create').find((item) => item.name === 'propose_create_notes');
+test('create-flashcards tool accepts only card content and keeps app-owned context out of model arguments', () => {
+  const tool = agentFunctionTools(5, 'create').find((item) => item.name === 'create_flashcards');
   assert.ok(tool);
+  const schema = JSON.parse(tool.parametersJson);
   const example = JSON.parse(tool.exampleArgumentsJson);
-  assert.equal(typeof example.reason, 'string');
-  assert.deepEqual(Object.keys(example.notes[0]), ['fields']);
-  assert.match(tool.rules, /reason.*top level/i);
-  assert.match(tool.rules, /notes\[\].*fields/i);
+  assert.deepEqual(schema.required, ['cards']);
+  assert.deepEqual(Object.keys(schema.properties), ['cards']);
+  assert.deepEqual(Object.keys(example), ['cards']);
+  assert.deepEqual(Object.keys(example.cards[0]), ['fields']);
+  assert.doesNotMatch(tool.parametersJson, /targetDeckId|targetNotetypeId|draftId|reason/);
+  assert.deepEqual(schema.properties.cards.items.additionalProperties, { type: 'string' });
+  assert.match(tool.rules, /application supplies/i);
+});
+
+test('create mode no longer exposes propose_create_notes', () => {
+  const names = agentFunctionTools(5, 'create').map((item) => item.name);
+  assert.ok(names.includes('create_flashcards'));
+  assert.ok(!names.includes('propose_create_notes'));
+});
+
+test('both modes expose complete semantic reads while only edit exposes write proposals', () => {
+  const requiredReads = [
+    'get_note_type_capabilities', 'get_note_context', 'search_cards', 'search_notes',
+    'list_decks', 'list_notetypes', 'list_tags', 'get_notetype_details',
+    'get_card_statistics', 'search_images',
+  ];
+  const createNames = agentFunctionTools(5, 'create').map((item) => item.name);
+  const editNames = agentFunctionTools(5, 'edit').map((item) => item.name);
+  for (const name of requiredReads) {
+    assert.ok(createNames.includes(name), `create is missing ${name}`);
+    assert.ok(editNames.includes(name), `edit is missing ${name}`);
+  }
+  assert.ok(!createNames.some((name) => name.startsWith('propose_')));
+  assert.ok(editNames.includes('propose_update_notes'));
 });
 
 test('provider sends schema plus the standard template and rules without unsupported strict mode', () => {
@@ -41,7 +67,8 @@ test('provider sends schema plus the standard template and rules without unsuppo
   const payload = JSON.parse(buildResponsesPayload({
     apiKey: 'not-serialized', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash',
     instructions: 'test', input: [], functionTools, searchMode: 'off',
-    requiresSearchEvidence: false, requiresDraft: true, expectedDraftCount: 5,
+    requiresWebSearch: false, requiresSearchEvidence: false,
+    requiresDraft: true, expectedDraftCount: 5,
     reasoningEffort: 'low', maxOutputTokens: 1000,
   }));
   for (const sent of payload.tools) {

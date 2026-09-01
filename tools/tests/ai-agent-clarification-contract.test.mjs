@@ -58,7 +58,7 @@ test('registry returns clarification without an Anki handler or draft', async ()
   assert.match(result.outputJson, /awaiting_user/);
 });
 
-test('runner exposes clarification as a legal pause before draft correction', () => {
+test('runner exposes clarification as a legal pause before no-draft termination', () => {
   const source = read('entry/src/main/ets/backend/agent/AgentRunner.ets');
   assert.match(source, /AgentRunStatus\s*=\s*'completed'\s*\|\s*'awaiting_clarification'/);
   assert.match(source, /clarification:\s*AgentClarificationRequest\s*\|\s*null/);
@@ -67,6 +67,7 @@ test('runner exposes clarification as a legal pause before draft correction', ()
   assert.match(source, /clarification_must_be_only_tool/);
   assert.ok(source.indexOf("status: 'awaiting_clarification'") <
     source.indexOf('agent_no_valid_draft'));
+  assert.doesNotMatch(source, /draft_correction/);
 });
 
 test('clarification decoder trims accepted values and clones nested options', () => {

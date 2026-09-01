@@ -23,14 +23,46 @@ export interface AgentToolArguments {
   tags: string[];
   reason: string;
   createNotes: AgentCreateNote[];
+  imageUpdates: AgentImageUpdate[];
+}
+
+export interface AgentImageRequest {
+  candidateId: string;
+  fieldOrd: number;
+  placement: 'append';
+  altText: string;
+}
+
+export interface AgentImageUpdate extends AgentImageRequest {
+  noteId: number;
 }
 
 export interface AgentCreateNote {
   fields: string[];
+  namedFields: AgentNamedField[];
+  images: AgentImageRequest[];
+}
+
+export interface AgentNamedField {
+  name: string;
+  value: string;
 }
 
 interface RawAgentCreateNote {
   fields?: string[];
+  images?: RawAgentImageRequest[];
+  [key: string]: string | string[] | RawAgentImageRequest[] | undefined;
+}
+
+interface RawAgentImageRequest {
+  candidateId?: string;
+  fieldOrd?: number;
+  placement?: string;
+  altText?: string;
+}
+
+interface RawAgentImageUpdate extends RawAgentImageRequest {
+  noteId?: number;
 }
 
 interface RawAgentToolArguments {
@@ -51,6 +83,8 @@ interface RawAgentToolArguments {
   tags?: string[];
   reason?: string;
   notes?: RawAgentCreateNote[];
+  cards?: RawAgentCreateNote[];
+  imagesJson?: string;
 }
 
 export class AgentToolSchemaError extends Error {
@@ -82,7 +116,7 @@ export class AgentToolSchemaError extends Error {
 }
 
 function validTemplate(toolName: string): string {
-  const tools = agentFunctionTools(1000, 'edit');
+  const tools = agentFunctionTools(1000, toolName === 'create_flashcards' ? 'create' : 'edit');
   for (const item of tools) {
     if (item.name === toolName) { return item.exampleArgumentsJson; }
   }
@@ -99,7 +133,7 @@ function emptyArguments(): AgentToolArguments {
     cardIds: [], noteIds: [], deckIds: [], notetypeIds: [],
     query: '', limit: 0, draftId: '', targetDeckId: 0, targetNotetypeId: 0,
     fieldUpdatesJson: '', fieldMappingJson: '', templateMappingJson: '',
-    templateJson: '', css: '', tags: [], reason: '', createNotes: []
+    templateJson: '', css: '', tags: [], reason: '', createNotes: [], imageUpdates: []
   };
 }
 
@@ -110,13 +144,22 @@ function allowedKeys(toolName: string): string[] {
     case 'get_note_context':
       return ['cardIds', 'noteIds'];
     case 'search_cards':
+    case 'search_notes':
       return ['query', 'limit'];
     case 'list_decks':
+    case 'list_notetypes':
+    case 'list_tags':
       return ['query', 'limit'];
-    case 'propose_create_notes':
-      return ['targetDeckId', 'targetNotetypeId', 'notes', 'draftId', 'reason'];
+    case 'get_notetype_details':
+      return ['notetypeIds'];
+    case 'get_card_statistics':
+      return ['cardIds', 'limit'];
+    case 'search_images':
+      return ['query', 'limit'];
+    case 'create_flashcards':
+      return ['cards'];
     case 'propose_update_notes':
-      return ['noteIds', 'fieldUpdatesJson', 'tags', 'draftId', 'reason'];
+      return ['noteIds', 'fieldUpdatesJson', 'imagesJson', 'tags', 'draftId', 'reason'];
     case 'propose_move_cards':
       return ['cardIds', 'targetDeckId', 'draftId', 'reason'];
     case 'propose_delete_notes':
@@ -190,48 +233,169 @@ function positiveId(toolName: string, path: string, value: number | undefined): 
   return value;
 }
 
+function validateImageRequest(toolName: string, path: string,
+  value: RawAgentImageRequest | undefined): AgentImageRequest {
+  if (value === undefined || value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw schemaError(toolName, 'invalid_type', path, 'Image attachment must be an object');
+  }
+  const keys: string[] = Object.keys(value);
+  for (const key of keys) {
+    if (key !== 'candidateId' && key !== 'fieldOrd' && key !== 'placement' && key !== 'altText') {
+      throw schemaError(toolName, 'unexpected_property', `${path}.${key}`,
+        `${key} is not a declared image attachment property`, keys,
+        ['candidateId', 'fieldOrd', 'placement', 'altText']);
+    }
+  }
+  if (typeof value.candidateId !== 'string' || value.candidateId.trim().length === 0 ||
+    value.candidateId.length > 200) {
+    throw schemaError(toolName, 'invalid_value', `${path}.candidateId`,
+      'candidateId must be a non-empty string of at most 200 characters');
+  }
+  if (!Number.isSafeInteger(value.fieldOrd) || value.fieldOrd === undefined || value.fieldOrd < 0) {
+    throw schemaError(toolName, 'invalid_value', `${path}.fieldOrd`,
+      'fieldOrd must be a non-negative safe integer');
+  }
+  if (value.placement !== undefined && value.placement !== 'append') {
+    throw schemaError(toolName, 'invalid_value', `${path}.placement`,
+      'placement must be append');
+  }
+  if (value.altText !== undefined &&
+    (typeof value.altText !== 'string' || value.altText.length > 200)) {
+    throw schemaError(toolName, 'invalid_value', `${path}.altText`,
+      'altText must be a string of at most 200 characters');
+  }
+  return {
+    candidateId: value.candidateId.trim(), fieldOrd: value.fieldOrd,
+    placement: 'append', altText: value.altText === undefined ? '' : value.altText
+  };
+}
+
+function validateImageRequests(toolName: string, path: string,
+  value: RawAgentImageRequest[] | undefined): AgentImageRequest[] {
+  if (value === undefined) { return []; }
+  if (!Array.isArray(value) || value.length > 1) {
+    throw schemaError(toolName, 'invalid_value', path,
+      'Each note may contain at most one image attachment');
+  }
+  const result: AgentImageRequest[] = [];
+  for (let index: number = 0; index < value.length; index++) {
+    result.push(validateImageRequest(toolName, `${path}[${index}]`, value[index]));
+  }
+  return result;
+}
+
+function parseImageUpdates(toolName: string, json: string): AgentImageUpdate[] {
+  if (json.trim().length === 0) { return []; }
+  let raw: RawAgentImageUpdate[];
+  try {
+    raw = JSON.parse(json) as RawAgentImageUpdate[];
+  } catch (error) {
+    throw schemaError(toolName, 'invalid_json', 'imagesJson', 'imagesJson must be a JSON array');
+  }
+  if (!Array.isArray(raw) || raw.length > 1000) {
+    throw schemaError(toolName, raw !== undefined && Array.isArray(raw) && raw.length > 1000
+      ? 'tool_batch_too_large' : 'invalid_value', 'imagesJson',
+      'imagesJson must be an array within the safety limit');
+  }
+  const result: AgentImageUpdate[] = [];
+  for (let index: number = 0; index < raw.length; index++) {
+    const item: RawAgentImageUpdate = raw[index];
+    const keys: string[] = item === null || typeof item !== 'object' ? [] : Object.keys(item);
+    for (const key of keys) {
+      if (key !== 'noteId' && key !== 'candidateId' && key !== 'fieldOrd' &&
+        key !== 'placement' && key !== 'altText') {
+        throw schemaError(toolName, 'unexpected_property', `imagesJson[${index}].${key}`,
+          `${key} is not a declared image update property`, keys,
+          ['noteId', 'candidateId', 'fieldOrd', 'placement', 'altText']);
+      }
+    }
+    if (!Number.isSafeInteger(item?.noteId) || item.noteId === undefined || item.noteId <= 0) {
+      throw schemaError(toolName, 'invalid_value', `imagesJson[${index}].noteId`,
+        'noteId must be a positive safe integer');
+    }
+    const imageValue: RawAgentImageRequest = {
+      candidateId: item.candidateId, fieldOrd: item.fieldOrd,
+      placement: item.placement, altText: item.altText
+    };
+    const image: AgentImageRequest = validateImageRequest(toolName, `imagesJson[${index}]`, imageValue);
+    result.push({ noteId: item.noteId, candidateId: image.candidateId,
+      fieldOrd: image.fieldOrd, placement: image.placement, altText: image.altText });
+  }
+  return result;
+}
+
 function validateCreateNotes(toolName: string, value: RawAgentCreateNote[] | undefined): AgentCreateNote[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > 1000) {
     const code: string = Array.isArray(value) && value.length > 1000 ? 'tool_batch_too_large' : 'invalid_value';
-    throw schemaError(toolName, code, 'notes', 'notes must be a non-empty array within the safety limit');
+    throw schemaError(toolName, code, 'cards', 'cards must be a non-empty array within the safety limit');
   }
   const result: AgentCreateNote[] = [];
   for (let noteIndex: number = 0; noteIndex < value.length; noteIndex++) {
     const item: RawAgentCreateNote = value[noteIndex];
     if (item === null || typeof item !== 'object' || Array.isArray(item)) {
-      throw schemaError(toolName, 'invalid_type', `notes[${noteIndex}]`, 'Each notes[] item must be an object');
+      throw schemaError(toolName, 'invalid_type', `cards[${noteIndex}]`, 'Each cards[] item must be an object');
     }
     const keys: string[] = Object.keys(item);
+    const namedFields: AgentNamedField[] = [];
     for (const key of keys) {
-      if (key !== 'fields') {
-        throw schemaError(toolName, 'unexpected_property', `notes[${noteIndex}].${key}`,
-          `${key} is not allowed inside notes[]; reason is allowed only at the top level`,
-          keys, ['fields']);
+      if (key !== 'fields' && key !== 'images') {
+        const dictionary: Record<string, string | string[] | RawAgentImageRequest[] | undefined> = item;
+        const namedValue: string | string[] | RawAgentImageRequest[] | undefined = dictionary[key];
+        if (key.trim().length === 0 || key.length > 200 || typeof namedValue !== 'string') {
+          throw schemaError(toolName, 'invalid_type', `cards[${noteIndex}].${key}`,
+            'Named note-type fields must have string values', keys, ['fields', 'images']);
+        }
+        namedFields.push({ name: key, value: namedValue });
       }
     }
-    if (item.fields === undefined) {
-      throw schemaError(toolName, 'missing_property', `notes[${noteIndex}].fields`,
-        'Each notes[] item requires fields', keys, ['fields']);
+    if (item.fields === undefined && namedFields.length === 0) {
+      throw schemaError(toolName, 'missing_property', `cards[${noteIndex}].fields`,
+        'Each cards[] item requires fields or exact note-type field names', keys, ['fields']);
     }
-    if (!Array.isArray(item.fields)) {
-      throw schemaError(toolName, 'invalid_type', `notes[${noteIndex}].fields`, 'fields must be a string array');
+    if (item.fields !== undefined && !Array.isArray(item.fields)) {
+      throw schemaError(toolName, 'invalid_type', `cards[${noteIndex}].fields`, 'fields must be a string array');
     }
-    if (item.fields.length === 0 || item.fields.length > 100) {
-      throw schemaError(toolName, 'invalid_value', `notes[${noteIndex}].fields`,
+    if (item.fields !== undefined && (item.fields.length === 0 || item.fields.length > 100)) {
+      throw schemaError(toolName, 'invalid_value', `cards[${noteIndex}].fields`,
         'fields must contain between 1 and 100 strings');
     }
     const fields: string[] = [];
-    for (let fieldIndex: number = 0; fieldIndex < item.fields.length; fieldIndex++) {
-      const field: string = item.fields[fieldIndex];
-      if (typeof field !== 'string') {
-        throw schemaError(toolName, 'invalid_type', `notes[${noteIndex}].fields[${fieldIndex}]`,
-          'Every field value must be a string');
+    if (item.fields !== undefined) {
+      for (let fieldIndex: number = 0; fieldIndex < item.fields.length; fieldIndex++) {
+        const field: string = item.fields[fieldIndex];
+        if (typeof field !== 'string') {
+          throw schemaError(toolName, 'invalid_type', `cards[${noteIndex}].fields[${fieldIndex}]`,
+            'Every field value must be a string');
+        }
+        fields.push(field);
       }
-      fields.push(field);
     }
-    result.push({ fields: fields });
+    result.push({ fields: fields, namedFields: namedFields,
+      images: validateImageRequests(toolName, `cards[${noteIndex}].images`, item.images) });
   }
   return result;
+}
+
+export function resolveCreateNoteFields(note: AgentCreateNote, fieldNames: string[]): string[] {
+  if (note.fields.length > 0) { return note.fields.slice(); }
+  const fields: string[] = [];
+  let matched: number = 0;
+  for (const fieldName of fieldNames) {
+    let value: string = '';
+    for (const named of note.namedFields) {
+      if (named.name === fieldName) {
+        value = named.value;
+        matched += 1;
+        break;
+      }
+    }
+    fields.push(value);
+  }
+  if (matched === 0) {
+    throw schemaError('create_flashcards', 'missing_property', 'cards[].fields',
+      'Named card properties must match the selected note-type field names');
+  }
+  return fields;
 }
 
 export function decodeAgentToolArguments(toolName: string, argumentsJson: string): AgentToolArguments {
@@ -267,17 +431,24 @@ export function decodeAgentToolArguments(toolName: string, argumentsJson: string
   output.templateMappingJson = stringValue(toolName, 'templateMappingJson', raw.templateMappingJson);
   output.templateJson = stringValue(toolName, 'templateJson', raw.templateJson);
   output.css = stringValue(toolName, 'css', raw.css);
+  output.imageUpdates = parseImageUpdates(toolName, stringValue(toolName, 'imagesJson', raw.imagesJson));
   output.reason = stringValue(toolName, 'reason', raw.reason).trim();
   output.targetDeckId = positiveId(toolName, 'targetDeckId', raw.targetDeckId);
   output.targetNotetypeId = positiveId(toolName, 'targetNotetypeId', raw.targetNotetypeId);
-  if (toolName === 'propose_create_notes') {
-    output.createNotes = validateCreateNotes(toolName, raw.notes);
+  if (toolName === 'create_flashcards') {
+    output.createNotes = validateCreateNotes(toolName, raw.cards);
   }
   if (raw.limit !== undefined) {
-    if (!Number.isSafeInteger(raw.limit) || raw.limit <= 0 || raw.limit > 1000) {
-      throw schemaError(toolName, 'invalid_value', 'limit', 'limit must be an integer between 1 and 1000');
+    const maxLimit: number = toolName === 'search_images' ? 10 :
+      (toolName === 'get_card_statistics' ? 200 : 1000);
+    if (!Number.isSafeInteger(raw.limit) || raw.limit <= 0 || raw.limit > maxLimit) {
+      throw schemaError(toolName, 'invalid_value', 'limit',
+        `limit must be an integer between 1 and ${maxLimit}`);
     }
     output.limit = raw.limit;
+  }
+  if (toolName === 'search_images' && output.query.length === 0) {
+    throw schemaError(toolName, 'invalid_value', 'query', 'query must not be empty');
   }
   if (raw.tags !== undefined) {
     if (!Array.isArray(raw.tags) || raw.tags.length > 100) {

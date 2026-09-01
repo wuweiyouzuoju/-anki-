@@ -25,6 +25,8 @@ test('agent settings remember provider models, custom coordinates, search mode, 
   assert.match(store, /normalizeBatchLimit/);
   assert.match(store, /ProviderId/);
   assert.match(store, /SearchMode/);
+  assert.match(store, /isAgentProviderConfigured/);
+  assert.match(store, /customBaseUrl\.trim\(\)\.startsWith\('https:\/\/'\)/);
 });
 
 test('provider secrets use Asset Store aliases and never Preferences', () => {

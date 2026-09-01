@@ -2,23 +2,26 @@
 
 // AI 制卡/改卡共享页：带结构化工具、可编辑草稿与显式确认的轻量 Agent。
 // 由 首页.ets 通过 Navigation pathStack 以 NavDestination 形式入栈（与 添加笔记页 同机制）。
-// 顶部：历史与 AI 配置；目标牌组和笔记类型位于本地对话设置卡。
+// 顶部：返回与历史；目标牌组和笔记类型位于本地对话设置卡。
 // 中间：聊天消息流。AI 返回的卡片以草稿形式内嵌在 AI 消息里，可勾选、可编辑字段、批量保存。
 // 底部：材料输入框 + 发送按钮。
 // 所有写入都经 AgentDraftExecutor，最终仍只调用现有 Anki ArkTS Service。
 // 不支持 Image Occlusion（走独立 RPC，本页直接从笔记类型候选中过滤）。
 
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI';
-import { BusinessError } from '@ohos.base';
+import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { 后端会话 } from '../backend/后端会话';
 import { 笔记服务, 笔记字段校验错误 } from '../backend/笔记服务';
 import { 笔记类型服务 } from '../backend/笔记类型服务';
 import { 卡片服务 } from '../backend/卡片服务';
 import type { AgentEvent, AgentMode, AgentToolTrace, AgentToolTraceStatus, ChangeDraft, DraftOperation, ProviderId, SearchSource } from '../model/agent/AgentTypes';
-import type { ProviderInputItem, ProviderTurnRequest } from '../model/agent/ProviderProtocol';
+import type { ProviderFunctionTool, ProviderInputItem, ProviderTurnRequest } from '../model/agent/ProviderProtocol';
 import { agentFunctionTools } from '../model/agent/AgentToolCatalog';
-import { explicitWebSearchRequested } from '../model/agent/AgentPolicy';
+import {
+  explicitSourceEvidenceRequested,
+  explicitWebSearchForbidden,
+  explicitWebSearchRequested
+} from '../model/agent/AgentPolicy';
 import { DEEPSEEK_PROVIDER, OPENAI_PROVIDER } from '../model/agent/ProviderCatalog';
 import { AgentRunner, AgentRunObserver, AgentRunResult } from '../backend/agent/AgentRunner';
 import { AgentTransportError } from '../backend/agent/AgentTransport';
@@ -56,13 +59,14 @@ import { explicitYearClozeRequested, inferRequestedCardCount } from '../model/ag
 import {
   AgentSettings,
   defaultAgentSettings,
-  loadAgentSettings,
-  saveAgentSettings
+  isAgentProviderConfigured,
+  loadAgentSettings
 } from '../backend/agent/AgentSettingsStore';
-import { loadAgentSecret, saveAgentSecret } from '../backend/agent/AgentSecretStore';
+import { loadAgentSecret } from '../backend/agent/AgentSecretStore';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
 import { CustomTransition } from '../utils/自定义转场';
+import { 按下态按钮 } from '../components/common/按下态按钮';
 import type { EditableNote } from '../proto/messages/NoteMessages';
 import type { Card } from '../proto/messages/CardsMessages';
 import { NOTE_TYPE_KIND_NORMAL } from '../proto/messages/NotetypeMessages';
@@ -79,6 +83,15 @@ import {
 import { AgentDisclosureCard } from '../components/agent/AgentDisclosureCard';
 import { AgentSetupCard } from '../components/agent/AgentSetupCard';
 import { AgentClarificationCard } from '../components/agent/AgentClarificationCard';
+import {
+  AGENT_IMPORT_MAX_CONTEXT_CHARS,
+  AGENT_IMPORT_MAX_FILES,
+  AgentImportedFile,
+  agentImportedFileNames,
+  buildAgentImportedFilesContext,
+  successfulAgentImportedFiles
+} from '../model/agent/AgentFileImport';
+import { selectAndParseAgentFiles } from '../backend/agent/AgentFileImportService';
 
 /** 建卡目标牌组候选（通过 Navigation param 传入） */
 export interface AI制卡牌组选项 {
@@ -105,9 +118,36 @@ export interface AI制卡页参数 {
 
 interface 页面AI配置 { apiKey: string; baseUrl: string; model: string; }
 
-/** Select 组件使用的通用选项结构。 */
-interface AI制卡下拉选项 {
-  value: string;
+interface ProviderCardDraftContext {
+  index: number;
+  fields: string[];
+  status: string;
+  selected: boolean;
+}
+
+interface ProviderDraftOperationContext {
+  kind: string;
+  noteId: number;
+  cardId: number;
+  deckId: number;
+  fieldOrd: number;
+  before: string;
+  after: string;
+}
+
+interface ProviderChangeDraftContext {
+  id: string;
+  risk: string;
+  summary: string;
+  status: string;
+  operations: ProviderDraftOperationContext[];
+}
+
+interface ProviderDraftContext {
+  cards: ProviderCardDraftContext[];
+  changes: ProviderChangeDraftContext[];
+  executionResult: string;
+  truncated: boolean;
 }
 
 /** 单张待确认卡片：fields 与当前笔记类型字段顺序一一对应。 */
@@ -197,28 +237,34 @@ export struct AI制卡页 {
   private agentSettings: AgentSettings = defaultAgentSettings();
   @State private 页面Provider: ProviderId = 'deepseek';
   @State private 本地入口上下文: string = '';
-  @State private 显示配置区: boolean = false;
-  @State private 配置密钥输入: string = '';
-  @State private 配置地址输入: string = '';
-  @State private 配置模型输入: string = '';
-  @State private 配置提示: string = '';
+  @State private 显示历史区: boolean = false;
+  @State private 历史会话列表: AgentConversation[] = [];
   @State private 错误信息: string = '';
-  @State private setupExpanded: boolean = true;
+  @State private 导入文件列表: AgentImportedFile[] = [];
+  @State private 文件解析中: boolean = false;
 
   private 下一个消息ID值: number = 1;
 
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
+  @StorageProp(颜色键.选中背景) private 选中背景色: string = '#E8EEFC';
+  @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
   @StorageProp(颜色键.主色按钮背景) private 主色按钮背景色: string = '#2F5FD0';
   @StorageProp(颜色键.主色按钮按下) private 主色按钮按下色: string = '#1E4FB8';
+  @StorageProp(颜色键.页面底色微染) private 页面底色微染值: string = '#F5F7FA';
   @StorageProp('导航条高度') private 导航条高度: number = 0;
   @StorageProp('状态栏高度') private 状态栏高度: number = 0;
   /** NavDestination 透明度（由 customNavContentTransition 回调控制，实现淡入淡出转场）。 */
   @State private 转场透明度: number = 1;
+  private 上一键盘避让模式: KeyboardAvoidMode = KeyboardAvoidMode.OFFSET;
 
   // 图片遮盖第一版仍走独立 RPC；填空能力改由 Anki 后端结构提供，不再按名称猜测。
   private static readonly 图片遮盖笔记类型名集合: string[] = ['Image Occlusion', '图片遮盖', '影像遮擋'];
 
   async aboutToAppear(): Promise<void> {
+    // 聊天页底部是 TextArea + Button 整行操作区。默认 OFFSET 只保证获焦文本/光标可见，
+    // 可能让同行发送按钮仍被键盘裁剪；RESIZE 会压缩页面可用高度，让整个输入区位于键盘上方。
+    this.上一键盘避让模式 = this.getUIContext().getKeyboardAvoidMode();
+    this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
     // 注册自定义转场回调：首页 Navigation.customNavContentTransition 通过此 name 查找回调
     CustomTransition.getInstance().注册NavParam('AiCardPage',
       (isPush: boolean, isExit: boolean): void => {
@@ -236,21 +282,7 @@ export struct AI制卡页 {
     const 入参牌组ID: number = this.pageDeckId === '' ? 0 : parseInt(this.pageDeckId);
     const 命中入参: boolean = this.牌组选项.some((项: AI制卡牌组选项): boolean => 项.id === 入参牌组ID);
     this.牌组ID = 命中入参 ? 入参牌组ID : 0;
-    try {
-      this.agentSettings = await loadAgentSettings();
-    } catch (错误) {
-      this.agentSettings = defaultAgentSettings();
-    }
-    const provider: ProviderId = this.agentSettings.selectedProvider;
-    this.页面Provider = provider;
-    const baseUrl: string = provider === 'deepseek' ? DEEPSEEK_PROVIDER.baseUrl :
-      (provider === 'openai' ? OPENAI_PROVIDER.baseUrl : this.agentSettings.customBaseUrl);
-    const model: string = provider === 'deepseek' ? this.agentSettings.deepseekModel :
-      (provider === 'openai' ? this.agentSettings.openaiModel : this.agentSettings.customModel);
-    this.AI配置 = { apiKey: await loadAgentSecret(provider), baseUrl: baseUrl, model: model };
-    this.配置密钥输入 = this.AI配置.apiKey;
-    this.配置地址输入 = this.AI配置.baseUrl;
-    this.配置模型输入 = this.AI配置.model;
+    await this.loadProviderConfiguration();
     await this.加载笔记类型列表();
     const registry: AgentToolRegistry = new AgentToolRegistry();
     new CardAgentTools(this.agentScope).register(registry, this.pageMode);
@@ -261,7 +293,24 @@ export struct AI制卡页 {
 
   aboutToDisappear(): void {
     if (this.agentRunner !== null) { this.agentRunner.cancel(); }
+    this.getUIContext().setKeyboardAvoidMode(this.上一键盘避让模式);
     CustomTransition.getInstance().注销NavParam('AiCardPage');
+  }
+
+  /** 从设置页的唯一配置源加载当前 Provider 坐标与密钥。 */
+  private async loadProviderConfiguration(): Promise<void> {
+    try {
+      this.agentSettings = await loadAgentSettings();
+    } catch (error) {
+      this.agentSettings = defaultAgentSettings();
+    }
+    const provider: ProviderId = this.agentSettings.selectedProvider;
+    this.页面Provider = provider;
+    const baseUrl: string = provider === 'deepseek' ? DEEPSEEK_PROVIDER.baseUrl :
+      (provider === 'openai' ? OPENAI_PROVIDER.baseUrl : this.agentSettings.customBaseUrl);
+    const model: string = provider === 'deepseek' ? this.agentSettings.deepseekModel :
+      (provider === 'openai' ? this.agentSettings.openaiModel : this.agentSettings.customModel);
+    this.AI配置 = { apiKey: await loadAgentSecret(provider), baseUrl: baseUrl, model: model };
   }
 
   private 追加稳定IDs(target: number[], values: number[]): void {
@@ -277,6 +326,7 @@ export struct AI制卡页 {
     this.agentScope.configureCreateTarget(
       this.pageMode === 'create' ? this.牌组ID : 0,
       this.pageMode === 'create' ? this.已选笔记类型ID : 0);
+    this.agentScope.configureCardSearchPrefix(this.改卡搜索范围());
     this.agentScope.registerCardIds(this.本地范围卡片IDs);
     this.agentScope.registerNoteIds(this.本地范围笔记IDs);
     this.agentScope.registerDeckIds(this.本地范围牌组IDs);
@@ -358,25 +408,39 @@ export struct AI制卡页 {
     return selected === undefined ? this.笔记类型名 : selected.name;
   }
 
-  private providerReady(): boolean {
-    if (this.AI配置.apiKey.trim().length === 0 || this.AI配置.model.trim().length === 0) {
-      return false;
+  private anki搜索引号值(value: string): string {
+    return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+  }
+
+  private 改卡搜索范围(): string {
+    if (this.pageMode !== 'edit') { return ''; }
+    const parts: string[] = [];
+    const deckName: string = this.selectedDeckName();
+    const notetypeName: string = this.selectedNotetypeName();
+    if (this.牌组ID > 0 && deckName.length > 0) {
+      parts.push(`deck:"${this.anki搜索引号值(deckName)}"`);
     }
-    return this.pageMode !== 'create' || this.页面Provider !== 'custom' ||
-      this.AI配置.baseUrl.startsWith('https://');
+    if (this.已选笔记类型ID > 0 && notetypeName.length > 0) {
+      parts.push(`note:"${this.anki搜索引号值(notetypeName)}"`);
+    }
+    return parts.join(' ');
+  }
+
+  private providerReady(): boolean {
+    return isAgentProviderConfigured(this.agentSettings, this.AI配置.apiKey);
   }
 
   private taskSetup(): AgentTaskSetup {
     return {
       mode: this.pageMode,
-      deckId: this.pageMode === 'create' ? this.牌组ID : 0,
-      deckName: this.pageMode === 'create' ? this.selectedDeckName() : '',
-      notetypeId: this.pageMode === 'create' ? this.已选笔记类型ID : 0,
-      notetypeName: this.pageMode === 'create' ? this.selectedNotetypeName() : '',
-      fieldNames: this.pageMode === 'create' ? this.字段名列表.slice() : [],
-      noteTypeKind: this.pageMode === 'create' ? this.noteTypeKind : NOTE_TYPE_KIND_NORMAL,
-      clozeFieldOrds: this.pageMode === 'create' ? this.clozeFieldOrds.slice() : [],
-      expanded: this.setupExpanded
+      deckId: this.牌组ID,
+      deckName: this.牌组ID > 0 ? this.selectedDeckName() : '',
+      notetypeId: this.已选笔记类型ID,
+      notetypeName: this.已选笔记类型ID > 0 ? this.selectedNotetypeName() : '',
+      fieldNames: this.字段名列表.slice(),
+      noteTypeKind: this.noteTypeKind,
+      clozeFieldOrds: this.clozeFieldOrds.slice(),
+      expanded: true
     };
   }
 
@@ -390,8 +454,14 @@ export struct AI制卡页 {
   }
 
   private readinessReason(): AgentReadinessReason {
-    return evaluateAgentReadiness(this.taskSetup(), this.输入草稿,
-      this.providerReady(), this.处理中 || this.hasPendingClarification());
+    const effectiveInput: string = this.输入草稿.trim().length > 0 ? this.输入草稿 :
+      (successfulAgentImportedFiles(this.导入文件列表).length > 0 ? 'imported-file' : '');
+    return evaluateAgentReadiness(this.taskSetup(), effectiveInput,
+      this.providerReady(), this.处理中 || this.文件解析中 || this.hasPendingClarification());
+  }
+
+  private canSubmit(): boolean {
+    return this.readinessReason() === 'ready';
   }
 
   private taskSnapshot(input: string): AgentTaskSnapshot {
@@ -407,19 +477,45 @@ export struct AI制卡页 {
     };
   }
 
-  private readinessText(): ResourceStr {
-    const reason: AgentReadinessReason = this.readinessReason();
-    if (reason === 'missing_deck') { return $r('app.string.ai_agent_setup_missing_deck'); }
-    if (reason === 'missing_notetype') { return $r('app.string.ai_agent_setup_missing_notetype'); }
-    if (reason === 'missing_input') { return $r('app.string.ai_agent_setup_missing_input'); }
-    if (reason === 'missing_provider') { return $r('app.string.ai_agent_setup_missing_provider'); }
-    if (reason === 'busy') { return $r('app.string.ai_agent_clarification_waiting'); }
-    return $r('app.string.ai_agent_setup_ready');
+  private editSetupContext(): string {
+    if (this.pageCardIds.length > 0 || this.pageNoteIds.length > 0) {
+      return this.取本地化格式($r('app.string.ai_agent_edit_selected_context'),
+        [`${this.pageCardIds.length}`, `${this.pageNoteIds.length}`]);
+    }
+    return this.取本地化文案($r('app.string.ai_agent_edit_search_welcome'));
   }
 
-  private editSetupContext(): string {
-    if (this.本地入口上下文.length > 0) { return this.本地入口上下文; }
-    return this.取本地化文案($r('app.string.ai_agent_edit_search_welcome'));
+  /** 预选改卡沿用入口传入的稳定 ID，不再让对话重新选择搜索范围。 */
+  private hasFixedEditSelection(): boolean {
+    return this.pageMode === 'edit' && (this.pageCardIds.length > 0 || this.pageNoteIds.length > 0);
+  }
+
+  /** 首条消息发送前显示已锁定的目标数量。 */
+  private selectedEditContext(): string {
+    if (this.pageCardIds.length > 0) {
+      return this.取本地化格式($r('app.string.ai_agent_edit_selected_cards'),
+        [`${this.pageCardIds.length}`]);
+    }
+    return this.取本地化格式($r('app.string.ai_agent_edit_selected_notes'),
+      [`${this.pageNoteIds.length}`]);
+  }
+
+  /** 每轮声明完整只读工具；可读搜索结果不会自动获得写入权限。 */
+  private providerFunctionToolsForTurn(): ProviderFunctionTool[] {
+    return agentFunctionTools(this.agentSettings.batchLimit, this.pageMode);
+  }
+
+  private 选择笔记类型(notetypeId: number): void {
+    if (notetypeId > 0) {
+      this.加载笔记类型(notetypeId);
+      return;
+    }
+    this.已选笔记类型ID = 0;
+    this.笔记类型名 = '';
+    this.字段名列表 = [];
+    this.noteTypeKind = NOTE_TYPE_KIND_NORMAL;
+    this.clozeFieldOrds = [];
+    this.错误信息 = '';
   }
 
   // ========================================================
@@ -456,7 +552,6 @@ export struct AI制卡页 {
       this.字段名列表 = [];
       this.noteTypeKind = NOTE_TYPE_KIND_NORMAL;
       this.clozeFieldOrds = [];
-      this.setupExpanded = true;
       this.错误信息 = this.取本地化文案($r('app.string.ai_card_err_no_notetype'));
     }
   }
@@ -476,7 +571,6 @@ export struct AI制卡页 {
       this.字段名列表 = [];
       this.noteTypeKind = NOTE_TYPE_KIND_NORMAL;
       this.clozeFieldOrds = [];
-      this.setupExpanded = true;
       this.错误信息 = this.取本地化文案($r('app.string.ai_card_err_no_notetype'));
     }
   }
@@ -623,6 +717,18 @@ export struct AI制卡页 {
     if (错误.message === 'cancelled') {
       return this.取本地化文案($r('app.string.ai_agent_turn_cancelled'));
     }
+    if (错误.message === 'web_search_disabled') {
+      return this.取本地化文案($r('app.string.ai_agent_web_search_disabled'));
+    }
+    if (错误.message === 'web_search_provider_unsupported') {
+      return this.取本地化文案($r('app.string.ai_agent_web_search_provider_unsupported'));
+    }
+    if (错误.message === 'web_search_not_executed') {
+      return this.取本地化文案($r('app.string.ai_agent_web_search_not_executed'));
+    }
+    if (错误.message === 'web_search_sources_missing') {
+      return this.取本地化文案($r('app.string.ai_agent_web_search_sources_missing'));
+    }
     if (错误.message === 'web_search_unsupported') {
       return this.取本地化文案($r('app.string.ai_agent_web_search_unsupported'));
     }
@@ -648,23 +754,111 @@ export struct AI制卡页 {
     const values: ProviderInputItem[] = [];
     for (const message of this.消息列表) {
       if (!(message.kind === 'normal' || message.kind === 'clarification')) { continue; }
-      if (message.正文.length === 0) { continue; }
-      values.push({
-        kind: 'message', role: message.角色 === 'user' ? 'user' : 'assistant',
-        content: message.角色 === 'user' ? message.providerText : message.正文,
-        callId: '', name: '', argumentsJson: '', output: ''
-      });
+      const text: string = message.providerText.length > 0 ? message.providerText : message.正文;
+      if (text.length > 0) {
+        values.push({
+          kind: 'message', role: message.角色 === 'user' ? 'user' : 'assistant',
+          content: text, callId: '', name: '', argumentsJson: '', output: ''
+        });
+      }
+      if (message.角色 === 'ai') {
+        const draftContext: string = this.构建消息草稿上下文(message);
+        if (draftContext.length > 0) {
+          values.push({
+            kind: 'message', role: 'assistant', content: draftContext,
+            callId: '', name: '', argumentsJson: '', output: ''
+          });
+        }
+      }
     }
-    return values;
+    return this.限制Provider输入(values);
+  }
+
+  private 截断Provider文本(value: string, limit: number): string {
+    if (value.length <= limit) { return value; }
+    const half: number = Math.floor((limit - 64) / 2);
+    return `${value.slice(0, half)}\n...[context truncated by jideCards]...\n${value.slice(value.length - half)}`;
+  }
+
+  private 构建消息草稿上下文(message: 聊天消息): string {
+    if (message.卡片列表.length === 0 && message.变更草稿列表.length === 0 &&
+      message.批次结果.length === 0) { return ''; }
+    const cards: ProviderCardDraftContext[] = [];
+    const changes: ProviderChangeDraftContext[] = [];
+    let operationCount: number = 0;
+    let truncated: boolean = false;
+    for (let index: number = 0; index < message.卡片列表.length; index++) {
+      if (cards.length >= 100) { truncated = true; break; }
+      const card: 卡片草稿 = message.卡片列表[index];
+      const fields: string[] = [];
+      for (const field of card.fields) { fields.push(this.截断Provider文本(field, 2000)); }
+      cards.push({ index: index + 1, fields: fields, status: card.状态, selected: card.已选中 });
+    }
+    for (const draft of message.变更草稿列表) {
+      if (changes.length >= 20) { truncated = true; break; }
+      const operations: ProviderDraftOperationContext[] = [];
+      for (const operation of draft.operations) {
+        if (operationCount >= 200) { truncated = true; break; }
+        operations.push({
+          kind: operation.kind, noteId: operation.noteId, cardId: operation.cardId,
+          deckId: operation.deckId, fieldOrd: operation.fieldOrd,
+          before: this.截断Provider文本(operation.before, 1000),
+          after: this.截断Provider文本(operation.after, 1000)
+        });
+        operationCount += 1;
+      }
+      changes.push({
+        id: draft.id, risk: draft.risk, summary: this.截断Provider文本(draft.summary, 1000),
+        status: draft.status, operations: operations
+      });
+      if (operationCount >= 200) { break; }
+    }
+    const context: ProviderDraftContext = {
+      cards: cards, changes: changes,
+      executionResult: this.截断Provider文本(message.批次结果, 2000), truncated: truncated
+    };
+    return `应用内当前草稿与执行状态（仅作后续对话上下文，不代表已保存）：${JSON.stringify(context)}`;
+  }
+
+  private 限制Provider输入(values: ProviderInputItem[]): ProviderInputItem[] {
+    const output: ProviderInputItem[] = [];
+    let totalChars: number = 0;
+    for (let index: number = values.length - 1; index >= 0; index--) {
+      if (output.length >= 80 || totalChars >= 240000) { break; }
+      const source: ProviderInputItem = values[index];
+      const remaining: number = 240000 - totalChars;
+      if (remaining <= 0) { break; }
+      const content: string = this.截断Provider文本(source.content, Math.max(128, remaining));
+      output.unshift({
+        kind: source.kind, role: source.role, content: content,
+        callId: source.callId, name: source.name,
+        argumentsJson: source.argumentsJson, output: source.output
+      });
+      totalChars += content.length;
+    }
+    return output;
   }
 
   private async 发送(): Promise<void> {
     const 输入: string = this.输入草稿.trim();
-    if (this.readinessReason() !== 'ready') { return; }
-    const snapshot: AgentTaskSnapshot = this.taskSnapshot(输入);
+    const reason: AgentReadinessReason = this.readinessReason();
+    if (reason !== 'ready') { return; }
+    const importedFiles: AgentImportedFile[] = this.导入文件列表.slice();
+    const fileContext: string = buildAgentImportedFilesContext(importedFiles);
+    const defaultRequest: string = this.取本地化文案(this.pageMode === 'create' ?
+      $r('app.string.ai_agent_file_default_create_request') :
+      $r('app.string.ai_agent_file_default_edit_request'));
+    const userRequest: string = 输入.length > 0 ? 输入 : defaultRequest;
+    const providerRequest: string = fileContext.length > 0 ? `${userRequest}\n\n${fileContext}` : userRequest;
+    const fileNames: string = agentImportedFileNames(importedFiles);
+    const visibleRequest: string = fileNames.length > 0 ? `${userRequest}\n\n${this.取本地化格式(
+      $r('app.string.ai_agent_file_summary'), [fileNames])}` : userRequest;
+    const providerSnapshot: AgentTaskSnapshot = this.taskSnapshot(providerRequest);
+    const visibleSnapshot: AgentTaskSnapshot = this.taskSnapshot(visibleRequest);
     this.输入草稿 = '';
+    this.导入文件列表 = [];
     const result: AgentRunResult | null = await this.runAgentTurn(
-      buildAgentTaskProviderText(snapshot), buildAgentTaskVisibleText(snapshot));
+      buildAgentTaskProviderText(providerSnapshot), buildAgentTaskVisibleText(visibleSnapshot), 0, userRequest);
     if (result !== null && result.status === 'awaiting_clarification' && result.clarification !== null) {
       this.appendClarificationMessage(result.clarification);
       await this.保存当前会话历史();
@@ -672,7 +866,7 @@ export struct AI制卡页 {
   }
 
   private async runAgentTurn(providerText: string, visibleUserText: string,
-    existingUserMessageId: number = 0): Promise<AgentRunResult | null> {
+    existingUserMessageId: number = 0, intentText: string = visibleUserText): Promise<AgentRunResult | null> {
     if (this.处理中 || this.agentRunner === null) { return null; }
     this.重建本轮AgentScope();
     this.agentScope.configureCreateConstraints(this.pageMode === 'create' &&
@@ -710,19 +904,19 @@ export struct AI制卡页 {
         model: this.AI配置.model,
         instructions: this.构建Agent指令(),
         input: this.构建Provider输入(),
-        functionTools: agentFunctionTools(this.agentSettings.batchLimit, this.pageMode),
-        searchMode: this.agentSettings.searchMode,
-        requiresSearchEvidence: this.agentSettings.searchMode === 'always' ||
-          (this.agentSettings.searchMode === 'auto' && explicitWebSearchRequested(providerText)),
+        functionTools: this.providerFunctionToolsForTurn(),
+        searchMode: explicitWebSearchForbidden(intentText) ? 'off' : this.agentSettings.searchMode,
+        // 只分析用户可见要求，不扫描任务配置或本地卡片内容，避免上下文里的“联网”等词误触发。
+        requiresWebSearch: explicitWebSearchRequested(intentText),
+        requiresSearchEvidence: explicitSourceEvidenceRequested(intentText),
         requiresDraft: this.pageMode === 'create',
         expectedDraftCount: this.pageMode === 'create' ?
-          inferRequestedCardCount(providerText, this.agentSettings.batchLimit) : 0,
+          inferRequestedCardCount(intentText, this.agentSettings.batchLimit) : 0,
         reasoningEffort: 'low', maxOutputTokens: 32768
       };
       const observer: 页面Agent观察者 = new 页面Agent观察者(
         (event: AgentEvent): void => { this.处理Agent事件(aiIndex, event); });
       const result: AgentRunResult = await this.agentRunner.run(this.agentSettings.selectedProvider, request, observer);
-      this.setupExpanded = false;
       if (result.status === 'awaiting_clarification') {
         this.更新消息(aiIndex, (message: 聊天消息): void => {
           message.taskStatus = 'waiting';
@@ -737,7 +931,7 @@ export struct AI制卡页 {
       this.更新消息(aiIndex, (message: 聊天消息): void => {
         message.正文 = message.正文.length > 0 ? `${message.正文}\n\n${错误文案}` : 错误文案;
         message.是否错误 = true;
-        message.kind = 'error';
+        message.kind = message.providerText.length > 0 ? 'normal' : 'error';
       });
       return null;
     } finally {
@@ -840,11 +1034,19 @@ export struct AI制卡页 {
       clarificationId: view.request.id, optionId: option.id, optionLabel: option.label,
       supplementalText: view.supplementalText.trim()
     };
+    let inheritedIntent: string = buildClarificationAnswerVisibleText(answer);
+    for (let index: number = messageIndex - 1; index >= 0; index--) {
+      if (this.消息列表[index].角色 === 'user' && this.消息列表[index].正文.length > 0) {
+        inheritedIntent = `${this.消息列表[index].正文}\n${inheritedIntent}`;
+        break;
+      }
+    }
     this.重建本轮AgentScope();
     const result: AgentRunResult | null = await this.runAgentTurn(
       buildClarificationAnswerText(view.request, answer),
       buildClarificationAnswerVisibleText(answer),
-      this.消息列表[messageIndex].answerMessageId);
+      this.消息列表[messageIndex].answerMessageId,
+      inheritedIntent);
     const current: AgentClarificationView | null = this.消息列表[messageIndex].clarification;
     if (result === null) {
       if (current !== null && current.state !== 'cancelled') {
@@ -889,16 +1091,15 @@ export struct AI制卡页 {
 
   private 构建Agent指令(): string {
     const modeText: string = this.pageMode === 'create' ? '制卡' : '改卡';
-    return `你是记得闪卡应用内的${modeText} Agent。只可使用所列语义工具。读取工具可直接调用；任何写入都必须调用 propose_ 工具生成草稿，绝不能声称已保存。创建模式目标 deckId=${this.牌组ID} notetypeId=${this.已选笔记类型ID}，字段=${JSON.stringify(this.字段名列表)}，kind=${this.noteTypeKind}，clozeFieldOrds=${JSON.stringify(this.clozeFieldOrds)}，单轮最多 ${this.agentSettings.batchLimit} 张。填空类型必须把 {{c1::答案}} 写在允许的字段。含糊请求应合理澄清或提出可编辑草稿，不要输出需要客户端自行解析的自由 JSON。`;
+    return `你是记得闪卡应用内的${modeText} Agent。只能调用本轮明确列出的语义工具，禁止臆造工具名。读取工具可按需搜索和分析整个卡库；读取到的稳定 ID 只获得读取权限，绝不自动扩大修改范围。只有确定能生成合法卡片时，制卡才调用 create_flashcards，并且只提交 cards 字段内容，目标牌组、笔记类型、草稿标识和摘要由应用自动注入；改卡才调用与操作匹配且本轮已声明的 propose_update_notes、propose_move_cards 或高风险草稿工具。改卡有预选卡片或笔记时只能修改应用提供的稳定 ID；全库搜索结果只用于回答、比较和定位。无预选时用户选择的牌组和笔记类型只是本地搜索范围，不代表移动目标或转换目标。只有用户明确要求移动牌组或转换笔记类型时，才提出对应草稿。绝不能声称已保存。如果无法生成合法内容，只解释一次原因并结束，不要反复分析或尝试未声明工具。需要图片时先调用 search_images，只能在卡片内容中使用它返回的 candidateId；用户确认前不会下载或写入。创建模式目标 deckId=${this.牌组ID} notetypeId=${this.已选笔记类型ID}，字段=${JSON.stringify(this.字段名列表)}，kind=${this.noteTypeKind}，clozeFieldOrds=${JSON.stringify(this.clozeFieldOrds)}，单轮最多 ${this.agentSettings.batchLimit} 张。填空类型必须把 {{c1::答案}} 写在允许的字段。含糊请求应调用 request_clarification，或生成可编辑卡片；不要输出需要客户端自行解析的自由 JSON。`;
   }
 
   private 处理Agent事件(messageIndex: number, event: AgentEvent): void {
     this.更新消息(messageIndex, (message: 聊天消息): void => {
-      if (event.kind === 'status' && event.text === 'draft_correction') {
-        message.正文 += '\n\n';
-        message.是否错误 = false;
+      if (event.kind === 'text_delta') {
+        message.正文 += event.text;
+        message.providerText += event.text;
       }
-      if (event.kind === 'text_delta') { message.正文 += event.text; }
       if (event.kind === 'reasoning_delta' || event.kind === 'reasoning_summary') {
         message.推理摘要 += event.text;
       }
@@ -927,7 +1128,8 @@ export struct AI制卡页 {
     const changes: ChangeDraft[] = [];
     for (const draft of drafts) {
       const createOnly: boolean = draft.operations.length > 0 &&
-        draft.operations.every((operation: DraftOperation): boolean => operation.kind === 'create_note');
+        draft.operations.every((operation: DraftOperation): boolean => operation.kind === 'create_note') &&
+        (draft.imageAttachments ?? []).length === 0;
       if (createOnly) {
         const groupedFields: Map<number, string[]> = new Map<number, string[]>();
         for (const operation of draft.operations) {
@@ -1175,69 +1377,6 @@ export struct AI制卡页 {
     }
   }
 
-  // ========================================================
-  // AI 配置：折叠区输入 + 保存
-  // ========================================================
-
-  private 页面Provider索引(): number {
-    return this.页面Provider === 'deepseek' ? 0 : (this.页面Provider === 'openai' ? 1 : 2);
-  }
-
-  private 页面模型选项(): AI制卡下拉选项[] {
-    const models: string[] = this.页面Provider === 'deepseek' ?
-      DEEPSEEK_PROVIDER.models : OPENAI_PROVIDER.models;
-    return models.map((value: string): AI制卡下拉选项 => ({ value: value }));
-  }
-
-  private 页面模型索引(): number {
-    const models: string[] = this.页面Provider === 'deepseek' ?
-      DEEPSEEK_PROVIDER.models : OPENAI_PROVIDER.models;
-    const index: number = models.indexOf(this.配置模型输入);
-    return index < 0 ? 0 : index;
-  }
-
-  private async 切换页面Provider(index: number): Promise<void> {
-    this.页面Provider = index === 0 ? 'deepseek' : (index === 1 ? 'openai' : 'custom');
-    this.agentSettings.selectedProvider = this.页面Provider;
-    const baseUrl: string = this.页面Provider === 'deepseek' ? DEEPSEEK_PROVIDER.baseUrl :
-      (this.页面Provider === 'openai' ? OPENAI_PROVIDER.baseUrl : this.agentSettings.customBaseUrl);
-    const model: string = this.页面Provider === 'deepseek' ? this.agentSettings.deepseekModel :
-      (this.页面Provider === 'openai' ? this.agentSettings.openaiModel : this.agentSettings.customModel);
-    this.配置地址输入 = baseUrl;
-    this.配置模型输入 = model;
-    this.配置密钥输入 = await loadAgentSecret(this.页面Provider);
-    this.AI配置 = { apiKey: this.配置密钥输入, baseUrl: baseUrl, model: model };
-    this.配置提示 = '';
-  }
-
-  private async 保存配置(): Promise<void> {
-    const provider: ProviderId = this.页面Provider;
-    const 地址: string = provider === 'deepseek' ? DEEPSEEK_PROVIDER.baseUrl :
-      (provider === 'openai' ? OPENAI_PROVIDER.baseUrl : this.配置地址输入.trim());
-    const 新配置: 页面AI配置 = {
-      apiKey: this.配置密钥输入.trim(),
-      baseUrl: 地址,
-      model: this.配置模型输入.trim()
-    };
-    if (provider === 'custom' && (!新配置.baseUrl.startsWith('https://') || 新配置.model.length === 0)) {
-      this.配置提示 = this.取本地化文案($r('app.string.ai_agent_custom_invalid'));
-      return;
-    }
-    this.agentSettings.selectedProvider = provider;
-    if (provider === 'deepseek') { this.agentSettings.deepseekModel = 新配置.model; }
-    else if (provider === 'openai') { this.agentSettings.openaiModel = 新配置.model; }
-    else { this.agentSettings.customBaseUrl = 新配置.baseUrl; this.agentSettings.customModel = 新配置.model; }
-    await saveAgentSettings(this.agentSettings);
-    await saveAgentSecret(provider, 新配置.apiKey);
-    this.AI配置 = 新配置;
-    // 地址留空时回填默认值到输入框，让用户看到实际生效的值
-    this.配置地址输入 = 新配置.baseUrl;
-    this.配置密钥输入 = 新配置.apiKey;
-    this.配置模型输入 = 新配置.model;
-    this.配置提示 = this.取本地化文案($r('app.string.ai_card_config_saved'));
-    this.错误信息 = '';
-  }
-
   private async 保存当前会话历史(): Promise<void> {
     try {
       const messages: AgentHistoryMessage[] = [];
@@ -1249,7 +1388,9 @@ export struct AI制卡页 {
       for (const message of this.消息列表) {
         if (message.正文.length > 0 && (message.kind === 'normal' || message.kind === 'clarification')) {
           messages.push({
-            role: message.角色 === 'user' ? 'user' : 'assistant', text: message.正文,
+            role: message.角色 === 'user' ? 'user' : 'assistant',
+            text: message.角色 === 'ai' && message.providerText.length > 0 ?
+              message.providerText : message.正文,
             kind: message.kind,
             clarification: message.clarification === null ? null : cloneAgentClarificationView(message.clarification),
             expanded: message.clarification === null ? message.expanded : message.clarification.expanded
@@ -1274,47 +1415,29 @@ export struct AI制卡页 {
     }
   }
 
-  /** 列出同模式历史；每页 4 条，使用系统最多 6 按钮的 ActionMenu 翻页。 */
+  /** 加载同模式历史到页面内列表；不再把会话伪装成 ActionMenu 按钮。 */
   private async 打开历史会话(): Promise<void> {
+    if (this.显示历史区) {
+      this.显示历史区 = false;
+      return;
+    }
+    this.显示历史区 = true;
     const all: AgentConversation[] = await loadAgentConversations();
     const sameMode: AgentConversation[] = [];
     for (const item of all) {
       if (item.mode === this.pageMode) { sameMode.push(item); }
     }
-    if (sameMode.length === 0) {
-      this.配置提示 = this.取本地化文案($r('app.string.ai_agent_history_none'));
-      return;
-    }
-    this.显示历史菜单页(sameMode, 0);
+    this.历史会话列表 = sameMode;
   }
 
-  private 历史标题(all: AgentConversation[], index: number): string {
-    return index >= 0 && index < all.length ? all[index].title : '—';
+  private 两位数(value: number): string {
+    return value < 10 ? `0${value}` : `${value}`;
   }
 
-  private 显示历史菜单页(all: AgentConversation[], start: number): void {
-    promptAction.showActionMenu({
-      title: $r('app.string.ai_agent_history'),
-      buttons: [
-        { text: this.历史标题(all, start), color: $r('app.color.text_primary') },
-        { text: this.历史标题(all, start + 1), color: $r('app.color.text_primary') },
-        { text: this.历史标题(all, start + 2), color: $r('app.color.text_primary') },
-        { text: this.历史标题(all, start + 3), color: $r('app.color.text_primary') },
-        { text: $r('app.string.ai_agent_history_next'), color: $r('app.color.text_primary') },
-        { text: $r('app.string.ai_agent_history_new'), color: $r('app.color.text_primary') }
-      ]
-    }, (error: BusinessError, data: promptAction.ActionMenuSuccessResponse): void => {
-      if (error !== null) { return; }
-      if (data.index >= 0 && data.index < 4) {
-        const selectedIndex: number = start + data.index;
-        if (selectedIndex < all.length) { this.恢复历史会话(all[selectedIndex]); }
-      } else if (data.index === 4) {
-        const next: number = start + 4 < all.length ? start + 4 : 0;
-        this.显示历史菜单页(all, next);
-      } else if (data.index === 5) {
-        this.开始新会话();
-      }
-    });
+  private 格式化历史时间(value: number): string {
+    const time: Date = new Date(value);
+    return `${time.getFullYear()}-${this.两位数(time.getMonth() + 1)}-${this.两位数(time.getDate())} ` +
+      `${this.两位数(time.getHours())}:${this.两位数(time.getMinutes())}`;
   }
 
   /** 只恢复可见文本与审计结果，不恢复旧草稿和确认令牌。 */
@@ -1344,7 +1467,7 @@ export struct AI制卡页 {
     this.conversationId = selected.id;
     this.历史执行结果 = selected.results.slice();
     this.消息列表 = restored;
-    this.setupExpanded = selected.setup.expanded;
+    this.显示历史区 = false;
     let validContext: boolean = true;
     if (this.pageMode === 'create') {
       const deckExists: boolean = this.牌组选项.some(
@@ -1360,9 +1483,19 @@ export struct AI制卡页 {
         await this.加载笔记类型(selected.setup.notetypeId);
         validContext = this.已选笔记类型ID === selected.setup.notetypeId && this.字段名列表.length > 0;
       }
+    } else {
+      const deckExists: boolean = selected.setup.deckId <= 0 || this.牌组选项.some(
+        (item: AI制卡牌组选项): boolean => item.id === selected.setup.deckId);
+      const notetypeExists: boolean = selected.setup.notetypeId <= 0 || this.笔记类型选项.some(
+        (item: AI制卡笔记类型选项): boolean => item.id === selected.setup.notetypeId);
+      this.牌组ID = deckExists ? selected.setup.deckId : 0;
+      if (notetypeExists && selected.setup.notetypeId > 0) {
+        await this.加载笔记类型(selected.setup.notetypeId);
+      } else {
+        this.选择笔记类型(0);
+      }
     }
     if (!validContext) {
-      this.setupExpanded = true;
       this.cancelRestoredClarifications(this.取本地化文案(
         this.牌组ID === 0 ? $r('app.string.ai_agent_setup_missing_deck') :
           $r('app.string.ai_agent_setup_missing_notetype')));
@@ -1391,11 +1524,148 @@ export struct AI制卡页 {
     this.conversationId = `agent-${Date.now()}-${Math.random()}`;
     this.历史执行结果 = [];
     this.消息列表 = [];
-    this.setupExpanded = true;
-    this.配置提示 = '';
+    this.导入文件列表 = [];
+    this.显示历史区 = false;
   }
 
-  private 删除当前历史会话(): void {
+  private 复制导入文件并标记错误(file: AgentImportedFile, errorCode: string): AgentImportedFile {
+    return {
+      id: file.id,
+      name: file.name,
+      extension: file.extension,
+      byteSize: file.byteSize,
+      content: '',
+      errorCode: errorCode,
+      warningCode: ''
+    };
+  }
+
+  private 复制导入文件并裁剪内容(file: AgentImportedFile, remaining: number): AgentImportedFile {
+    return {
+      id: file.id,
+      name: file.name,
+      extension: file.extension,
+      byteSize: file.byteSize,
+      content: file.content.slice(0, remaining),
+      errorCode: '',
+      warningCode: 'content_truncated'
+    };
+  }
+
+  private async 选择并解析文件(): Promise<void> {
+    if (this.处理中 || this.文件解析中 || this.hasPendingClarification()) { return; }
+    const remaining: number = AGENT_IMPORT_MAX_FILES - this.导入文件列表.length;
+    if (remaining <= 0) {
+      this.错误信息 = this.取本地化格式($r('app.string.ai_agent_file_max_count'),
+        [AGENT_IMPORT_MAX_FILES]);
+      return;
+    }
+    const context: common.UIAbilityContext | null = this.取能力上下文();
+    if (context === null) {
+      this.错误信息 = this.取本地化文案($r('app.string.ai_agent_file_picker_failed'));
+      return;
+    }
+    // 文件选择器返回时不恢复 TextArea 焦点，避免导入后主动弹起输入法。
+    this.getUIContext().getFocusController().clearFocus();
+    this.文件解析中 = true;
+    try {
+      const selected: AgentImportedFile[] = await selectAndParseAgentFiles(context, remaining);
+      if (selected.length === 0) { return; }
+      let usedChars: number = 0;
+      for (const existing of successfulAgentImportedFiles(this.导入文件列表)) {
+        usedChars += existing.content.length;
+      }
+      const next: AgentImportedFile[] = this.导入文件列表.slice();
+      for (const file of selected) {
+        const available: number = AGENT_IMPORT_MAX_CONTEXT_CHARS - usedChars;
+        if (file.errorCode.length === 0 && available <= 0) {
+          next.push(this.复制导入文件并标记错误(file, 'context_limit'));
+        } else if (file.errorCode.length === 0 && file.content.length > available) {
+          next.push(this.复制导入文件并裁剪内容(file, available));
+          usedChars += available;
+        } else {
+          next.push(file);
+          if (file.errorCode.length === 0) { usedChars += file.content.length; }
+        }
+      }
+      this.导入文件列表 = next;
+      this.错误信息 = '';
+    } catch (error) {
+      this.错误信息 = this.取本地化文案($r('app.string.ai_agent_file_picker_failed'));
+    } finally {
+      this.文件解析中 = false;
+      this.getUIContext().getFocusController().clearFocus();
+    }
+  }
+
+  private 移除导入文件(index: number): void {
+    const next: AgentImportedFile[] = this.导入文件列表.slice();
+    next.splice(index, 1);
+    this.导入文件列表 = next;
+  }
+
+  private 导入文件状态文案(file: AgentImportedFile): string {
+    if (file.errorCode.length === 0) {
+      const sizeKb: number = Math.max(1, Math.ceil(file.byteSize / 1024));
+      if (file.warningCode === 'content_truncated') {
+        return this.取本地化格式($r('app.string.ai_agent_file_warning_truncated'), [sizeKb]);
+      }
+      if (file.warningCode === 'partial_content') {
+        return this.取本地化格式($r('app.string.ai_agent_file_warning_partial'), [sizeKb]);
+      }
+      if (file.warningCode === 'ocr_used') {
+        return this.取本地化格式($r('app.string.ai_agent_file_warning_ocr'), [sizeKb]);
+      }
+      if (file.warningCode === 'plain_text_detected') {
+        return this.取本地化格式($r('app.string.ai_agent_file_warning_plain_text'), [sizeKb]);
+      }
+      return this.取本地化格式($r('app.string.ai_agent_file_ready'), [sizeKb]);
+    }
+    if (file.errorCode === 'unsupported_type') {
+      const extension: string = file.extension.length > 0 ? file.extension :
+        this.取本地化文案($r('app.string.ai_agent_file_unknown_type'));
+      return this.取本地化格式($r('app.string.ai_agent_file_unsupported'), [extension]);
+    }
+    if (file.errorCode === 'file_too_large') {
+      return this.取本地化文案($r('app.string.ai_agent_file_too_large'));
+    }
+    if (file.errorCode === 'empty_file') {
+      return this.取本地化文案($r('app.string.ai_agent_file_empty'));
+    }
+    if (file.errorCode === 'encoding_unsupported') {
+      return this.取本地化文案($r('app.string.ai_agent_file_encoding'));
+    }
+    if (file.errorCode === 'binary_content') {
+      return this.取本地化文案($r('app.string.ai_agent_file_binary'));
+    }
+    if (file.errorCode === 'context_limit') {
+      return this.取本地化文案($r('app.string.ai_agent_file_context_limit'));
+    }
+    if (file.errorCode === 'archive_too_large') {
+      return this.取本地化文案($r('app.string.ai_agent_file_archive_too_large'));
+    }
+    if (file.errorCode === 'encrypted_file') {
+      return this.取本地化文案($r('app.string.ai_agent_file_encrypted'));
+    }
+    if (file.errorCode === 'ocr_unavailable') {
+      return this.取本地化文案($r('app.string.ai_agent_file_ocr_unavailable'));
+    }
+    if (file.errorCode === 'no_extractable_text') {
+      return this.取本地化文案($r('app.string.ai_agent_file_no_text'));
+    }
+    if (file.errorCode === 'readerkit_unavailable') {
+      return this.取本地化文案($r('app.string.ai_agent_file_readerkit_unavailable'));
+    }
+    if (file.errorCode === 'legacy_office') {
+      return this.取本地化文案($r('app.string.ai_agent_file_legacy_office'));
+    }
+    if (file.errorCode === 'parse_failed') {
+      return this.取本地化文案($r('app.string.ai_agent_file_parse_failed'));
+    }
+    return this.取本地化文案($r('app.string.ai_agent_file_read_failed'));
+  }
+
+  private 删除历史会话(selected: AgentConversation): void {
     this.getUIContext().showAlertDialog({
       title: this.取本地化文案($r('app.string.ai_agent_history_delete_title')),
       message: this.取本地化文案($r('app.string.ai_agent_history_delete_body')),
@@ -1403,12 +1673,17 @@ export struct AI制卡页 {
       secondaryButton: {
         value: $r('app.string.settings_confirm'), fontColor: $r('app.color.error_text'),
         action: (): void => {
-          const removingId: string = this.conversationId;
-          deleteAgentConversation(removingId);
-          this.开始新会话();
+          this.执行删除历史会话(selected.id);
         }
       }
     });
+  }
+
+  private async 执行删除历史会话(id: string): Promise<void> {
+    await deleteAgentConversation(id);
+    this.历史会话列表 = this.历史会话列表.filter(
+      (item: AgentConversation): boolean => item.id !== id);
+    if (this.conversationId === id) { this.开始新会话(); }
   }
 
   // ========================================================
@@ -1419,19 +1694,22 @@ export struct AI制卡页 {
   private 顶部条() {
     Row() {
       Row() {
-        Button($r('app.string.study_back'))
-          .height(应用尺寸.按钮高度)
-          .padding({ left: 应用尺寸.间距_10, right: 应用尺寸.间距_10 })
-          .constraintSize({ minWidth: 0 })
-          .fontSize(应用尺寸.字号_按钮)
-          .fontColor($r('app.color.text_primary'))
-          .backgroundColor($r('app.color.surface_card'))
-          .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-          .borderRadius(应用尺寸.圆角_胶囊)
-          .onClick((): void => { this.pathStack.pop(); })
+        按下态按钮({
+          文案: $r('app.string.study_back'),
+          选中态背景: this.主色容器色,
+          字色: $r('app.color.text_primary'),
+          点击回调: (): void => {
+            if (this.显示历史区) {
+              this.显示历史区 = false;
+            } else {
+              this.pathStack.pop();
+            }
+          }
+        })
       }
       .width('35%')
-      Text(this.pageMode === 'create' ? $r('app.string.ai_card_title') : $r('app.string.ai_card_edit'))
+      Text(this.显示历史区 ? $r('app.string.ai_agent_history_title') :
+        (this.pageMode === 'create' ? $r('app.string.ai_card_title') : $r('app.string.ai_card_edit')))
         .fontSize(应用尺寸.字号_标题)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
@@ -1440,31 +1718,23 @@ export struct AI制卡页 {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Row({ space: 应用尺寸.间距_8 }) {
-        Button($r('app.string.ai_agent_history'))
-          .height(应用尺寸.按钮高度)
-          .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8 })
-          .constraintSize({ minWidth: 0 })
-          .fontSize(应用尺寸.字号_按钮)
-          .fontColor($r('app.color.text_primary'))
-          .backgroundColor($r('app.color.surface_card'))
-          .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-          .borderRadius(应用尺寸.圆角_胶囊)
-          .enabled(!this.处理中)
-          .onClick((): void => { this.打开历史会话(); })
-          .gesture(LongPressGesture({ duration: 600 }).onAction((): void => {
-            this.删除当前历史会话();
-          }))
-        Button($r('app.string.ai_card_config'))
-          .height(应用尺寸.按钮高度)
-          .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8 })
-          .constraintSize({ minWidth: 0 })
-          .fontSize(应用尺寸.字号_按钮)
-          .fontColor($r('app.color.text_primary'))
-          .backgroundColor($r('app.color.surface_card'))
-          .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-          .borderRadius(应用尺寸.圆角_胶囊)
-          .enabled(!this.处理中)
-          .onClick((): void => { this.显示配置区 = !this.显示配置区; })
+        if (this.显示历史区) {
+          按下态按钮({
+            文案: $r('app.string.ai_agent_history_new'),
+            选中态背景: this.主色容器色,
+            字色: this.动作主色,
+            点击回调: (): void => { this.开始新会话(); }
+          })
+        } else {
+          按下态按钮({
+            文案: $r('app.string.ai_agent_history'),
+            选中态背景: this.主色容器色,
+            字色: $r('app.color.text_primary'),
+            点击回调: (): void => {
+              if (!this.处理中) { this.打开历史会话(); }
+            }
+          })
+        }
       }
       .width('35%')
       .justifyContent(FlexAlign.End)
@@ -1477,96 +1747,69 @@ export struct AI制卡页 {
       top: this.状态栏高度 + 应用尺寸.间距_8,
       bottom: 应用尺寸.间距_8
     })
-    .backgroundColor($r('app.color.surface_page'))
+    .backgroundColor(this.页面底色微染值)
   }
 
   @Builder
-  private 配置区() {
-    Column({ space: 应用尺寸.间距_8 }) {
-      Row() {
-        Text($r('app.string.ai_agent_provider')).layoutWeight(1)
-        Select([{ value: 'DeepSeek' }, { value: 'OpenAI' },
-          { value: this.取本地化文案($r('app.string.ai_agent_provider_custom')) }])
-          .selected(this.页面Provider索引())
-          .value(this.页面Provider === 'deepseek' ? 'DeepSeek' :
-            (this.页面Provider === 'openai' ? 'OpenAI' :
-              this.取本地化文案($r('app.string.ai_agent_provider_custom'))))
-          .onSelect((index: number): void => { this.切换页面Provider(index); })
-      }.width('100%')
-      TextInput({
-        placeholder: $r('app.string.ai_card_api_key_hint'),
-        text: this.配置密钥输入
-      })
-        .type(InputType.Password)
-        .width('100%')
-        .height(应用尺寸.按钮高度)
-        .fontSize(应用尺寸.字号_正文)
-        .fontColor($r('app.color.text_primary'))
-        .placeholderColor($r('app.color.text_tertiary'))
-        .backgroundColor($r('app.color.surface_card'))
-        .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
-        .borderRadius(应用尺寸.圆角_面板)
-        .padding({ left: 应用尺寸.间距_10, right: 应用尺寸.间距_10 })
-        .onChange((值: string): void => {
-          this.配置密钥输入 = 值;
-          this.配置提示 = '';
-        })
-      if (this.页面Provider === 'custom') {
-        TextInput({ placeholder: $r('app.string.ai_agent_custom_url_hint'), text: this.配置地址输入 })
-          .width('100%')
-          .height(应用尺寸.按钮高度)
+  private 历史区() {
+    Column({ space: 应用尺寸.间距_10 }) {
+      if (this.历史会话列表.length === 0) {
+        Text($r('app.string.ai_agent_history_none'))
           .fontSize(应用尺寸.字号_正文)
-          .fontColor($r('app.color.text_primary'))
-          .placeholderColor($r('app.color.text_tertiary'))
-          .backgroundColor($r('app.color.surface_card'))
-          .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
-          .borderRadius(应用尺寸.圆角_面板)
-          .padding({ left: 应用尺寸.间距_10, right: 应用尺寸.间距_10 })
-          .onChange((value: string): void => { this.配置地址输入 = value; this.配置提示 = ''; })
-        TextInput({ placeholder: $r('app.string.ai_card_model_hint'), text: this.配置模型输入 })
+          .fontColor($r('app.color.text_secondary'))
           .width('100%')
-          .height(应用尺寸.按钮高度)
-          .fontSize(应用尺寸.字号_正文)
-          .fontColor($r('app.color.text_primary'))
-          .placeholderColor($r('app.color.text_tertiary'))
-          .backgroundColor($r('app.color.surface_card'))
-          .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
-          .borderRadius(应用尺寸.圆角_面板)
-          .padding({ left: 应用尺寸.间距_10, right: 应用尺寸.间距_10 })
-          .onChange((value: string): void => { this.配置模型输入 = value; this.配置提示 = ''; })
+          .padding({ top: 应用尺寸.间距_16, bottom: 应用尺寸.间距_16 })
+          .textAlign(TextAlign.Center)
       } else {
-        Row() {
-          Text($r('app.string.ai_card_model')).layoutWeight(1)
-          Select(this.页面模型选项())
-            .selected(this.页面模型索引()).value(this.配置模型输入)
-            .onSelect((index: number): void => {
-              const models: string[] = this.页面Provider === 'deepseek' ?
-                DEEPSEEK_PROVIDER.models : OPENAI_PROVIDER.models;
-              if (index >= 0 && index < models.length) { this.配置模型输入 = models[index]; }
-            })
-        }.width('100%')
-      }
-      Row({ space: 应用尺寸.间距_10 }) {
-        Button($r('app.string.ai_card_save_config'))
-          .height(应用尺寸.按钮高度)
-          .layoutWeight(1)
-          .fontSize(应用尺寸.字号_按钮)
-          .fontColor($r('app.color.action_on_primary'))
-          .backgroundColor(this.主色按钮背景色)
-          .borderRadius(应用尺寸.圆角_胶囊)
-          .onClick((): void => {
-            this.保存配置();
-          })
-      }
-      .width('100%')
-      if (this.配置提示 !== '') {
-        Text(this.配置提示)
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor(this.动作主色)
+        Scroll() {
+          Column({ space: 应用尺寸.间距_8 }) {
+            ForEach(this.历史会话列表, (item: AgentConversation) => {
+              Row({ space: 应用尺寸.间距_8 }) {
+                Column({ space: 应用尺寸.间距_4 }) {
+                  Row({ space: 应用尺寸.间距_5 }) {
+                    Text(item.title)
+                      .fontSize(应用尺寸.字号_正文)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor($r('app.color.text_primary'))
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .width('100%')
+                  Text(this.取本地化格式($r('app.string.ai_agent_history_message_count'),
+                    [`${item.messages.length}`]) + ` · ${this.格式化历史时间(item.updatedAt)}`)
+                    .fontSize(应用尺寸.字号_正文_小)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                }
+                .layoutWeight(1)
+                .onClick((): void => { this.恢复历史会话(item); })
+                Button($r('app.string.ai_agent_history_delete'))
+                  .height(应用尺寸.按钮高度)
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor($r('app.color.error_text'))
+                  .backgroundColor(Color.Transparent)
+                  .onClick((): void => { this.删除历史会话(item); })
+              }
+              .width('100%')
+              .padding(应用尺寸.间距_10)
+              .backgroundColor(item.id === this.conversationId ?
+                this.选中背景色 : $r('app.color.surface_card'))
+              .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
+              .borderRadius(应用尺寸.圆角_面板)
+            }, (item: AgentConversation): string => item.id)
+          }
           .width('100%')
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
       }
     }
     .width('100%')
+    .layoutWeight(1)
+    .padding(应用尺寸.卡片内边距)
+    .backgroundColor(this.页面底色微染值)
   }
 
   @Builder
@@ -1726,6 +1969,35 @@ export struct AI制卡页 {
     return this.取本地化文案($r('app.string.ai_agent_tool_started'));
   }
 
+  /** Provider 使用稳定英文 ID；用户界面统一显示详细、可理解的本地化工具名称。 */
+  private 工具显示名(toolName: string): string {
+    switch (toolName) {
+      case 'request_clarification': return this.取本地化文案($r('app.string.ai_agent_tool_name_clarify'));
+      case 'get_note_type_capabilities': return this.取本地化文案($r('app.string.ai_agent_tool_name_notetype_capabilities'));
+      case 'get_note_context': return this.取本地化文案($r('app.string.ai_agent_tool_name_note_context'));
+      case 'search_cards': return this.取本地化文案($r('app.string.ai_agent_tool_name_search_cards'));
+      case 'search_notes': return this.取本地化文案($r('app.string.ai_agent_tool_name_search_notes'));
+      case 'list_decks': return this.取本地化文案($r('app.string.ai_agent_tool_name_list_decks'));
+      case 'list_notetypes': return this.取本地化文案($r('app.string.ai_agent_tool_name_list_notetypes'));
+      case 'list_tags': return this.取本地化文案($r('app.string.ai_agent_tool_name_list_tags'));
+      case 'get_notetype_details': return this.取本地化文案($r('app.string.ai_agent_tool_name_notetype_details'));
+      case 'get_card_statistics': return this.取本地化文案($r('app.string.ai_agent_tool_name_card_statistics'));
+      case 'search_images': return this.取本地化文案($r('app.string.ai_agent_tool_name_search_images'));
+      case 'web_search': return this.取本地化文案($r('app.string.ai_agent_tool_name_web_search'));
+      case 'create_flashcards': return this.取本地化文案($r('app.string.ai_agent_tool_name_create_flashcards'));
+      case 'propose_update_notes': return this.取本地化文案($r('app.string.ai_agent_tool_name_update_notes'));
+      case 'propose_move_cards': return this.取本地化文案($r('app.string.ai_agent_tool_name_move_cards'));
+      case 'propose_delete_notes': return this.取本地化文案($r('app.string.ai_agent_tool_name_delete_notes'));
+      case 'propose_delete_cards': return this.取本地化文案($r('app.string.ai_agent_tool_name_delete_cards'));
+      case 'propose_change_note_type': return this.取本地化文案($r('app.string.ai_agent_tool_name_change_notetype'));
+      case 'propose_update_note_type_templates':
+        return this.取本地化文案($r('app.string.ai_agent_tool_name_update_templates'));
+      case 'propose_delete_deck': return this.取本地化文案($r('app.string.ai_agent_tool_name_delete_deck'));
+      case 'propose_delete_note_type': return this.取本地化文案($r('app.string.ai_agent_tool_name_delete_notetype'));
+      default: return toolName;
+    }
+  }
+
   private 切换工具详情(消息索引: number, 追踪索引: number): void {
     this.更新消息(消息索引, (消息: 聊天消息): void => {
       if (追踪索引 >= 0 && 追踪索引 < 消息.工具过程.length) {
@@ -1740,7 +2012,7 @@ export struct AI制卡页 {
       title: this.取本地化格式($r('app.string.ai_agent_tool_round'), [
           this.消息列表[消息索引].工具过程[追踪索引].providerRound,
           this.消息列表[消息索引].工具过程[追踪索引].sequence
-        ]) + ` · ${this.消息列表[消息索引].工具过程[追踪索引].toolName}`,
+        ]) + ` · ${this.工具显示名(this.消息列表[消息索引].工具过程[追踪索引].toolName)}`,
       status: this.工具状态文案(this.消息列表[消息索引].工具过程[追踪索引].status),
       showStatus: true,
       expanded: this.消息列表[消息索引].工具过程[追踪索引].expanded,
@@ -1812,18 +2084,18 @@ export struct AI制卡页 {
             .fontColor($r('app.color.text_secondary'))
             .width('100%')
         }
-        Text(this.消息列表[消息索引].正文)
-          .fontSize(应用尺寸.字号_正文)
-          .fontColor(this.消息列表[消息索引].是否错误
-            ? $r('app.color.error_text') : $r('app.color.text_primary'))
-          .width('100%')
-
         if (this.消息列表[消息索引].推理摘要 !== '') {
           Text($r('app.string.ai_agent_reasoning_process'))
             .fontSize(应用尺寸.字号_正文_小).fontWeight(FontWeight.Medium)
           Text(this.消息列表[消息索引].推理摘要)
             .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_tertiary')).maxLines(8)
         }
+        Text(this.消息列表[消息索引].正文)
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor(this.消息列表[消息索引].是否错误
+            ? $r('app.color.error_text') : $r('app.color.text_primary'))
+          .width('100%')
+
         if (this.消息列表[消息索引].工具过程.length > 0) {
           Text($r('app.string.ai_agent_tool_process')).fontSize(应用尺寸.字号_正文_小).fontWeight(FontWeight.Medium)
           ForEach(this.消息列表[消息索引].工具过程, (_trace: AgentToolTrace, index: number) => {
@@ -1879,6 +2151,13 @@ export struct AI制卡页 {
             .fontColor(this.动作主色)
             .width('100%')
         }
+
+        // 每轮 AI 回复末尾固定挂 AI 生成免责声明（覆盖思考/正文/工具/来源/草稿整轮产物）
+        Text($r('app.string.ai_agent_generated_disclaimer'))
+          .fontSize(应用尺寸.字号_正文_小)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .padding({ top: 应用尺寸.间距_4 })
       }
       .alignItems(HorizontalAlign.Start)
       .backgroundColor($r('app.color.surface_card'))
@@ -1914,21 +2193,32 @@ export struct AI制卡页 {
   private 消息流() {
     Scroll(this.聊天滚动器) {
       Column({ space: 应用尺寸.间距_12 }) {
-        AgentSetupCard({
-          mode: this.pageMode,
-          setup: this.taskSetup(),
-          deckOptions: this.牌组选项,
-          notetypeOptions: this.笔记类型选项,
-          readinessText: this.readinessText(),
-          editContext: this.editSetupContext(),
-          disabled: this.处理中 || this.hasPendingClarification(),
-          onDeckSelected: (id: number): void => {
-            this.牌组ID = id;
-            this.错误信息 = '';
-          },
-          onNotetypeSelected: (id: number): void => { this.加载笔记类型(id); },
-          onToggle: (): void => { this.setupExpanded = !this.setupExpanded; }
-        })
+        if (this.hasFixedEditSelection()) {
+          if (this.消息列表.length === 0) {
+            Text(this.selectedEditContext())
+              .fontSize(应用尺寸.字号_正文)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding({ top: 应用尺寸.间距_12, bottom: 应用尺寸.间距_12 })
+          }
+        } else {
+          AgentSetupCard({
+            mode: this.pageMode,
+            setup: this.taskSetup(),
+            deckOptions: this.牌组选项,
+            notetypeOptions: this.笔记类型选项,
+            editContext: this.editSetupContext(),
+            allDecksLabel: this.取本地化文案($r('app.string.ai_agent_edit_all_decks')),
+            allNotetypesLabel: this.取本地化文案($r('app.string.ai_agent_edit_all_notetypes')),
+            disabled: this.处理中 || this.hasPendingClarification(),
+            onDeckSelected: (id: number): void => {
+              this.牌组ID = id;
+              this.错误信息 = '';
+            },
+            onNotetypeSelected: (id: number): void => { this.选择笔记类型(id); }
+          })
+        }
         ForEach(this.消息列表, (消息: 聊天消息, 消息索引: number) => {
           if (this.消息列表[消息索引].角色 === 'user') {
             this.用户气泡(消息索引)
@@ -1956,40 +2246,112 @@ export struct AI制卡页 {
 
   @Builder
   private 输入区() {
-    Row({ space: 应用尺寸.间距_10 }) {
-      TextArea({
-        placeholder: $r('app.string.ai_card_input_hint'),
-        text: this.输入草稿
-      })
+    Column({ space: 应用尺寸.间距_8 }) {
+      if (this.导入文件列表.length > 0) {
+        Scroll() {
+          Column({ space: 应用尺寸.间距_5 }) {
+            ForEach(this.导入文件列表, (file: AgentImportedFile, index: number) => {
+              Row({ space: 应用尺寸.间距_8 }) {
+                Column({ space: 2 }) {
+                  Text(file.name)
+                    .fontSize(应用尺寸.字号_正文_小)
+                    .fontColor($r('app.color.text_primary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                  Text(this.导入文件状态文案(file))
+                    .fontSize(应用尺寸.字号_正文_小)
+                    .fontColor(file.errorCode.length === 0 ?
+                      $r('app.color.text_secondary') : $r('app.color.error_text'))
+                    .maxLines(2)
+                    .width('100%')
+                }
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+                Button($r('app.string.ai_agent_file_remove'))
+                  .height(32)
+                  .fontSize(应用尺寸.字号_正文_小)
+                  .fontColor(this.动作主色)
+                  .backgroundColor(Color.Transparent)
+                  .onClick((): void => { this.移除导入文件(index); })
+              }
+              .width('100%')
+              .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_5, top: 4, bottom: 4 })
+              .backgroundColor($r('app.color.surface_card'))
+              .borderRadius(应用尺寸.圆角_卡片)
+            }, (file: AgentImportedFile): string => file.id)
+          }
+          .width('100%')
+        }
         .width('100%')
-        .layoutWeight(1)
-        .height(应用尺寸.按钮高度 * 2)
-        .fontSize(应用尺寸.字号_正文)
-        .fontColor($r('app.color.text_primary'))
-        .placeholderColor($r('app.color.text_tertiary'))
-        .backgroundColor($r('app.color.surface_card'))
-        .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
-        .borderRadius(应用尺寸.圆角_面板)
-        .padding(应用尺寸.间距_10)
-        .enabled(!this.处理中 && !this.hasPendingClarification())
-        .onChange((值: string): void => {
-          this.输入草稿 = 值;
+        .constraintSize({ maxHeight: 156 })
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+      }
+
+      Row({ space: 应用尺寸.间距_10 }) {
+        TextArea({
+          placeholder: $r('app.string.ai_card_input_hint'),
+          text: this.输入草稿
         })
-      Button(this.处理中 ? $r('app.string.ai_agent_cancel') : $r('app.string.ai_card_send'))
-        .height(应用尺寸.按钮高度)
-        .constraintSize({ minWidth: 72 })
-        .fontSize(应用尺寸.字号_按钮)
-        .fontColor($r('app.color.action_on_primary'))
-        .backgroundColor(this.处理中 ? this.主色按钮按下色 : this.主色按钮背景色)
-        .borderRadius(应用尺寸.圆角_胶囊)
-        .enabled(this.处理中 || this.readinessReason() === 'ready')
-        .onClick((): void => {
-          if (this.处理中) { this.取消当前请求(); }
-          else { this.发送(); }
-        })
+          .width('100%')
+          .layoutWeight(1)
+          .height(应用尺寸.按钮高度 * 2 + 应用尺寸.间距_8)
+          .fontSize(应用尺寸.字号_正文)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_tertiary'))
+          .backgroundColor($r('app.color.surface_card'))
+          .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_input') })
+          .borderRadius(应用尺寸.圆角_面板)
+          .padding(应用尺寸.间距_10)
+          .enabled(!this.处理中 && !this.hasPendingClarification())
+          .onChange((值: string): void => {
+            this.输入草稿 = 值;
+          })
+        Column({ space: 应用尺寸.间距_8 }) {
+          Button() {
+            Stack() {
+              // 始终用完整“导入”文案参与布局，解析中仅隐藏它，按钮宽度不会随“...”缩短。
+              Text($r('app.string.ai_agent_import_files'))
+                .fontSize(应用尺寸.字号_按钮)
+                .fontColor(this.动作主色)
+                .opacity(this.文件解析中 ? 0 : 1)
+              if (this.文件解析中) {
+                Text('...')
+                  .fontSize(应用尺寸.字号_按钮)
+                  .fontColor(this.动作主色)
+              }
+            }
+            .alignContent(Alignment.Center)
+          }
+            .height(应用尺寸.按钮高度)
+            .padding({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+            .constraintSize({ minWidth: 0 })
+            .fontSize(应用尺寸.字号_按钮)
+            .fontColor(this.动作主色)
+            .backgroundColor($r('app.color.surface_card'))
+            .borderRadius(应用尺寸.圆角_胶囊)
+            .enabled(!this.处理中 && !this.文件解析中 && !this.hasPendingClarification())
+            .onClick((): void => { this.选择并解析文件(); })
+          Button(this.处理中 ? $r('app.string.ai_agent_cancel') : $r('app.string.ai_card_send'))
+            .height(应用尺寸.按钮高度)
+            .padding({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+            .constraintSize({ minWidth: 0 })
+            .fontSize(应用尺寸.字号_按钮)
+            .fontColor($r('app.color.action_on_primary'))
+            .backgroundColor(this.处理中 ? this.主色按钮按下色 : this.主色按钮背景色)
+            .borderRadius(应用尺寸.圆角_胶囊)
+            .enabled(this.处理中 || this.canSubmit())
+            .onClick((): void => {
+              if (this.处理中) { this.取消当前请求(); }
+              else { this.发送(); }
+            })
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Top)
     }
     .width('100%')
-    .alignItems(VerticalAlign.Bottom)
     .padding({
       left: 应用尺寸.卡片内边距,
       right: 应用尺寸.卡片内边距,
@@ -2002,26 +2364,30 @@ export struct AI制卡页 {
     NavDestination() {
       Column() {
         this.顶部条()
-        if (this.显示配置区) {
-          this.配置区()
+        if (this.显示历史区) {
+          Divider()
+            .color($r('app.color.border_subtle'))
+            .strokeWidth(应用尺寸.卡片边框)
+          this.历史区()
+        } else {
+          Divider()
+            .color($r('app.color.border_subtle'))
+            .strokeWidth(应用尺寸.卡片边框)
+          this.消息流()
+          if (this.错误信息 !== '') {
+            Text(this.错误信息)
+              .fontSize(应用尺寸.字号_正文_小)
+              .fontColor($r('app.color.error_text'))
+              .width('100%')
+              .maxLines(3)
+              .padding({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+          }
+          this.输入区()
         }
-        Divider()
-          .color($r('app.color.border_subtle'))
-          .strokeWidth(应用尺寸.卡片边框)
-        this.消息流()
-        if (this.错误信息 !== '') {
-          Text(this.错误信息)
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor($r('app.color.error_text'))
-            .width('100%')
-            .maxLines(3)
-            .padding({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
-        }
-        this.输入区()
       }
       .width('100%')
       .height('100%')
-      .backgroundColor($r('app.color.surface_page'))
+      .backgroundColor(this.页面底色微染值)
     }
     .hideTitleBar(true)
     .opacity(this.转场透明度)

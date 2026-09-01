@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
-test('home exposes separate create and edit entries using one shared page', () => {
+test('home exposes Agent create directly and routes Agent edit through Browser selection', () => {
   const panel = read('entry/src/main/ets/components/主页操作面板.ets');
   const home = read('entry/src/main/ets/pages/首页.ets');
   assert.match(panel, /AI制卡回调/);
@@ -17,7 +17,22 @@ test('home exposes separate create and edit entries using one shared page', () =
   assert.match(home, /打开AI制卡/);
   assert.match(home, /打开AI改卡/);
   assert.match(home, /mode:\s*'create'/);
-  assert.match(home, /mode:\s*'edit'/);
+  const editEntry = home.match(/private async 打开AI改卡\(\)[\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.match(editEntry, /selectForAgentEdit:\s*true/);
+  assert.match(editEntry, /name:\s*'BrowserPage'/);
+  assert.doesNotMatch(editEntry, /name:\s*'AiCardPage'|mode:\s*'edit'/);
+  assert.match(home, /pageSelectForAgentEdit:\s*\(param as 浏览页参数\)\.selectForAgentEdit \?\? false/);
+});
+
+test('Agent create and edit labels and page background use the themed shell', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  const zh = JSON.parse(read('entry/src/main/resources/base/element/string.json')).string;
+  const byName = new Map(zh.map((item) => [item.name, item.value]));
+  assert.equal(byName.get('ai_card_title'), 'Agent 制卡');
+  assert.equal(byName.get('ai_card_edit'), 'Agent 改卡');
+  assert.match(page, /@StorageProp\(颜色键\.页面底色微染\)[^\n]*页面底色微染值/);
+  assert.match(page, /private 顶部条\(\)[\s\S]*?backgroundColor\(this\.页面底色微染值\)/);
+  assert.match(page, /build\(\)[\s\S]*?height\('100%'\)[\s\S]*?backgroundColor\(this\.页面底色微染值\)/);
 });
 
 test('shared Agent page has explicit mode and sends no provider request while appearing', () => {
@@ -32,10 +47,52 @@ test('shared Agent page has explicit mode and sends no provider request while ap
   assert.match(page, /ai_agent_edit_search_welcome/);
 });
 
-test('shared Agent page keeps the Select option type used by provider models', () => {
+test('AI composer uses resize keyboard avoidance so the whole input row stays visible', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
-  assert.match(page, /interface AI制卡下拉选项\s*\{\s*value:\s*string;/);
-  assert.match(page, /页面模型选项\(\): AI制卡下拉选项\[\]/);
+  assert.match(page, /import \{ KeyboardAvoidMode \} from '@kit\.ArkUI'/);
+  assert.match(page,
+    /aboutToAppear\(\)[\s\S]*getKeyboardAvoidMode\(\)[\s\S]*setKeyboardAvoidMode\(KeyboardAvoidMode\.RESIZE\)/,
+    'the keyboard must resize the page instead of lifting only the focused TextArea');
+  assert.match(page,
+    /aboutToDisappear\(\)[\s\S]*setKeyboardAvoidMode\(this\.上一键盘避让模式\)/,
+    'leaving the Agent page must restore the previous window-level keyboard mode');
+});
+
+test('unconfigured home AI entries route to the expanded AI settings group', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  const home = read('entry/src/main/ets/pages/首页.ets');
+  const settingsPage = read('entry/src/main/ets/pages/设置页.ets');
+  const settingsPanel = read('entry/src/main/ets/components/设置面板.ets');
+  assert.doesNotMatch(page, /private 配置区\(|ai_card_config|配置密钥输入|保存配置/);
+  assert.doesNotMatch(page, /openAISettings\(|name:\s*'SettingsPage'/);
+  const createEntry = home.match(/private async 打开AI制卡\(\)[\s\S]*?\n  \}/)?.[0] ?? '';
+  const editEntry = home.match(/private async 打开AI改卡\(\)[\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.match(createEntry, /if \(!await this\.isAIConfigured\(\)\)[\s\S]*?this\.openAISettings\(\)/);
+  assert.match(editEntry, /if \(!await this\.isAIConfigured\(\)\)[\s\S]*?this\.openAISettings\(\)/);
+  assert.match(home, /设置页参数\s*=\s*\{ openAiSettings:\s*true \}/);
+  assert.match(home, /name:\s*'SettingsPage'/);
+  assert.match(home,
+    /设置页\(\{[\s\S]*?openAiSettings:\s*\(param as 设置页参数\)\.openAiSettings \?\? false/);
+  assert.match(settingsPage,
+    /设置面板\(\{[\s\S]*?openAiSettings:\s*this\.openAiSettings/);
+  assert.match(settingsPanel,
+    /if \(this\.openAiSettings\) \{ this\.AIAgent分组展开 = true; \}/);
+  // 跳转后必须直接定位到 AI 智能体分组（无动画），并弹悬浮 Toast「请先完善AI配置」
+  assert.match(settingsPanel, /scroller:\s*this\.内容滚动器/);
+  assert.match(settingsPanel, /scrollToIndex\(this\.AIAgent分组索引\(\)\)/);
+  assert.match(settingsPanel,
+    /private AIAgent分组索引\(\): number[\s\S]*?if \(!this\.简洁模式\) \{ index \+= 1; \}[\s\S]*?return index;/);
+  const aiToast = settingsPanel.match(/if \(this\.openAiSettings\) \{([\s\S]*?)\n    \}/)?.[1] ?? '';
+  assert.match(aiToast, /showToast\(\{[\s\S]*?ai_agent_config_required[\s\S]*?\}\)/,
+    'the hint must be a floating toast, not inline layout copy');
+  assert.doesNotMatch(settingsPanel, /if \(this\.显示AI配置提示\) \{/,
+    'no inline hint text may be embedded in the group layout');
+  const zh = JSON.parse(read('entry/src/main/resources/base/element/string.json')).string
+    .reduce((map, item) => ({ ...map, [item.name]: item.value }), {});
+  const en = JSON.parse(read('entry/src/main/resources/en_US/element/string.json')).string
+    .reduce((map, item) => ({ ...map, [item.name]: item.value }), {});
+  assert.equal(zh.ai_agent_config_required, '请先完善AI配置');
+  assert.equal(en.ai_agent_config_required, 'Complete AI configuration first');
 });
 
 test('study current-card entry passes stable context and rerenders only that card on return', () => {
@@ -60,13 +117,46 @@ test('browser edit entry passes selected IDs and preserves the active search', (
   assert.match(browser, /onPop:[\s\S]*this\.执行搜索\(\)/);
 });
 
+test('preselected edit hides selectors, keeps global read search, and locks writes to the selection', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  const cardTools = read('entry/src/main/ets/backend/agent/CardAgentTools.ets');
+  assert.match(page,
+    /private hasFixedEditSelection\(\): boolean[\s\S]*this\.pageCardIds\.length > 0[\s\S]*this\.pageNoteIds\.length > 0/);
+  assert.match(page,
+    /if \(this\.hasFixedEditSelection\(\)\) \{[\s\S]*if \(this\.消息列表\.length === 0\)[\s\S]*Text\(this\.selectedEditContext\(\)\)[\s\S]*\} else \{[\s\S]*AgentSetupCard\(/);
+  assert.match(page,
+    /private providerFunctionToolsForTurn\(\): ProviderFunctionTool\[\][\s\S]*return agentFunctionTools\(this\.agentSettings\.batchLimit, this\.pageMode\)/);
+  assert.match(page, /functionTools:\s*this\.providerFunctionToolsForTurn\(\)/);
+  assert.match(page, /读取到的稳定 ID 只获得读取权限，绝不自动扩大修改范围/);
+  assert.match(page, /预选卡片或笔记时只能修改应用提供的稳定 ID/);
+  assert.match(cardTools, /search_cards[\s\S]*registerReadableCardIds/);
+  assert.match(cardTools, /assertNoteIdsInScope/);
+  assert.match(cardTools, /assertCardIdsInScope/);
+  assert.match(page, /ai_agent_edit_selected_cards/);
+  assert.match(page, /ai_agent_edit_selected_notes/);
+});
+
+test('tool traces translate stable provider IDs into detailed localized display names', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  const strings = read('entry/src/main/resources/base/element/string.json');
+  for (const toolName of [
+    'search_cards', 'search_notes', 'list_decks', 'list_notetypes', 'list_tags',
+    'get_notetype_details', 'get_card_statistics', 'propose_update_notes',
+  ]) {
+    assert.match(page, new RegExp(`case '${toolName}'`));
+  }
+  assert.match(page, /工具显示名\(this\.消息列表\[消息索引\]\.工具过程\[追踪索引\]\.toolName\)/);
+  assert.match(strings, /"name": "ai_agent_tool_name_search_cards", "value": "在整个卡库中搜索闪卡"/);
+  assert.match(strings, /"name": "ai_agent_tool_name_card_statistics", "value": "读取卡片统计与最近复习历史"/);
+});
+
 test('shared page rebuilds stable ID scope and batch policy for every user turn', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
   assert.match(page, /private 重建本轮AgentScope\(\)/);
   assert.match(page, /runAgentTurn[\s\S]*this\.重建本轮AgentScope\(\)/);
   assert.match(page, /this\.agentScope\.reset\(\)/);
   assert.match(page, /configureBatchLimit\(this\.agentSettings\.batchLimit\)/);
-  assert.match(page, /agentFunctionTools\(this\.agentSettings\.batchLimit, this\.pageMode\)/);
+  assert.match(page, /providerFunctionToolsForTurn\(\)/);
 });
 
 test('create mode exposes only create tools while edit mode enables edit and high-risk proposals', () => {
@@ -76,6 +166,8 @@ test('create mode exposes only create tools while edit mode enables edit and hig
   assert.match(page, /if \(this\.pageMode === 'edit'\)[\s\S]*HighRiskAgentTools/);
   assert.match(catalog, /mode:\s*AgentMode/);
   assert.match(catalog, /mode === 'edit'/);
+  assert.match(page, /create_flashcards/);
+  assert.doesNotMatch(page, /propose_create_notes/);
 });
 
 test('reasoning is visibly labelled and HTTP failures keep their status code', () => {
@@ -92,20 +184,50 @@ test('reasoning is visibly labelled and HTTP failures keep their status code', (
     'raw provider codes must not be duplicated before the localized catch message');
 });
 
-test('draft correction keeps earlier visible model text instead of clearing the bubble', () => {
+test('page does not implement hidden draft-correction reply recycling', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
-  assert.match(page,
-    /event\.kind === 'status' && event\.text === 'draft_correction'[\s\S]*message\.正文 \+= '\\n\\n'/,
-    'a correction round must separate and retain the previous visible reply');
-  assert.doesNotMatch(page,
-    /event\.kind === 'status' && event\.text === 'draft_correction'[\s\S]*message\.正文 = ''/,
-    'a correction round must not erase the previous visible reply');
+  assert.doesNotMatch(page, /draft_correction/,
+    'a no-draft response must terminate instead of silently recycling the same AI bubble');
+  assert.match(page, /如果无法生成合法内容，只解释一次原因并结束/,
+    'the provider must be told that refusal is a valid terminal response');
 });
 
-test('AI configuration is localized and has no acknowledgement gate or explanatory banner', () => {
+test('partial AI output remains in live provider history after terminal validation failure', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  assert.match(page,
+    /event\.kind === 'text_delta'[\s\S]*message\.正文 \+= event\.text;[\s\S]*message\.providerText \+= event\.text/,
+    'raw streamed model text must be retained separately from the visible localized error');
+  assert.match(page,
+    /const text:\s*string = message\.providerText\.length > 0 \? message\.providerText : message\.正文/,
+    'the next provider turn must receive retained raw model text');
+  assert.match(page, /构建消息草稿上下文\(message\)/,
+    'draft state must be replayed as bounded semantic context on the next provider turn');
+  assert.match(page, /限制Provider输入\(values\)/,
+    'provider history must be bounded before every stateless request');
+  assert.match(page,
+    /message\.kind = message\.providerText\.length > 0 \? 'normal' : 'error'/,
+    'a terminal validation error with model text must remain a replayable conversation message');
+});
+
+test('search preference never turns an ordinary card draft into a mandatory-evidence failure', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  assert.match(page, /requiresWebSearch:\s*explicitWebSearchRequested\(intentText\)/,
+    'an explicit web-search request must require real search execution');
+  assert.match(page, /requiresSearchEvidence:\s*explicitSourceEvidenceRequested\(intentText\)/,
+    'only an explicit source request may require HTTPS evidence');
+  assert.doesNotMatch(page,
+    /requiresSearchEvidence:\s*this\.agentSettings\.searchMode\s*===\s*'always'/,
+    'the always-search preference must not discard a successful local draft without sources');
+  assert.match(page,
+    /searchMode:\s*explicitWebSearchForbidden\(intentText\)\s*\?\s*'off'\s*:\s*this\.agentSettings\.searchMode/,
+    'an explicit no-web instruction must override the global search preference for this turn');
+});
+
+test('AI configuration is localized and only lives in the settings group', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
   const settings = read('entry/src/main/ets/components/settings/AIAgent设置分组.ets');
-  assert.match(page + settings, /ai_agent_provider_custom/);
+  assert.match(settings, /ai_agent_provider_custom/);
+  assert.doesNotMatch(page, /ai_agent_provider_custom|ai_card_save_config/);
   assert.doesNotMatch(page + settings,
     /ai_agent_privacy_notice|ai_agent_privacy_accept|privacyAccepted|隐私已确认|ai_card_config_hint/);
 
@@ -113,25 +235,22 @@ test('AI configuration is localized and has no acknowledgement gate or explanato
     .reduce((map, item) => ({ ...map, [item.name]: item.value }), {});
   const en = JSON.parse(read('entry/src/main/resources/en_US/element/string.json')).string
     .reduce((map, item) => ({ ...map, [item.name]: item.value }), {});
-  assert.equal(zh.ai_card_config, '配置');
   assert.equal(zh.ai_agent_provider_custom, '自定义');
   assert.equal(en.ai_agent_provider_custom, 'Custom');
 });
 
 test('AI page title uses equal side regions around the screen midpoint', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
-  const top = page.match(/private 顶部条\(\)[\s\S]*?@Builder\s+private 配置区/)?.[0] ?? '';
+  const top = page.match(/private 顶部条\(\)[\s\S]*?@Builder\s+private 历史区/)?.[0] ?? '';
   assert.equal((top.match(/\.width\('35%'\)/g) ?? []).length, 2);
   assert.match(top, /\.width\('30%'\)[\s\S]*\.textAlign\(TextAlign\.Center\)/);
   assert.match(top, /\.justifyContent\(FlexAlign\.End\)/);
+  assert.equal((top.match(/按下态按钮\(\{/g) ?? []).length, 3,
+    'back, history and new conversation must share the home toolbar button component');
 });
 
-test('API key, custom endpoint and custom model inputs share one visual style', () => {
-  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+test('settings API key, custom endpoint and custom model inputs share one visual style', () => {
   const settings = read('entry/src/main/ets/components/settings/AIAgent设置分组.ets');
-  const pageConfig = page.match(/private 配置区\(\)[\s\S]*?@Builder\s+private/)?.[0] ?? '';
-  assert.ok((pageConfig.match(/backgroundColor\(\$r\('app\.color\.surface_card'\)\)/g) ?? []).length >= 3);
-  assert.ok((pageConfig.match(/app\.color\.border_input/g) ?? []).length >= 3);
   assert.ok((settings.match(/backgroundColor\(\$r\('app\.color\.surface_card'\)\)/g) ?? []).length >= 3);
   assert.ok((settings.match(/app\.color\.border_input/g) ?? []).length >= 3);
 });
@@ -164,11 +283,14 @@ test('all successful and failed tool calls use one typed detail view collapsed b
 
   const bubble = page.match(/private AI气泡\(消息索引: number\)[\s\S]*?@Builder\s+private 消息流/)?.[0] ?? '';
   const reasoningIndex = bubble.indexOf("ai_agent_reasoning_process");
+  const bodyIndex = bubble.indexOf('Text(this.消息列表[消息索引].正文)');
   const toolsIndex = bubble.indexOf("ai_agent_tool_process");
   const sourcesIndex = bubble.indexOf("来源列表.length > 0");
   const cardsIndex = bubble.indexOf("卡片列表.length > 0");
   const draftsIndex = bubble.indexOf("变更草稿列表.length > 0");
-  assert.ok(reasoningIndex >= 0 && toolsIndex > reasoningIndex && sourcesIndex > toolsIndex);
+  assert.ok(reasoningIndex >= 0 && bodyIndex > reasoningIndex,
+    'normal output must render below the reasoning section');
+  assert.ok(toolsIndex > bodyIndex && sourcesIndex > toolsIndex);
   assert.ok(cardsIndex > sourcesIndex, 'card drafts must render after reasoning, tools, and sources');
   assert.ok(draftsIndex > sourcesIndex, 'change drafts must render after reasoning, tools, and sources');
 

@@ -61,6 +61,25 @@ function read(relativePath) {
   return readFileSync(projectUrl(relativePath), 'utf8');
 }
 
+test('card preview keeps its title centered and preserves preview while editing fields', () => {
+  const preview = read('entry/src/main/ets/components/browser/卡片预览页.ets');
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  const openEditorMethod = page.match(
+    /private\s+打开编辑区For\([^)]*\):\s*void\s*\{[^}]*\}/
+  )?.[0] ?? '';
+  assert.match(preview, /import\s+\{\s*按下态按钮\s*\}/);
+  assert.match(preview, /\.width\('35%'\)[\s\S]*\.width\('30%'\)[\s\S]*\.width\('35%'\)/);
+  assert.match(preview, /文案:\s*\$r\('app\.string\.browser_preview_close'\)/);
+  assert.match(preview, /@Prop\s+@Watch\('预览刷新版本变化'\)\s+刷新版本:\s*number/);
+  assert.match(preview,
+    /@StorageProp\('导航条高度'\)\s+private\s+导航条高度:\s*number\s*=\s*0/);
+  assert.match(preview,
+    /bottom:\s*应用尺寸\.页面内边距_水平\s*\+\s*this\.导航条高度/);
+  assert.notEqual(openEditorMethod, '', '打开编辑区For method must exist');
+  assert.doesNotMatch(openEditorMethod, /this\.显示预览\s*=\s*false/);
+  assert.match(page, /预览刷新版本\s*\+=\s*1/);
+});
+
 /** SearchNode 编解码往返：encode → bytes → decode */
 function roundTripSearchNode(node) {
   return decodeSearchNode(encodeSearchNode(node).转为字节());
@@ -619,6 +638,14 @@ test('批量操作栏 component preserves T8 presentation-only invariants', () =
   assert.match(bar, /app\.string\.browser_action_delete/);
 });
 
+test('批量操作栏 AI 改卡 uses the same neutral color treatment as ordinary actions', () => {
+  const bar = read('entry/src/main/ets/components/browser/批量操作栏.ets');
+  const aiButton = bar.match(/Button\(\$r\('app\.string\.ai_card_edit'\)\)[\s\S]*?\.onClick\(\(\): void => \{ this\.onAI改卡\(\); \}\)/)?.[0] ?? '';
+  assert.match(aiButton, /fontColor\(\$r\('app\.color\.text_primary'\)\)/);
+  assert.match(aiButton, /backgroundColor\(\$r\('app\.color\.surface_card'\)\)/);
+  assert.doesNotMatch(aiButton, /action_primary|action_on_primary|颜色键/);
+});
+
 test('卡片表格 component exposes onSelectionChange + onMultiSelectChange callbacks', () => {
   const table = read('entry/src/main/ets/components/browser/卡片表格.ets');
   assert.match(table, /onSelectionChange:\s*\(选中IDs:\s*number\[\]\)\s*=>\s*void/);
@@ -626,7 +653,22 @@ test('卡片表格 component exposes onSelectionChange + onMultiSelectChange cal
   // 选中变化时上抛
   assert.match(table, /this\.onSelectionChange\s*\(\s*Array\.from/);
   assert.match(table, /this\.onMultiSelectChange\s*\(\s*true\s*\)/);
-  assert.match(table, /this\.onMultiSelectChange\s*\(\s*false\s*\)/);
+  assert.match(table, /@Watch\('当退出多选信号变化'\)\s+退出多选信号/);
+});
+
+test('Browser multi-select moves count and close action into the top toolbar', () => {
+  const page = read('entry/src/main/ets/pages/浏览页.ets');
+  const table = read('entry/src/main/ets/components/browser/卡片表格.ets');
+  assert.match(page, /if \(this\.多选模式值\) \{[\s\S]*?文案: this\.取选中计数文案\(\)[\s\S]*?点击回调: \(\): void => this\.退出多选\(\)/);
+  assert.match(page, /return `\$\{模板\.replace\('%d', `\$\{this\.选中ID列表\.length\}`\)\} ×`/);
+  assert.doesNotMatch(table, /private 选中计数条\(|Text\('✕'\)/);
+  assert.match(table, /@Prop 初始多选模式: boolean = false/);
+  assert.match(page, /初始多选模式: this\.pageSelectForAgentEdit/);
+  assert.match(page,
+    /private 返回\(\): void \{\s*if \(this\.多选模式值\) \{\s*this\.退出多选\(\);\s*return;\s*\}\s*this\.pathStack\.pop\(\);\s*\}/);
+  assert.match(page,
+    /onBackPress\(\): boolean \{[\s\S]*?if \(this\.多选模式值\) \{ this\.退出多选\(\); return true; \}[\s\S]*?return false;/);
+  assert.match(page, /\.onBackPressed\(\(\): boolean => this\.onBackPress\(\)\)/);
 });
 
 test('调度器服务 exposes 批量埋藏或暂停卡片 method (T8 batch suspend)', () => {

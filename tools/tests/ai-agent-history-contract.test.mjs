@@ -47,15 +47,41 @@ test('history schema keeps audit, sources and results but has no secret, reasoni
   assert.doesNotMatch(source, /confirmationToken\s*:/);
 });
 
-test('shared page persists completed turns and provides resume/delete actions', () => {
+test('shared page persists completed turns and renders an in-page clickable history list', () => {
   const page = fs.readFileSync(
     path.join(root, 'entry/src/main/ets/pages/AI制卡页.ets'), 'utf8');
   assert.match(page, /saveAgentConversation/);
   assert.match(page, /打开历史会话/);
-  assert.match(page, /删除当前历史会话/);
-  assert.match(page, /显示历史菜单页/);
-  assert.match(page, /promptAction\.showActionMenu/);
+  assert.match(page, /private 历史区\(\)/);
+  assert.match(page, /ForEach\(this\.历史会话列表/);
+  assert.match(page, /this\.恢复历史会话\(item\)/);
+  assert.match(page, /this\.删除历史会话\(item\)/);
+  assert.doesNotMatch(page, /promptAction\.showActionMenu/);
+  assert.doesNotMatch(page, /显示历史菜单页/);
   assert.match(page, /开始新会话/);
+});
+
+test('history mode has its own toolbar, returns to chat, and marks selection with theme color only', () => {
+  const page = fs.readFileSync(
+    path.join(root, 'entry/src/main/ets/pages/AI制卡页.ets'), 'utf8');
+  const zh = JSON.parse(fs.readFileSync(
+    path.join(root, 'entry/src/main/resources/base/element/string.json'), 'utf8')).string
+    .reduce((map, item) => ({ ...map, [item.name]: item.value }), {});
+  const top = page.match(/private 顶部条\(\)[\s\S]*?@Builder\s+private 历史区/)?.[0] ?? '';
+  const history = page.match(/private 历史区\(\)[\s\S]*?@Builder\s+private 用户气泡/)?.[0] ?? '';
+  const build = page.match(/build\(\) \{[\s\S]*?\.hideTitleBar\(true\)/)?.[0] ?? '';
+
+  assert.equal(zh.ai_agent_history_title, '历史对话');
+  assert.equal(zh.ai_agent_history_new, '新建对话');
+  assert.match(top, /this\.显示历史区 \? \$r\('app\.string\.ai_agent_history_title'\)/);
+  assert.match(top, /if \(this\.显示历史区\)[\s\S]*this\.显示历史区 = false;[\s\S]*this\.pathStack\.pop\(\)/);
+  assert.match(top,
+    /ai_agent_history_new'[\s\S]*选中态背景: this\.主色容器色[\s\S]*字色: this\.动作主色/);
+  assert.match(top, /ai_agent_history_new'[\s\S]*this\.开始新会话\(\)/);
+  assert.doesNotMatch(history, /ai_agent_history_current/);
+  assert.match(history, /item\.id === this\.conversationId \?[\s\S]*this\.选中背景色/);
+  assert.match(page, /@StorageProp\(颜色键\.选中背景\) private 选中背景色/);
+  assert.match(build, /if \(this\.显示历史区\)[\s\S]*this\.历史区\(\)[\s\S]*else[\s\S]*this\.消息流\(\)/);
 });
 
 test('history saves and restores structured clarification without deleting its question', () => {
@@ -68,4 +94,12 @@ test('history saves and restores structured clarification without deleting its q
   assert.match(page, /message\.expanded\s*=\s*item\.expanded/);
   assert.match(page, /message\.kind\s*=\s*'clarification'/);
   assert.match(page, /空消息\('ai', request\.question, false\)/);
+});
+
+test('history stores raw assistant output without appending the localized terminal error', () => {
+  const page = fs.readFileSync(
+    path.join(root, 'entry/src/main/ets/pages/AI制卡页.ets'), 'utf8');
+  assert.match(page,
+    /text:\s*message\.角色 === 'ai' && message\.providerText\.length > 0\s*\?\s*message\.providerText : message\.正文/);
+  assert.match(page, /message\.providerText = item\.text/);
 });

@@ -12,43 +12,43 @@ import {
 
 const diagnostic = {
   code: 'unexpected_property',
-  path: 'notes[0].reason',
-  message: 'reason is only allowed at the top level',
-  receivedKeys: ['fields', 'reason'],
-  allowedKeys: ['fields'],
-  validTemplateJson: '{"notes":[{"fields":["<field>"]}],"reason":"<batch reason>"}',
+  path: 'cards[0].extra',
+  message: 'extra is not allowed inside cards[]',
+  receivedKeys: ['fields', 'extra'],
+  allowedKeys: ['fields', 'images'],
+  validTemplateJson: '{"cards":[{"fields":["<field>"]}]}',
 };
 
 test('tool failure fingerprints ignore JSON object key order but retain meaningful differences', () => {
   const first = buildAgentToolFailureFingerprint(
-    'propose_create_notes', '{"targetDeckId":1,"notes":[{"fields":["x"],"reason":"r"}]}', diagnostic,
+    'create_flashcards', '{"cards":[{"fields":["x"],"extra":"r"}]}', diagnostic,
   );
   const reordered = buildAgentToolFailureFingerprint(
-    'propose_create_notes', '{"notes":[{"reason":"r","fields":["x"]}],"targetDeckId":1}', diagnostic,
+    'create_flashcards', '{"cards":[{"extra":"r","fields":["x"]}]}', diagnostic,
   );
   assert.equal(first, reordered);
   assert.notEqual(first, buildAgentToolFailureFingerprint(
-    'propose_create_notes', '{"targetDeckId":2,"notes":[{"fields":["x"],"reason":"r"}]}', diagnostic,
+    'create_flashcards', '{"cards":[{"fields":["y"],"extra":"r"}]}', diagnostic,
   ));
   assert.notEqual(first, buildAgentToolFailureFingerprint(
-    'propose_update_notes', '{"targetDeckId":1,"notes":[{"fields":["x"],"reason":"r"}]}', diagnostic,
+    'propose_update_notes', '{"cards":[{"fields":["x"],"extra":"r"}]}', diagnostic,
   ));
   assert.notEqual(first, buildAgentToolFailureFingerprint(
-    'propose_create_notes', '{"targetDeckId":1,"notes":[{"fields":["x"],"reason":"r"}]}',
-    { ...diagnostic, path: 'notes[1].reason' },
+    'create_flashcards', '{"cards":[{"fields":["x"],"extra":"r"}]}',
+    { ...diagnostic, path: 'cards[1].extra' },
   ));
 });
 
 test('identical failures escalate on the second attempt and abort on the third', () => {
   const tracker = new AgentToolFailureTracker();
-  const first = tracker.record('propose_create_notes', '{"a":1,"b":2}', diagnostic);
-  const second = tracker.record('propose_create_notes', '{"b":2,"a":1}', diagnostic);
-  const third = tracker.record('propose_create_notes', '{"a":1,"b":2}', diagnostic);
+  const first = tracker.record('create_flashcards', '{"a":1,"b":2}', diagnostic);
+  const second = tracker.record('create_flashcards', '{"b":2,"a":1}', diagnostic);
+  const third = tracker.record('create_flashcards', '{"a":1,"b":2}', diagnostic);
   assert.deepEqual(first, { count: 1, requireCorrection: false, shouldAbort: false });
   assert.deepEqual(second, { count: 2, requireCorrection: true, shouldAbort: false });
   assert.deepEqual(third, { count: 3, requireCorrection: true, shouldAbort: true });
   assert.deepEqual(
-    tracker.record('propose_create_notes', '{"a":2,"b":2}', diagnostic),
+    tracker.record('create_flashcards', '{"a":2,"b":2}', diagnostic),
     { count: 1, requireCorrection: false, shouldAbort: false },
   );
 });
