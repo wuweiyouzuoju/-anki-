@@ -18,6 +18,8 @@
 /.agents/
 /.superpowers/
 /skills/
+/AGENTS.md
+/PROJECT_CONTEXT.md
 
 # Temporary / debug
 /.tmp_*
