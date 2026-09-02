@@ -21,6 +21,16 @@ jidecards 是面向 HarmonyOS 的开源 Anki 卡片学习客户端，使用 ArkU
   <img src="screenshots/app-preview-04.png" width="180" alt="记得闪卡应用截图 4" />
 </p>
 
+### 学习时的 AI Agent 改卡（3.0.0）
+
+从学习页的「更多」菜单进入 Agent 改卡，AI 检索当前卡片所属笔记的所有字段、提出可逐字段编辑的草稿，等待用户确认后写入并自动回到学习页重渲染。
+
+<p align="center">
+  <img src="screenshots/agent-edit-01-entry.png" width="220" alt="学习页更多菜单的 Agent 改卡入口" />
+  <img src="screenshots/agent-edit-02-reasoning.png" width="220" alt="Agent 检索当前卡字段并提出 update_field 草稿的思考过程" />
+  <img src="screenshots/agent-edit-03-draft.png" width="220" alt="可逐字段编辑的草稿确认页" />
+</p>
+
 ## 主要功能
 
 ### AI 制卡与 AI 改卡（3.0.0）
