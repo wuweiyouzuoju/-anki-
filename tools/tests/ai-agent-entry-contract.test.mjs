@@ -240,9 +240,8 @@ test('search preference never turns an ordinary card draft into a mandatory-evid
   assert.doesNotMatch(page,
     /requiresSearchEvidence:\s*this\.agentSettings\.searchMode\s*===\s*'always'/,
     'the always-search preference must not discard a successful local draft without sources');
-  assert.match(page,
-    /searchMode:\s*explicitWebSearchForbidden\(intentText\)\s*\?\s*'off'\s*:\s*this\.agentSettings\.searchMode/,
-    'an explicit no-web instruction must override the global search preference for this turn');
+  assert.match(page, /searchMode:\s*'off'/,
+    'web search is permanently disabled: every provider turn must run with search off');
 });
 
 test('AI configuration is localized and only lives in the settings group', () => {

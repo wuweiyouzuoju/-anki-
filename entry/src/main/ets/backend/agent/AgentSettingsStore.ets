@@ -3,7 +3,7 @@
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
 import { normalizeBatchLimit } from '../../model/agent/AgentPolicy';
-import type { ProviderId, SearchMode } from '../../model/agent/AgentTypes';
+import type { ProviderId } from '../../model/agent/AgentTypes';
 import { DEEPSEEK_PROVIDER, OPENAI_PROVIDER } from '../../model/agent/ProviderCatalog';
 
 const STORE_NAME: string = 'jidecards_settings';
@@ -13,7 +13,6 @@ const DEEPSEEK_MODEL_KEY: string = 'ai_agent_deepseek_model';
 const OPENAI_MODEL_KEY: string = 'ai_agent_openai_model';
 const CUSTOM_BASE_URL_KEY: string = 'ai_agent_custom_base_url';
 const CUSTOM_MODEL_KEY: string = 'ai_agent_custom_model';
-const SEARCH_MODE_KEY: string = 'ai_agent_search_mode';
 const BATCH_LIMIT_KEY: string = 'ai_agent_batch_limit';
 
 const LEGACY_API_KEY: string = 'ai_api_key';
@@ -26,7 +25,6 @@ export interface AgentSettings {
   openaiModel: string;
   customBaseUrl: string;
   customModel: string;
-  searchMode: SearchMode;
   batchLimit: number;
 }
 
@@ -43,7 +41,6 @@ export function defaultAgentSettings(): AgentSettings {
     openaiModel: OPENAI_PROVIDER.defaultModel,
     customBaseUrl: '',
     customModel: '',
-    searchMode: 'auto',
     batchLimit: normalizeBatchLimit(100)
   };
 }
@@ -85,13 +82,6 @@ function providerValue(value: string): ProviderId {
   return 'deepseek';
 }
 
-function searchModeValue(value: string): SearchMode {
-  if (value === 'always' || value === 'off') {
-    return value;
-  }
-  return 'auto';
-}
-
 export async function loadAgentSettings(): Promise<AgentSettings> {
   const defaults: AgentSettings = defaultAgentSettings();
   const store: preferences.Preferences | null = await openStore();
@@ -100,7 +90,6 @@ export async function loadAgentSettings(): Promise<AgentSettings> {
   }
   try {
     const provider: string = stringValue(await store.get(PROVIDER_KEY, defaults.selectedProvider), 'deepseek');
-    const searchMode: string = stringValue(await store.get(SEARCH_MODE_KEY, defaults.searchMode), 'auto');
     const batchValue: preferences.ValueType = await store.get(BATCH_LIMIT_KEY, defaults.batchLimit);
     return {
       selectedProvider: providerValue(provider),
@@ -110,7 +99,6 @@ export async function loadAgentSettings(): Promise<AgentSettings> {
         await store.get(OPENAI_MODEL_KEY, defaults.openaiModel), defaults.openaiModel),
       customBaseUrl: stringValue(await store.get(CUSTOM_BASE_URL_KEY, ''), ''),
       customModel: stringValue(await store.get(CUSTOM_MODEL_KEY, ''), ''),
-      searchMode: searchModeValue(searchMode),
       batchLimit: normalizeBatchLimit(typeof batchValue === 'number' ? batchValue : defaults.batchLimit)
     };
   } catch (error) {
@@ -128,7 +116,6 @@ export async function saveAgentSettings(settings: AgentSettings): Promise<void> 
   await store.put(OPENAI_MODEL_KEY, settings.openaiModel.trim());
   await store.put(CUSTOM_BASE_URL_KEY, settings.customBaseUrl.trim());
   await store.put(CUSTOM_MODEL_KEY, settings.customModel.trim());
-  await store.put(SEARCH_MODE_KEY, settings.searchMode);
   await store.put(BATCH_LIMIT_KEY, normalizeBatchLimit(settings.batchLimit));
   await store.flush();
 }

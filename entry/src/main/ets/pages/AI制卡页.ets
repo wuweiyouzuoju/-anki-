@@ -19,7 +19,6 @@ import type { ProviderFunctionTool, ProviderInputItem, ProviderTurnRequest } fro
 import { agentFunctionTools } from '../model/agent/AgentToolCatalog';
 import {
   explicitSourceEvidenceRequested,
-  explicitWebSearchForbidden,
   explicitWebSearchRequested
 } from '../model/agent/AgentPolicy';
 import { DEEPSEEK_PROVIDER, OPENAI_PROVIDER } from '../model/agent/ProviderCatalog';
@@ -905,7 +904,8 @@ export struct AI制卡页 {
         instructions: this.构建Agent指令(),
         input: this.构建Provider输入(),
         functionTools: this.providerFunctionToolsForTurn(),
-        searchMode: explicitWebSearchForbidden(intentText) ? 'off' : this.agentSettings.searchMode,
+        // 联网搜索功能已关闭：设置 UI 隐藏，不再读取历史存档，运行时恒为 off。
+        searchMode: 'off',
         // 只分析用户可见要求，不扫描任务配置或本地卡片内容，避免上下文里的“联网”等词误触发。
         requiresWebSearch: explicitWebSearchRequested(intentText),
         requiresSearchEvidence: explicitSourceEvidenceRequested(intentText),

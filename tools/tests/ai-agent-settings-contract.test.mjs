@@ -8,7 +8,7 @@ function read(path) {
   return readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
 }
 
-test('agent settings remember provider models, custom coordinates, search mode, and batch limit', () => {
+test('agent settings remember provider models, custom coordinates, and batch limit', () => {
   const store = read('entry/src/main/ets/backend/agent/AgentSettingsStore.ets');
   for (const key of [
     'ai_agent_provider',
@@ -16,15 +16,15 @@ test('agent settings remember provider models, custom coordinates, search mode, 
     'ai_agent_openai_model',
     'ai_agent_custom_base_url',
     'ai_agent_custom_model',
-    'ai_agent_search_mode',
     'ai_agent_batch_limit',
   ]) {
     assert.match(store, new RegExp(key));
   }
   assert.doesNotMatch(store, /PRIVACY_NOTICE|privacyNoticeAccepted|ai_agent_privacy_notice_accepted/);
+  assert.doesNotMatch(store, /searchMode|SEARCH_MODE|ai_agent_search_mode/,
+    'web search is permanently disabled: no search preference may be stored or loaded');
   assert.match(store, /normalizeBatchLimit/);
   assert.match(store, /ProviderId/);
-  assert.match(store, /SearchMode/);
   assert.match(store, /isAgentProviderConfigured/);
   assert.match(store, /customBaseUrl\.trim\(\)\.startsWith\('https:\/\/'\)/);
 });

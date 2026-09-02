@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import type { ProviderId, SearchMode } from '../../model/agent/AgentTypes';
+import type { ProviderId } from '../../model/agent/AgentTypes';
 import { common } from '@kit.AbilityKit';
 import { DEEPSEEK_PROVIDER, OPENAI_PROVIDER } from '../../model/agent/ProviderCatalog';
 import {
@@ -28,7 +28,6 @@ export struct AIAgent设置分组 {
   @State private openaiModel: string = OPENAI_PROVIDER.defaultModel;
   @State private customBaseUrl: string = '';
   @State private customModel: string = '';
-  @State private searchMode: SearchMode = 'auto';
   @State private batchLimit: number = 100;
   @State private secret: string = '';
   @State private saving: boolean = false;
@@ -51,7 +50,6 @@ export struct AIAgent设置分组 {
     this.openaiModel = settings.openaiModel;
     this.customBaseUrl = settings.customBaseUrl;
     this.customModel = settings.customModel;
-    this.searchMode = settings.searchMode;
     this.batchLimit = settings.batchLimit;
     this.secret = await loadAgentSecret(this.provider);
   }
@@ -92,7 +90,6 @@ export struct AIAgent设置分组 {
       settings.openaiModel = this.openaiModel;
       settings.customBaseUrl = this.customBaseUrl;
       settings.customModel = this.customModel;
-      settings.searchMode = this.searchMode;
       settings.batchLimit = this.batchLimit;
       await saveAgentSettings(settings);
       await saveAgentSecret(this.provider, this.secret);
@@ -159,7 +156,6 @@ export struct AIAgent设置分组 {
             .borderRadius(应用尺寸.圆角_面板)
             .padding({ left: 应用尺寸.间距_10, right: 应用尺寸.间距_10 })
             .onChange((value: string): void => { this.secret = value; })
-          // 联网搜索模式选项按需求在 UI 上隐藏；searchMode 状态仍随存档原样保存。
           Row() {
             Text($r('app.string.ai_agent_batch_limit')).layoutWeight(1)
             Select([{ value: '100' }, { value: '250' }, { value: '500' }, { value: '1000' }])
