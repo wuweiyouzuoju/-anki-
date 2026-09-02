@@ -16,7 +16,7 @@ import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时
 // 创建牌组回调 / 导入牌组回调 / 关闭回调（均由父级 Index 注入）。
 //
 // @输出
-// 渲染一个全屏 Stack：透明承接层 + 右上角下拉的两个动作条目。
+// 渲染一个全屏 Stack：透明承接层 + 右上角下拉的五个动作条目（末项「获取直链牌组」可按配额隐藏）。
 //
 // @业务规则
 // 不加遮罩：透明层仅承接点击关闭，不遮暗不模糊。
@@ -32,6 +32,9 @@ export struct 主页操作面板 {
   导入牌组回调: () => void = (): void => {};
   AI制卡回调: () => void = (): void => {};
   AI改卡回调: () => void = (): void => {};
+  /** 第 5 项「获取直链牌组」；由父级按下载配额决定是否注入，配额用尽时父级不渲染本面板的该项。 */
+  @Prop 显示获取直链牌组: boolean = true;
+  获取直链牌组回调: () => void = (): void => {};
   关闭回调: () => void = (): void => {};
   @StorageProp('状态栏高度') private 状态栏高度: number = 0;
 
@@ -86,6 +89,19 @@ export struct 主页操作面板 {
           .height(应用尺寸.行动按钮高度)
           .textAlign(TextAlign.Center)
           .onClick((): void => this.AI改卡回调())
+        if (this.显示获取直链牌组) {
+          Divider()
+            .color($r('app.color.border_subtle'))
+            .strokeWidth(应用尺寸.卡片边框)
+            .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+          Text($r('app.string.cloud_deck_menu_entry'))
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .height(应用尺寸.行动按钮高度)
+            .textAlign(TextAlign.Center)
+            .onClick((): void => this.获取直链牌组回调())
+        }
       }
       .width(200)
       .backgroundColor($r('app.color.surface_card'))

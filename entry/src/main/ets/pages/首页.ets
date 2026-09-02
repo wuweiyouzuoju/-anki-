@@ -81,7 +81,12 @@ import { 可见牌组行, 平铺牌组树 } from '../model/牌组层级';
 import { 检查节流标记, 获取节流奖励 } from '../utils/操作节流';
 import { 欢迎弹窗 } from '../components/欢迎弹窗';
 import { 是否已展示欢迎弹窗, 标记已展示欢迎弹窗 } from '../model/欢迎弹窗存储';
-import { 是否已完成云端牌组引导, 标记已完成云端牌组引导 } from '../model/云端牌组引导存储';
+import {
+  是否已完成云端牌组引导,
+  标记已完成云端牌组引导,
+  是否已用尽云端牌组下载配额,
+  标记已用尽云端牌组下载配额
+} from '../model/云端牌组引导存储';
 import { 云端牌组目录, 云端牌组目录项 } from '../model/云端牌组模型';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { CustomTransition } from '../utils/自定义转场';
@@ -232,6 +237,10 @@ struct 首页 {
   @State private 云端牌组进度: number = 0;
   @State private 云端牌组已处理数: number = 0;
   @State private 云端牌组任务数: number = 0;
+  // 打开来源：true 表示从右上角菜单进入，关闭即回首页；false 表示开机引导，关闭需二次确认。
+  @State private 云端牌组从菜单打开: boolean = false;
+  // 本机直链牌组下载配额是否已用尽；用尽后菜单第 5 项隐藏，冷启动也不再弹引导。
+  @State private 云端牌组配额已用尽: boolean = false;
   @State private 显示节流奖励: boolean = false;
   @State private 节流奖励文案: string = '';
   // 窄屏详情显隐（方案 C 2026-07-25）：点牌组后 true，根 Stack 内 牌组详情面板 盖住列表，替代推栈 NavDestination
@@ -243,6 +252,7 @@ struct 首页 {
     this.恢复今日进度卡开关();
     // 首次进入先完成云端牌组选择与导入，再展示版本欢迎内容，避免两个全屏弹窗叠加。
     this.显示首次弹窗序列();
+    this.刷新云端牌组配额状态();
   }
 
   /** 官方公告优先于首次云端牌组引导，云端牌组引导优先于版本欢迎弹窗。 */
@@ -333,10 +343,15 @@ struct 首页 {
   private async 继续首次弹窗序列(): Promise<void> {
     const completed: boolean = await 是否已完成云端牌组引导();
     if (!completed) {
-      this.打开云端牌组弹窗();
+      this.打开云端牌组弹窗(false);
       return;
     }
     await this.显示欢迎弹窗一次();
+  }
+
+  /** 同步本机下载配额；读取失败按未用尽处理，避免用户平白丢失菜单入口。 */
+  private async 刷新云端牌组配额状态(): Promise<void> {
+    this.云端牌组配额已用尽 = await 是否已用尽云端牌组下载配额();
   }
 
   /** 只有「我知道了」写入已读并关闭；先在当前进程内存抑制该 ID，持久化失败仅提示，仍关闭并继续原启动序列。 */
@@ -427,6 +442,7 @@ struct 首页 {
     if (this.显示牌组选项) { this.显示牌组选项 = false; return true; }
     if (this.显示创建牌组) { this.显示创建牌组 = false; return true; }
     if (this.显示云端牌组弹窗) {
+      this.云端牌组弹窗按主按钮出口();
       return true;
     }
     if (this.显示主页操作) { this.显示主页操作 = false; return true; }
@@ -1390,8 +1406,13 @@ struct 首页 {
     return this.getUIContext().getHostContext()!.resourceManager.getStringSync(resource.id);
   }
 
-  /** 打开一次性云端牌组引导，并重置上一次临时任务状态。 */
-  private 打开云端牌组弹窗(): void {
+  /**
+   * 打开云端牌组弹窗，并重置上一次临时任务状态。
+   * Invariants: 从菜单打开与开机引导共用同一份目录与下载逻辑，只有关闭语义不同——
+   * 前者直接回首页，后者要二次确认且后续还要接欢迎弹窗。
+   */
+  private 打开云端牌组弹窗(从菜单打开: boolean): void {
+    this.云端牌组从菜单打开 = 从菜单打开;
     this.显示云端牌组弹窗 = true;
     this.云端牌组选中ID列表 = [];
     this.云端牌组成功ID列表 = [];
@@ -1424,7 +1445,11 @@ struct 首页 {
     }
   }
 
-  /** 至少一个牌组成功导入且完成标记落盘后，才允许进入首页。 */
+  /**
+   * 至少一个牌组成功导入且完成标记落盘后，才允许关闭弹窗。
+   * Invariants: 关闭后两态都刷新首页让新牌组立刻可见；欢迎弹窗只在开机引导序列里衔接，
+   * 菜单态用户已在正常使用中，突然弹版本欢迎页时机不合理。
+   */
   private async 完成云端牌组首次引导(): Promise<void> {
     if (this.云端牌组忙碌) return;
     if (this.云端牌组成功ID列表.length === 0) return;
@@ -1434,7 +1459,63 @@ struct 首页 {
       return;
     }
     this.显示云端牌组弹窗 = false;
+    this.返回主页后刷新();
+    if (!this.云端牌组从菜单打开) {
+      await this.显示欢迎弹窗一次();
+    }
+  }
+
+  /**
+   * 返回键在云端牌组弹窗上的出口：完全复用右下角主按钮的行为，保证两条退出路径语义一致。
+   * Invariants: busy 期间主按钮不可点，返回键同样静默；引导态有成功牌组时等于「进入软件」，
+   * 其余情况等于「稍后再说」（菜单态即「关闭」）。
+   */
+  private 云端牌组弹窗按主按钮出口(): void {
+    if (this.云端牌组忙碌) {
+      return;
+    }
+    if (!this.云端牌组从菜单打开 && this.云端牌组成功ID列表.length > 0) {
+      this.完成云端牌组首次引导();
+      return;
+    }
+    this.跳过云端牌组引导();
+  }
+
+  /**
+   * 「稍后再说」/ 菜单态「关闭」的统一出口。
+   * Invariants: 开机引导态必须二次确认，且确认前后都不写任何标记——用户还没拿到牌组，
+   * 下次冷启动仍要继续引导，菜单里的「获取直链牌组」也必须继续可见。
+   */
+  private async 跳过云端牌组引导(): Promise<void> {
+    if (this.云端牌组从菜单打开) {
+      this.显示云端牌组弹窗 = false;
+      this.返回主页后刷新();
+      return;
+    }
+    try {
+      const result: promptAction.ShowDialogSuccessResponse =
+        await this.getUIContext().getPromptAction().showDialog({
+          title: this.取本地化文本($r('app.string.cloud_deck_skip_confirm_title')),
+          message: this.取本地化文本($r('app.string.cloud_deck_skip_confirm_message')),
+          buttons: [
+            { text: this.取本地化文本($r('app.string.cancel')), color: '#666666' },
+            { text: this.取本地化文本($r('app.string.cloud_deck_enter')), color: this.动作主色 }
+          ]
+        });
+      if (result.index !== 1) {
+        return;
+      }
+    } catch (error) {
+      // 弹窗失败不阻断：留在原弹窗上，用户可以重新点「稍后再说」。
+      return;
+    }
+    this.显示云端牌组弹窗 = false;
     await this.显示欢迎弹窗一次();
+  }
+
+  /** 把 Resource 取成本地化字符串；showDialog 只收 string，不收 Resource。 */
+  private 取本地化文本(resource: Resource): string {
+    return this.getUIContext().getHostContext()!.resourceManager.getStringSync(resource.id);
   }
 
   /** 点击首次引导中的 QQ 群提示时复制群号；复制结果通过本地化提示反馈。 */
@@ -1551,10 +1632,21 @@ struct 首页 {
       this.云端牌组当前阶段 = '';
       this.云端牌组选中ID列表 = failedIds.concat([]);
       this.云端牌组服务实例.清理残留下载(context.filesDir);
-      this.显示提示(failedIds.length > 0 ?
-        $r('app.string.cloud_deck_install_partial') : $r('app.string.cloud_deck_install_complete'));
-      if (failedIds.length === 0 && successIds.length > 0) {
-        await this.完成云端牌组首次引导();
+      // 只要有 ≥1 个牌组导入成功就锁死配额：否则「留一个失败」就能阻止弹窗收尾，
+      // 用户可反复分批下载，把整个目录搬空。锁死只影响下次入口，当前弹窗仍可重试失败项。
+      let 配额已锁定: boolean = true;
+      if (successIds.length > 0) {
+        配额已锁定 = await 标记已用尽云端牌组下载配额();
+        this.云端牌组配额已用尽 = 配额已锁定;
+      }
+      if (!配额已锁定) {
+        this.显示提示($r('app.string.cloud_deck_save_failed'));
+      } else {
+        this.显示提示(failedIds.length > 0 ?
+          $r('app.string.cloud_deck_install_partial') : $r('app.string.cloud_deck_install_complete'));
+        if (failedIds.length === 0 && successIds.length > 0) {
+          await this.完成云端牌组首次引导();
+        }
       }
     }
   }
@@ -2298,6 +2390,11 @@ struct 首页 {
               this.显示主页操作 = false;
               this.打开AI改卡();
             },
+            显示获取直链牌组: !this.云端牌组配额已用尽,
+            获取直链牌组回调: (): void => {
+              this.显示主页操作 = false;
+              this.打开云端牌组弹窗(true);
+            },
             关闭回调: (): void => {
               this.显示主页操作 = false;
             }
@@ -2502,6 +2599,7 @@ struct 首页 {
         if (this.显示云端牌组弹窗) {
           云端牌组弹窗({
             isDark: this.是否深色(),
+            从菜单打开: this.云端牌组从菜单打开,
             loading: this.云端牌组加载中,
             busy: this.云端牌组忙碌,
             errorMessage: this.云端牌组错误,
@@ -2525,6 +2623,9 @@ struct 首页 {
             },
             onEnter: (): void => {
               this.完成云端牌组首次引导();
+            },
+            onSkip: (): void => {
+              this.跳过云端牌组引导();
             },
             onCopyQQGroup: (): void => {
               this.复制云端牌组QQ群号();

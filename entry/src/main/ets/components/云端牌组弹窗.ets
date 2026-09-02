@@ -5,10 +5,17 @@ import { 颜色键 } from '../model/颜色主题';
 import { 云端牌组目录项, 格式化云端牌组大小 } from '../model/云端牌组模型';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 
-/** 云端牌组目录、选择、进度和结果的纯展示弹窗。 */
+/**
+ * 云端牌组目录、选择、进度和结果的纯展示弹窗。
+ *
+ * Invariants: 两种打开来源共用同一套目录与下载逻辑，只有「首次说明文案」和「右下角主按钮」
+ * 不同——开机引导要留住用户选牌组，菜单入口只是回到首页后补下。
+ */
 @Component
 export struct 云端牌组弹窗 {
   @Prop isDark: boolean = false;
+  /** true 表示从首页右上角菜单进入，此时主按钮为「关闭」，不再显示首次引导说明。 */
+  @Prop 从菜单打开: boolean = false;
   @Prop loading: boolean = false;
   @Prop busy: boolean = false;
   @Prop errorMessage: string = '';
@@ -25,6 +32,8 @@ export struct 云端牌组弹窗 {
   onRetry: () => void = (): void => {};
   onDownload: () => void = (): void => {};
   onEnter: () => void = (): void => {};
+  /** 「稍后再说」或从菜单打开的「关闭」；是否需要二次挽留确认由父级按打开来源决定。 */
+  onSkip: () => void = (): void => {};
   onCopyQQGroup: () => void = (): void => {};
 
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
@@ -41,6 +50,24 @@ export struct 云端牌组弹窗 {
 
   private 已失败(id: string): boolean {
     return this.failedIds.indexOf(id) >= 0;
+  }
+
+  /** 右下角主按钮文案：菜单入口只关闭，引导态无成果时是「稍后再说」，有成果才是「进入软件」。 */
+  private 主按钮文案(): Resource {
+    if (this.从菜单打开) {
+      return $r('app.string.close');
+    }
+    return this.successIds.length > 0 ?
+      $r('app.string.cloud_deck_enter') : $r('app.string.cloud_deck_skip');
+  }
+
+  /** 主按钮动作：只有「引导态且有成功牌组」才走进入流程，其余一律交给 onSkip。 */
+  private 触发主按钮(): void {
+    if (this.从菜单打开 || this.successIds.length === 0) {
+      this.onSkip();
+      return;
+    }
+    this.onEnter();
   }
 
   @Builder
@@ -147,9 +174,22 @@ export struct 云端牌组弹窗 {
           .fontColor($r('app.color.text_primary'))
           .width('100%')
 
-        Text($r('app.string.cloud_deck_onboarding_message'))
-          .fontSize(应用尺寸.字号_正文_小)
-          .fontColor($r('app.color.text_secondary'))
+        // 首次说明只在开机引导态出现：文案含「首次进入…机会仅有一次」，菜单入口下不成立。
+        if (!this.从菜单打开) {
+          Text($r('app.string.cloud_deck_onboarding_message'))
+            .fontSize(应用尺寸.字号_正文_小)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+
+          Text($r('app.string.cloud_deck_reopen_hint'))
+            .fontSize(应用尺寸.字号_说明)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+        }
+
+        Text($r('app.string.cloud_deck_offline_notice'))
+          .fontSize(应用尺寸.字号_说明)
+          .fontColor($r('app.color.text_tertiary'))
           .width('100%')
 
         Text($r('app.string.cloud_deck_qq_group_entry', '726837065'))
@@ -238,18 +278,16 @@ export struct 云端牌组弹窗 {
             .enabled(!this.busy && !this.loading && this.errorMessage.length === 0 && this.selectedIds.length > 0)
             .onClick((): void => { this.onDownload(); })
 
-          if (this.successIds.length > 0) {
-            Button($r('app.string.cloud_deck_enter'))
-              .type(ButtonType.Normal)
-              .layoutWeight(1)
-              .height(应用尺寸.按钮高度)
-              .fontSize(应用尺寸.字号_正文)
-              .fontColor($r('app.color.action_on_primary'))
-              .backgroundColor(this.主色按钮背景)
-              .borderRadius(应用尺寸.圆角_面板)
-              .enabled(!this.busy)
-              .onClick((): void => { this.onEnter(); })
-          }
+          Button(this.主按钮文案())
+            .type(ButtonType.Normal)
+            .layoutWeight(1)
+            .height(应用尺寸.按钮高度)
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.action_on_primary'))
+            .backgroundColor(this.主色按钮背景)
+            .borderRadius(应用尺寸.圆角_面板)
+            .enabled(!this.busy)
+            .onClick((): void => { this.触发主按钮(); })
         }
         .width('100%')
       }

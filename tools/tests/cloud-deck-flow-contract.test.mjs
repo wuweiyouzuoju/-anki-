@@ -14,13 +14,19 @@ test('cloud deck hosting has one replaceable catalog URL and no management crede
   assert.doesNotMatch(source, /(accessKey|secretKey|clientSecret|管理密钥)/i);
 });
 
-test('first-launch cloud deck onboarding is persisted independently', () => {
+test('first-launch cloud deck onboarding is persisted independently and quota is one-shot per install', () => {
   const source = read('../../entry/src/main/ets/model/云端牌组引导存储.ets');
   assert.match(source, /cloud_deck_required_onboarding_completed_v1/);
   assert.doesNotMatch(source, /cloud_deck_onboarding_completed_v1/);
   assert.match(source, /是否已完成云端牌组引导/);
   assert.match(source, /标记已完成云端牌组引导/);
   assert.match(source, /标记已完成云端牌组引导\(\): Promise<boolean>/);
+  // 下载配额：一台安装只要成功导入 ≥1 个直链牌组即视为用尽，引导与菜单入口一并收口。
+  assert.match(source, /cloud_deck_download_quota_used_v1/);
+  assert.match(source, /是否已用尽云端牌组下载配额/);
+  assert.match(source, /标记已用尽云端牌组下载配额\(\): Promise<boolean>/);
+  // 引导完成与配额用尽任一为真即不再展示引导。
+  assert.match(source, /读取标记\(引导完成键\) \|\| await 读取标记\(下载配额已用尽键\)/);
   assert.match(source, /await store\.flush\(\);\s*return true;/);
   assert.match(source, /catch \(error\) \{\s*return false;/);
   assert.match(source, /preferences\.getPreferences/);
@@ -117,7 +123,13 @@ test('cloud deck modal presents selectable public decks, locked future decks and
   assert.match(source, /maxHeight: '72%'/);
   assert.doesNotMatch(source, /maxHeight: '88%'/);
   assert.match(source, /backgroundBlurStyle\(BlurStyle\.Thin/);
-  assert.doesNotMatch(source, /cloud_deck_skip/);
+  // 双态契约：引导态提供「稍后再说」，菜单态主按钮退化为「关闭」，首次说明只在引导态出现。
+  assert.match(source, /cloud_deck_skip/);
+  assert.match(source, /从菜单打开: boolean = false/);
+  assert.match(source, /onSkip/);
+  assert.match(source, /if \(!this\.从菜单打开\) \{/);
+  assert.match(source, /cloud_deck_reopen_hint/);
+  assert.match(source, /cloud_deck_offline_notice/);
   assert.doesNotMatch(source, /cloud_deck_manual_message/);
   assert.doesNotMatch(source, /onClose/);
 });
@@ -159,6 +171,9 @@ test('cloud deck and import source strings are aligned and translated', () => {
     'cloud_deck_locked_badge', 'cloud_deck_status_success', 'cloud_deck_status_failed',
     'cloud_deck_enter', 'cloud_deck_meta_cards', 'cloud_deck_meta_cards_unknown_size',
     'cloud_deck_qq_group_entry', 'cloud_deck_qq_copy_failed', 'cloud_deck_selection_limit',
+    'cloud_deck_skip', 'cloud_deck_menu_entry', 'cloud_deck_offline_notice',
+    'cloud_deck_reopen_hint', 'cloud_deck_skip_confirm_title', 'cloud_deck_skip_confirm_message',
+    'cloud_deck_install_partial', 'cloud_deck_install_complete', 'cloud_deck_save_failed',
   ];
   for (const key of required) {
     assert.ok(zhMap.has(key), `missing base key ${key}`);
@@ -187,16 +202,42 @@ test('later Import Deck directly opens the local picker and exposes no cloud rou
   assert.match(source, /选取数据文件\(context, \['\.apkg'\]\)/);
 });
 
-test('home sequences the non-dismissible cloud onboarding before welcome', () => {
+test('home sequences the dismissible-with-confirmation cloud onboarding before welcome', () => {
   const source = read('../../entry/src/main/ets/pages/首页.ets');
   assert.match(source, /是否已完成云端牌组引导/);
   assert.match(source, /显示首次弹窗序列/);
-  assert.match(source, /打开云端牌组弹窗\(\)/);
+  assert.match(source, /打开云端牌组弹窗\(false\)/);
   assert.match(source, /标记已完成云端牌组引导/);
   assert.match(source, /显示欢迎弹窗一次\(\)/);
-  assert.match(source, /if \(this\.显示云端牌组弹窗\)/);
-  assert.match(source, /if \(this\.显示云端牌组弹窗\) \{\s*return true;/);
+  // 返回键与主按钮同一出口：不再无条件吞掉返回。
+  assert.match(source, /if \(this\.显示云端牌组弹窗\) \{/);
+  assert.match(source, /云端牌组弹窗按主按钮出口\(\);/);
+  assert.doesNotMatch(source, /if \(this\.显示云端牌组弹窗\) \{\s*return true;/);
+  // 引导态跳过必须二次确认，且确认前后都不写完成标记。
+  assert.match(source, /private async 跳过云端牌组引导/);
+  assert.match(source, /cloud_deck_skip_confirm_title/);
+  const skipMethod = source.match(/private async 跳过云端牌组引导\(\): Promise<void> \{[\s\S]*?\n  private 取本地化文本/)?.[0] ?? '';
+  assert.doesNotMatch(skipMethod, /标记已完成云端牌组引导/);
+  assert.doesNotMatch(skipMethod, /标记已用尽云端牌组下载配额/);
   assert.doesNotMatch(source, /关闭云端牌组弹窗/);
+});
+
+test('home reopens the cloud deck modal from the deck menu until the download quota is spent', () => {
+  const homeSource = read('../../entry/src/main/ets/pages/首页.ets');
+  const menuSource = read('../../entry/src/main/ets/components/主页操作面板.ets');
+  // 菜单第 5 项按配额显隐，入口回调以菜单态打开弹窗。
+  assert.match(menuSource, /显示获取直链牌组: boolean = true/);
+  assert.match(menuSource, /cloud_deck_menu_entry/);
+  assert.match(homeSource, /显示获取直链牌组: !this\.云端牌组配额已用尽/);
+  assert.match(homeSource, /this\.打开云端牌组弹窗\(true\);/);
+  // 冷启动同步配额状态；批次结束只要 ≥1 个成功即锁死配额。
+  assert.match(homeSource, /this\.刷新云端牌组配额状态\(\)/);
+  assert.match(homeSource, /标记已用尽云端牌组下载配额\(\)/);
+  // 下载成功关闭弹窗后两态都刷新首页，欢迎弹窗只在引导态衔接。
+  const finishMethod = homeSource.match(
+    /private async 完成云端牌组首次引导\(\): Promise<void> \{[\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.match(finishMethod, /this\.返回主页后刷新\(\);/);
+  assert.match(finishMethod, /if \(!this\.云端牌组从菜单打开\) \{/);
 });
 
 test('home downloads and imports selected cloud decks sequentially through the existing backend', () => {
