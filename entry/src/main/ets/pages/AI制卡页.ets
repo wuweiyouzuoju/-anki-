@@ -2311,7 +2311,8 @@ export struct AI制卡页 {
         Column({ space: 应用尺寸.间距_8 }) {
           Button() {
             Stack() {
-              // 两条文案都常驻布局、只切透明度：按钮宽度恒为较宽者，解析切换时不抖动。
+              // 两条文案都常驻布局、只切透明度：解析态显示「…」（窄于「导入」），
+              // 按钮宽度恒为「导入」两字，与右侧发送按钮等宽，解析切换不抖动。
               Text($r('app.string.ai_agent_import_files'))
                 .fontSize(应用尺寸.字号_按钮)
                 .fontColor(this.动作主色)

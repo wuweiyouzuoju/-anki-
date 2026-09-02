@@ -29,7 +29,7 @@
 // ========================================================
 
 import { 协议读取器 } from '../core/ProtoReader';
-import { 协议写入器 } from '../core/ProtoWriter';
+import { 线类型_长度分隔, 协议写入器 } from '../core/ProtoWriter';
 
 /** CheckMediaResponse：检查媒体后 unused/missing 列表 + 回收站状态 + 文本报告。 */
 export interface CheckMediaResponse {
@@ -80,7 +80,15 @@ export function decodeCheckMediaResponse(bytes: Uint8Array): CheckMediaResponse 
         out.missing.push(r.读取字符串());
         break;
       case 3:
-        out.missingMediaNotes.push(r.读取64位整数());
+        // repeated int64 missing_media_notes：proto3 默认 packed（线类型 2），兼客服端旧 unpacked
+        if (tag.线类型 === 线类型_长度分隔) {
+          const packed: number[] = r.读取打包64位整数();
+          for (const id of packed) {
+            out.missingMediaNotes.push(id);
+          }
+        } else {
+          out.missingMediaNotes.push(r.读取64位整数());
+        }
         break;
       case 4:
         out.report = r.读取字符串();

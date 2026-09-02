@@ -27,7 +27,10 @@ test('provider settings use dropdowns, remember provider/models and keep keys in
   const settings = read('entry/src/main/ets/components/settings/AIAgent设置分组.ets');
   assert.match(settings, /Select\(/);
   assert.match(settings, /DeepSeek/);
-  assert.match(settings, /OpenAI/);
+  // OpenAI 选项按产品要求在 UI 上隐藏（2026-09-02）；存档层仍保留 openai 模型记忆。
+  assert.doesNotMatch(settings, /'OpenAI'/);
+  assert.match(settings, /OPENAI_PROVIDER/);
+  assert.match(settings, /openaiModel/);
   assert.match(settings, /ai_agent_provider_custom/);
   assert.match(settings, /loadAgentSettings/);
   assert.match(settings, /saveAgentSettings/);

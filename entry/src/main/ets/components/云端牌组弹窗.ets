@@ -180,17 +180,13 @@ export struct 云端牌组弹窗 {
             .fontSize(应用尺寸.字号_正文_小)
             .fontColor($r('app.color.text_secondary'))
             .width('100%')
-
-          Text($r('app.string.cloud_deck_reopen_hint'))
+        } else {
+          // 引导态的 message 已包含单机/直链说明，仅菜单重开态单独展示，避免重复。
+          Text($r('app.string.cloud_deck_offline_notice'))
             .fontSize(应用尺寸.字号_说明)
             .fontColor($r('app.color.text_tertiary'))
             .width('100%')
         }
-
-        Text($r('app.string.cloud_deck_offline_notice'))
-          .fontSize(应用尺寸.字号_说明)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
 
         Text($r('app.string.cloud_deck_qq_group_entry', '726837065'))
           .fontSize(应用尺寸.字号_说明)
@@ -267,17 +263,6 @@ export struct 云端牌组弹窗 {
         }
 
         Row({ space: 应用尺寸.间距_12 }) {
-          Button($r('app.string.cloud_deck_download', this.selectedIds.length))
-            .type(ButtonType.Normal)
-            .layoutWeight(1)
-            .height(应用尺寸.按钮高度)
-            .fontSize(应用尺寸.字号_正文)
-            .fontColor($r('app.color.action_on_primary'))
-            .backgroundColor(this.主色按钮背景)
-            .borderRadius(应用尺寸.圆角_面板)
-            .enabled(!this.busy && !this.loading && this.errorMessage.length === 0 && this.selectedIds.length > 0)
-            .onClick((): void => { this.onDownload(); })
-
           Button(this.主按钮文案())
             .type(ButtonType.Normal)
             .layoutWeight(1)
@@ -288,6 +273,17 @@ export struct 云端牌组弹窗 {
             .borderRadius(应用尺寸.圆角_面板)
             .enabled(!this.busy)
             .onClick((): void => { this.触发主按钮(); })
+
+          Button($r('app.string.cloud_deck_download', this.selectedIds.length))
+            .type(ButtonType.Normal)
+            .layoutWeight(1)
+            .height(应用尺寸.按钮高度)
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.action_on_primary'))
+            .backgroundColor(this.主色按钮背景)
+            .borderRadius(应用尺寸.圆角_面板)
+            .enabled(!this.busy && !this.loading && this.errorMessage.length === 0 && this.selectedIds.length > 0)
+            .onClick((): void => { this.onDownload(); })
         }
         .width('100%')
       }

@@ -49,3 +49,29 @@ test('light theme surface outputs remain unchanged', () => {
     ]
   );
 });
+
+test('light selected background is desaturated yet contrast compliant', () => {
+  const hsvSaturation = (hex) => {
+    const s = hex.replace('#', '');
+    const r = parseInt(s.slice(0, 2), 16) / 255;
+    const g = parseInt(s.slice(2, 4), 16) / 255;
+    const b = parseInt(s.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    return max === 0 ? 0 : ((max - min) / max) * 100;
+  };
+
+  for (const 主题 of 有色主题) {
+    const 色板 = 解析主题色板(主题, false);
+    // 华为 2.1.4.2：可交互控件活动状态背板 vs 卡片底（白）≥2.2:1 必须保住
+    assert.ok(对比度(色板.选中背景, '#FFFFFF') >= 2.2, `${主题} selected contrast ${色板.选中背景}`);
+    // 用户反馈修复：选中行不得再出现高饱和大色块（旧值 forest S84 / sunset S100）
+    assert.ok(hsvSaturation(色板.选中背景) <= 42, `${主题} selected saturation ${色板.选中背景}`);
+    // 选中背景必须比 主色容器 更柔和或相等（软化只降饱和/明度，不放大）
+    assert.ok(hsvSaturation(色板.选中背景) <= hsvSaturation(色板.主色容器) + 2, 主题);
+  }
+
+  // 明确回归锚点：两个曾被投诉主题的软化结果
+  assert.equal(解析主题色板('forest', false).选中背景, '#74bc83');
+  assert.equal(解析主题色板('sunset', false).选中背景, '#cca47e');
+});

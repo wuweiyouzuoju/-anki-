@@ -128,7 +128,9 @@ test('cloud deck modal presents selectable public decks, locked future decks and
   assert.match(source, /从菜单打开: boolean = false/);
   assert.match(source, /onSkip/);
   assert.match(source, /if \(!this\.从菜单打开\) \{/);
-  assert.match(source, /cloud_deck_reopen_hint/);
+  // 文案去重（用户反馈）：引导态 message 已含单机/直链说明，reopen_hint 不再渲染；
+  // 菜单重开态只显示 offline_notice，两个说明互斥不叠加。
+  assert.doesNotMatch(source, /cloud_deck_reopen_hint/);
   assert.match(source, /cloud_deck_offline_notice/);
   assert.doesNotMatch(source, /cloud_deck_manual_message/);
   assert.doesNotMatch(source, /onClose/);
@@ -185,7 +187,9 @@ test('cloud deck and import source strings are aligned and translated', () => {
     '获取你的牌组',
   );
   assert.equal(zhMap.get('cloud_deck_onboarding_message'),
-    '首次进入至少选择 1 个、最多选择 3 个牌组，下载后将自动导入。本次选择机会仅有一次，请按需选择。');
+    '首次进入牌组至少选择 1 个、最多选择 3 个。下载后将自动导入，本次选择机会仅有一次，请按需选择。'
+    + '可以选择稍后再说，之后从右上角「新建牌组」菜单里的「获取直链牌组」再次打开该界面。\n'
+    + '本项目属单机应用，牌组内容来自第三方直链获取。');
   assert.equal(zhMap.get('cloud_deck_qq_group_entry'),
     '更多牌组文件可前往官方 QQ 群 %s 免费下载（点击复制）');
   assert.equal(zhMap.get('cloud_deck_selection_limit'), '最多只能选择 %d 个牌组');

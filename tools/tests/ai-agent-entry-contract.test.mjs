@@ -61,6 +61,8 @@ test('AI composer uses resize keyboard avoidance so the whole input row stays vi
 test('unconfigured home AI entries route to the expanded AI settings group', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
   const home = read('entry/src/main/ets/pages/首页.ets');
+  const browser = read('entry/src/main/ets/pages/浏览页.ets');
+  const study = read('entry/src/main/ets/pages/学习页.ets');
   const settingsPage = read('entry/src/main/ets/pages/设置页.ets');
   const settingsPanel = read('entry/src/main/ets/components/设置面板.ets');
   assert.doesNotMatch(page, /private 配置区\(|ai_card_config|配置密钥输入|保存配置/);
@@ -93,6 +95,26 @@ test('unconfigured home AI entries route to the expanded AI settings group', () 
     .reduce((map, item) => ({ ...map, [item.name]: item.value }), {});
   assert.equal(zh.ai_agent_config_required, '请先完善AI配置');
   assert.equal(en.ai_agent_config_required, 'Complete AI configuration first');
+});
+
+test('unconfigured browser and study AI edit entries route to the same AI settings jump', () => {
+  const browser = read('entry/src/main/ets/pages/浏览页.ets');
+  const study = read('entry/src/main/ets/pages/学习页.ets');
+  for (const [name, source] of [['browser', browser], ['study', study]]) {
+    const entry = source.match(/private async 打开AI改卡\(\)[\s\S]*?\n  \}/)?.[0] ?? '';
+    assert.match(entry, /if \(!await this\.isAIConfigured\(\)\)[\s\S]*?this\.openAISettings\(\)/,
+      `${name} edit entry must gate on AI configuration before pushing AiCardPage`);
+    assert.match(source, /设置页参数\s*=\s*\{ openAiSettings:\s*true \}/, name);
+    assert.match(source, /name:\s*'SettingsPage'/, name);
+    assert.match(source, /loadAgentSettings/, name);
+    assert.match(source, /loadAgentSecret/, name);
+  }
+  // 浏览页跳设置不丢多选：未配置分支不得退出多选
+  const browserEntry = browser.match(/private async 打开AI改卡\(\)[\s\S]*?\n  \}/)?.[0] ?? '';
+  const gateIndex = browserEntry.indexOf('this.openAISettings()');
+  const exitIndex = browserEntry.indexOf('this.退出多选()');
+  assert.ok(gateIndex >= 0 && exitIndex > gateIndex,
+    'the unconfigured jump must not exit multi-select; it is only exited on the real edit push');
 });
 
 test('study current-card entry passes stable context and rerenders only that card on return', () => {

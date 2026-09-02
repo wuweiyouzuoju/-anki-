@@ -109,6 +109,9 @@ test('Agent composer shows per-file results and sends only successful parsed tex
   assert.match(composer, /\.alignItems\(VerticalAlign\.Top\)/);
   assert.equal(composer.match(/constraintSize\(\{ minWidth: 0 \}\)/g)?.length, 2);
   assert.equal(composer.match(/padding\(\{ left: 应用尺寸\.卡片内边距, right: 应用尺寸\.卡片内边距 \}\)/g)?.length, 2);
+  // 按钮不设固定宽：宽度由文案决定——解析态「…」窄于「导入」，
+  // 导入按钮恒为两字宽、与发送按钮等宽（用户反馈「解析中…」曾把导入按钮撑长）
+  assert.doesNotMatch(composer, /\.width\(应用尺寸\.按钮高度 \* 2/);
 });
 
 test('file-import messages exist in Chinese and English and state concrete parse failures', () => {
@@ -130,8 +133,9 @@ test('file-import messages exist in Chinese and English and state concrete parse
   assert.match(zhMap.get('ai_agent_file_too_large'), /20 MB/);
   assert.equal(zhMap.get('ai_agent_import_files'), '导入');
   assert.equal(enMap.get('ai_agent_import_files'), 'Import');
-  assert.equal(zhMap.get('ai_agent_file_parsing'), '解析中…');
-  assert.equal(enMap.get('ai_agent_file_parsing'), 'Parsing…');
+  // 解析态文案必须是窄于「导入」的单字符省略号：按钮宽度由「导入」决定，与发送按钮等宽
+  assert.equal(zhMap.get('ai_agent_file_parsing'), '…');
+  assert.equal(enMap.get('ai_agent_file_parsing'), '…');
   assert.equal(zhMap.has('ai_agent_file_supported_hint'), false);
   assert.equal(enMap.has('ai_agent_file_supported_hint'), false);
   assert.doesNotMatch(enMap.get('ai_agent_file_unsupported'), /[\u3400-\u9fff]/);

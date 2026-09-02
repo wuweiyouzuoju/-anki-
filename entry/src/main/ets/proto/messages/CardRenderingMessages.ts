@@ -28,7 +28,7 @@
 // ========================================================
 
 import { 协议读取器 } from '../core/ProtoReader';
-import { 协议写入器 } from '../core/ProtoWriter';
+import { 线类型_长度分隔, 协议写入器 } from '../core/ProtoWriter';
 
 export function encodeRenderExistingCardRequest(cardId: number): Uint8Array {
   const w = new 协议写入器();
@@ -246,7 +246,15 @@ function decode笔记空卡(bytes: Uint8Array): 笔记空卡 {
         out.笔记ID = r.读取64位整数();
         break;
       case 2:
-        out.卡片IDs.push(r.读取64位整数());
+        // repeated int64 card_ids：proto3 默认 packed（线类型 2），兼容旧 unpacked
+        if (tag.线类型 === 线类型_长度分隔) {
+          const packed: number[] = r.读取打包64位整数();
+          for (const cardId of packed) {
+            out.卡片IDs.push(cardId);
+          }
+        } else {
+          out.卡片IDs.push(r.读取64位整数());
+        }
         break;
       case 3:
         out.删除后无卡 = r.读取布尔();

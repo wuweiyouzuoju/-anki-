@@ -83,6 +83,13 @@ import { 颜色键 } from '../model/颜色主题';
 import { 加载主题模式 } from '../model/主题存储';
 import { 解析是否深色, 主题模式 } from '../model/主题设置';
 import type { AI制卡页参数 } from './AI制卡页';
+import type { 设置页参数 } from './设置页';
+import {
+  AgentSettings,
+  isAgentProviderConfigured,
+  loadAgentSettings
+} from '../backend/agent/AgentSettingsStore';
+import { loadAgentSecret } from '../backend/agent/AgentSecretStore';
 
 /** 浏览页阶段状态机：loading=加载中，list=列表展示，error=出错 */
 type 浏览阶段 = 'loading' | 'list' | 'error';
@@ -1489,9 +1496,15 @@ export struct 浏览页 {
     this.pathStack.pop();
   }
 
-  /** 把当前浏览模式下的稳定 ID 交给共享 AI 改卡页；打开本身不请求模型。 */
-  private 打开AI改卡(): void {
+  /** 把当前浏览模式下的稳定 ID 交给共享 AI 改卡页；打开本身不请求模型。
+   *  未配置 AI 时与首页同款跳转：直接进入设置并展开 AI 智能体分组；
+   *  不退出多选，配置完成返回后可原样再点 AI 改卡。 */
+  private async 打开AI改卡(): Promise<void> {
     if (this.选中ID列表.length === 0) { return; }
+    if (!await this.isAIConfigured()) {
+      this.openAISettings();
+      return;
+    }
     const params: AI制卡页参数 = {
       mode: 'edit', deckId: this.pageDeckId, deckName: '', deckOptions: [], templateIdx: -1,
       cardIds: this.浏览模式值 === 'cards' ? this.选中ID列表.slice() : [],
@@ -1502,6 +1515,23 @@ export struct 浏览页 {
       name: 'AiCardPage', param: params,
       onPop: (): void => { this.执行搜索(); }
     });
+  }
+
+  /** Agent 入口配置预检（与首页同款）；读取失败按未配置处理。 */
+  private async isAIConfigured(): Promise<boolean> {
+    try {
+      const settings: AgentSettings = await loadAgentSettings();
+      const secret: string = await loadAgentSecret(settings.selectedProvider);
+      return isAgentProviderConfigured(settings, secret);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /** 未配置时从浏览页直接进入设置，并展开 AI 智能体分组。 */
+  private openAISettings(): void {
+    const params: 设置页参数 = { openAiSettings: true };
+    this.pathStack.pushPath({ name: 'SettingsPage', param: params });
   }
 
   /** 顶栏选中计数：使用可变长字符串，让两位及以上数量自然撑宽同款按钮。 */

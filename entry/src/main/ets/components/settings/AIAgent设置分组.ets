@@ -11,6 +11,8 @@ import {
 } from '../../backend/agent/AgentSettingsStore';
 import { loadAgentSecret, saveAgentSecret } from '../../backend/agent/AgentSecretStore';
 import { 应用尺寸 } from '../../utils/应用尺寸';
+import { 设置面板色板_取 } from '../../utils/设置面板配色';
+import { 颜色键 } from '../../model/颜色主题';
 import { 设置分组卡片 } from './设置分组卡片';
 
 interface SelectItem { value: string; }
@@ -32,6 +34,16 @@ export struct AIAgent设置分组 {
   @State private saving: boolean = false;
   @State private message: string = '';
 
+  // 与 同步分组 登录按钮同款机制：@StorageLink 主色随颜色主题即时刷新，
+  // @StorageProp('themeMode') 兜底 aurora 等深浅同色主题的切换重渲染。
+  @StorageLink(颜色键.主色按钮背景) private 主色按钮背景链接: string = '';
+  @StorageProp('themeMode') private 主题模式监听: string = 'system';
+
+  /** 按钮背景专用主色（配 #FFFFFF 文字 ≥ 4.5:1）。与 同步分组.解析主色按钮背景 同款。 */
+  private 解析主色按钮背景(): string {
+    return this.主色按钮背景链接 !== '' ? this.主色按钮背景链接 : 设置面板色板_取(this.是否深色).主色按钮背景;
+  }
+
   async aboutToAppear(): Promise<void> {
     const settings: AgentSettings = await loadAgentSettings();
     this.provider = settings.selectedProvider;
@@ -51,19 +63,18 @@ export struct AIAgent设置分组 {
     try { return context.resourceManager.getStringSync(resource.id); } catch (error) { return ''; }
   }
 
-  private providerIndex(): number { return this.provider === 'deepseek' ? 0 : (this.provider === 'openai' ? 1 : 2); }
+  // UI 隐藏 OpenAI 选项：下拉仅展示 DeepSeek / 自定义两档；历史存档为 openai 时按 DeepSeek 档显示。
+  private providerIndex(): number { return this.provider === 'custom' ? 1 : 0; }
   private modelIndex(): number {
-    const models: string[] = this.provider === 'deepseek' ? DEEPSEEK_PROVIDER.models : OPENAI_PROVIDER.models;
-    const current: string = this.provider === 'deepseek' ? this.deepseekModel : this.openaiModel;
-    const index: number = models.indexOf(current);
+    const models: string[] = DEEPSEEK_PROVIDER.models;
+    const index: number = models.indexOf(this.deepseekModel);
     return index < 0 ? 0 : index;
   }
   private modelOptions(): SelectItem[] {
-    const models: string[] = this.provider === 'deepseek' ? DEEPSEEK_PROVIDER.models : OPENAI_PROVIDER.models;
-    return models.map((value: string): SelectItem => ({ value: value }));
+    return DEEPSEEK_PROVIDER.models.map((value: string): SelectItem => ({ value: value }));
   }
   private async switchProvider(index: number): Promise<void> {
-    this.provider = index === 0 ? 'deepseek' : (index === 1 ? 'openai' : 'custom');
+    this.provider = index === 0 ? 'deepseek' : 'custom';
     this.secret = await loadAgentSecret(this.provider);
     this.message = '';
   }
@@ -102,22 +113,20 @@ export struct AIAgent设置分组 {
       Column({ space: 应用尺寸.间距_10 }) {
           Row() {
             Text($r('app.string.ai_agent_provider')).layoutWeight(1)
-            Select([{ value: 'DeepSeek' }, { value: 'OpenAI' },
+            Select([{ value: 'DeepSeek' },
               { value: this.getString($r('app.string.ai_agent_provider_custom')) }])
-              .selected(this.providerIndex()).value(this.provider === 'deepseek' ? 'DeepSeek' :
-                (this.provider === 'openai' ? 'OpenAI' :
-                  this.getString($r('app.string.ai_agent_provider_custom'))))
+              .selected(this.providerIndex())
+              .value(this.provider === 'custom' ?
+                this.getString($r('app.string.ai_agent_provider_custom')) : 'DeepSeek')
               .onSelect((index: number): void => { this.switchProvider(index); })
           }.width('100%')
           if (this.provider !== 'custom') {
             Row() {
               Text($r('app.string.ai_card_model')).layoutWeight(1)
               Select(this.modelOptions()).selected(this.modelIndex())
-                .value(this.provider === 'deepseek' ? this.deepseekModel : this.openaiModel)
+                .value(this.deepseekModel)
                 .onSelect((index: number): void => {
-                  const models: string[] = this.provider === 'deepseek' ? DEEPSEEK_PROVIDER.models : OPENAI_PROVIDER.models;
-                  if (this.provider === 'deepseek') { this.deepseekModel = models[index]; }
-                  else { this.openaiModel = models[index]; }
+                  this.deepseekModel = DEEPSEEK_PROVIDER.models[index];
                 })
             }.width('100%')
           } else {
@@ -150,22 +159,24 @@ export struct AIAgent设置分组 {
             .borderRadius(应用尺寸.圆角_面板)
             .padding({ left: 应用尺寸.间距_10, right: 应用尺寸.间距_10 })
             .onChange((value: string): void => { this.secret = value; })
-          Row() {
-            Text($r('app.string.ai_agent_search_mode')).layoutWeight(1)
-            Select([{ value: this.getString($r('app.string.ai_agent_search_auto')) },
-              { value: this.getString($r('app.string.ai_agent_search_always')) },
-              { value: this.getString($r('app.string.ai_agent_search_off')) }])
-              .selected(this.searchMode === 'auto' ? 0 : (this.searchMode === 'always' ? 1 : 2))
-              .onSelect((index: number): void => { this.searchMode = index === 0 ? 'auto' : (index === 1 ? 'always' : 'off'); })
-          }.width('100%')
+          // 联网搜索模式选项按需求在 UI 上隐藏；searchMode 状态仍随存档原样保存。
           Row() {
             Text($r('app.string.ai_agent_batch_limit')).layoutWeight(1)
             Select([{ value: '100' }, { value: '250' }, { value: '500' }, { value: '1000' }])
               .selected(this.batchLimit === 100 ? 0 : (this.batchLimit === 250 ? 1 : (this.batchLimit === 500 ? 2 : 3)))
               .onSelect((index: number): void => { this.batchLimit = [100, 250, 500, 1000][index]; })
           }.width('100%')
+          // 按钮规格与 同步分组 AnkiWeb 登录按钮统一（44 高 / 15 号字 / 白字 / 圆角 22 / 忙态 0.6 透明度）。
           Button(this.saving ? $r('app.string.ai_card_generating') : $r('app.string.ai_card_save_config'))
-            .width('100%').enabled(!this.saving).onClick((): void => { this.save(); })
+            .width('100%')
+            .height(44)
+            .fontSize(15)
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.解析主色按钮背景())
+            .borderRadius(22)
+            .enabled(!this.saving)
+            .opacity(this.saving ? 0.6 : 1)
+            .onClick((): void => { this.save(); })
           if (this.message !== '') { Text(this.message).fontSize(12).fontColor($r('app.color.text_secondary')) }
       }
       .padding({ bottom: 应用尺寸.间距_12 }).width('100%')

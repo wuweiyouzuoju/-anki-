@@ -57,6 +57,13 @@ import { CustomTransition } from '../utils/自定义转场';
 // KeyCode 枚举：用于 onKeyPreIme 键盘事件判断（API 12+）。物理键盘/蓝牙键盘/2in1 设备统一派发。
 import { KeyCode } from '@kit.InputKit';
 import type { AI制卡页参数 } from './AI制卡页';
+import type { 设置页参数 } from './设置页';
+import {
+  AgentSettings,
+  isAgentProviderConfigured,
+  loadAgentSettings
+} from '../backend/agent/AgentSettingsStore';
+import { loadAgentSecret } from '../backend/agent/AgentSecretStore';
 
 /** 与上游 buildNextLearnMsg 一致：下一张学习卡 >=1 天后到期时，完成页不再提示学习卡 */
 const SECONDS_PER_DAY: number = 86400;
@@ -488,9 +495,15 @@ export struct 学习页 {
     return 菜单;
   }
 
-  /** 当前卡只作为本地入口上下文；打开页面不会触发任何 AI 网络请求。 */
-  private 打开AI改卡(): void {
+  /** 当前卡只作为本地入口上下文；打开页面不会触发任何 AI 网络请求。
+   *  未配置 AI 时与首页同款跳转：直接进入设置并展开 AI 智能体分组；
+   *  学习进度不动，配置完成返回后可原样再从菜单进入。 */
+  private async 打开AI改卡(): Promise<void> {
     if (this.当前卡片 === null) { return; }
+    if (!await this.isAIConfigured()) {
+      this.openAISettings();
+      return;
+    }
     const params: AI制卡页参数 = {
       mode: 'edit',
       deckId: String(this.当前卡片.deckId),
@@ -504,6 +517,23 @@ export struct 学习页 {
       name: 'AiCardPage', param: params,
       onPop: (): void => { this.刷新AI改卡后当前卡(); }
     });
+  }
+
+  /** Agent 入口配置预检（与首页同款）；读取失败按未配置处理。 */
+  private async isAIConfigured(): Promise<boolean> {
+    try {
+      const settings: AgentSettings = await loadAgentSettings();
+      const secret: string = await loadAgentSecret(settings.selectedProvider);
+      return isAgentProviderConfigured(settings, secret);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /** 未配置时从学习页直接进入设置，并展开 AI 智能体分组。 */
+  private openAISettings(): void {
+    const params: 设置页参数 = { openAiSettings: true };
+    this.pathStack.pushPath({ name: 'SettingsPage', param: params });
   }
 
   /** 只重渲染同一张卡；不重新取队列、不评分、不埋藏或暂停。 */

@@ -38,7 +38,7 @@
 // ========================================================
 
 /** HSV 颜色（色相:0-360, 饱和度:0-100, 明度:0-100）。 */
-interface HSV颜色 {
+export interface HSV颜色 {
   色相: number;
   饱和度: number;
   明度: number;
@@ -84,7 +84,7 @@ export interface 完整色阶 {
 
 // ===== Hex / RGB / HSV 互转（无依赖纯函数） =====
 
-function 十六进制转RGB(hex: string): [number, number, number] {
+export function 十六进制转RGB(hex: string): [number, number, number] {
   let 规范化: string = hex.trim();
   if (规范化.startsWith('#')) {
     规范化 = 规范化.slice(1);
@@ -99,7 +99,7 @@ function 十六进制转RGB(hex: string): [number, number, number] {
   return [r, g, b];
 }
 
-function RGB转十六进制(r: number, g: number, b: number): string {
+export function RGB转十六进制(r: number, g: number, b: number): string {
   const 转换 = (n: number): string => {
     const 限定: number = Math.max(0, Math.min(255, Math.round(n)));
     const s: string = 限定.toString(16);
@@ -174,7 +174,7 @@ function 选取白字达标档索引(色阶: 色阶数组, 起始索引: number)
   return 色阶.length - 1;
 }
 
-function RGB转HSV(r: number, g: number, b: number): HSV颜色 {
+export function RGB转HSV(r: number, g: number, b: number): HSV颜色 {
   const rf: number = r / 255;
   const gf: number = g / 255;
   const bf: number = b / 255;
@@ -200,7 +200,7 @@ function RGB转HSV(r: number, g: number, b: number): HSV颜色 {
   return { 色相: h, 饱和度: s, 明度: v };
 }
 
-function HSV转RGB(h: number, s: number, v: number): [number, number, number] {
+export function HSV转RGB(h: number, s: number, v: number): [number, number, number] {
   const sf: number = s / 100;
   const vf: number = v / 100;
   const c: number = vf * sf;
