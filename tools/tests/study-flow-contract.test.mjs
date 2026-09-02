@@ -38,6 +38,7 @@ const MEDIA_HELPER = 'entry/src/main/ets/utils/媒体响应助手.ets';
 const INDEX_PAGE = 'entry/src/main/ets/pages/首页.ets';
 const MAIN_PAGES = 'entry/src/main/resources/base/profile/main_pages.json';
 const STRINGS = 'entry/src/main/resources/base/element/string.json';
+const AI_PAGE = 'entry/src/main/ets/pages/AI制卡页.ets';
 
 test('scheduler service walks the study queue contract', () => {
   const service = read(SCHEDULER);
@@ -292,6 +293,38 @@ test('study strings are resourced', () => {
   assert.match(page, /app\.string\.study_show_answer/);
   assert.match(page, /app\.string\.study_finish_title/);
   assert.match(page, /app\.string\.study_load_error/);
+});
+
+test('study page re-renders the current card after an Agent edit', () => {
+  // 回归：改卡返回学习页后仍显示旧卡片。根因是刷新只挂在 NavPathStack.onPop 上，
+  // 而 onPop 在本项目已知偶发不触发（BUG-006 同类）。现在要求双通道：
+  // AI 页广播 cardContentChangedTick + NavDestination.onShown 消费。
+  const page = read(STUDY_PAGE);
+  const ai = read(AI_PAGE);
+
+  // 通道一：改卡写入成功后广播；学习页用 @StorageLink + @Watch 接收。
+  assert.match(ai,
+    /if \(this\.pageMode === 'edit'\) \{\s*AppStorage\.setOrCreate<number>\('cardContentChangedTick', Date\.now\(\)\);\s*\}/,
+    'the Agent page must broadcast card content changes in edit mode only');
+  assert.match(page, /@StorageLink\('cardContentChangedTick'\) @Watch\('卡片内容变更_回调'\)/,
+    'study page must watch the Agent edit broadcast');
+
+  // 通道二：NavDestination 回到前台时消费（onPageShow 只对 @Entry 生效，必须用 onShown）。
+  assert.match(page, /\.onShown\(\(\): void => \{[\s\S]{0,200}?消费待重渲染\(\)/);
+  assert.match(page, /\.onHidden\(\(\): void => \{[\s\S]{0,120}?页面已显示 = false/);
+
+  // 多通道只允许刷新一次：onPop 与 @Watch 都只置位，渲染 RPC 由 消费待重渲染 统一发起。
+  assert.match(page, /onPop[\s\S]{0,120}?待重渲染当前卡 = true/);
+  assert.match(page, /private 消费待重渲染\(\): void \{[\s\S]{0,200}?待重渲染当前卡 = false;\s*this\.刷新AI改卡后当前卡\(\);/);
+  assert.equal((page.match(/this\.刷新AI改卡后当前卡\(\)/g) ?? []).length, 1,
+    'only 消费待重渲染 may fire the re-render; double firing wastes a render RPC');
+
+  // 重渲染只换当前卡内容：不重新取队列、不评分、不埋藏、不暂停。
+  const refresh = page.match(/private async 刷新AI改卡后当前卡\(\)[\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.match(refresh, /渲染既有卡片\(this\.当前卡片\.cardId\)/);
+  assert.match(refresh, /loadData\(html, 'text\/html', 'UTF-8', 媒体基地址, ' '\)/);
+  assert.doesNotMatch(refresh, /加载下一张卡\(|this\.评分\(|埋藏或暂停/,
+    'refresh must only re-render the current card');
 });
 
 test('counts for deck today decodes new and review tallies', () => {

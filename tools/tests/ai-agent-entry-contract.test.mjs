@@ -336,3 +336,20 @@ test('all successful and failed tool calls use one typed detail view collapsed b
     assert.equal(typeof en[key], 'string', key);
   }
 });
+
+test('Agent writes broadcast both refresh ticks with disjoint scopes', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  const block = page.match(/private 记录执行结果\([\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.ok(block.length > 0, '记录执行结果 must exist');
+  assert.match(block, /if \(result\.succeeded > 0\)/, 'only successful writes may broadcast');
+  assert.match(block, /AppStorage\.setOrCreate<number>\('noteAddedTick', Date\.now\(\)\)/,
+    'home counts refresh on every successful Agent write');
+  assert.match(block,
+    /if \(this\.pageMode === 'edit'\) \{\s*AppStorage\.setOrCreate<number>\('cardContentChangedTick', Date\.now\(\)\);\s*\}/,
+    'card content tick is edit-only: creating notes must not re-render the study card');
+  assert.doesNotMatch(block, /cardContentChangedTick[\s\S]{0,80}pageMode !== 'edit'/);
+
+  const saveBlock = page.match(/private async 保存单卡\([\s\S]*?\n  \}/)?.[0] ?? '';
+  assert.doesNotMatch(saveBlock, /cardContentChangedTick/,
+    'the legacy create path must not raise the card content tick');
+});

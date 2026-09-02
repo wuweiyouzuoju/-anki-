@@ -1262,7 +1262,14 @@ export struct AI制卡页 {
       succeeded: result.succeeded, failed: result.failed
     });
     this.保存当前会话历史();
-    if (result.succeeded > 0) { AppStorage.setOrCreate<number>('noteAddedTick', Date.now()); }
+    if (result.succeeded > 0) {
+      AppStorage.setOrCreate<number>('noteAddedTick', Date.now());
+      // 改卡：广播卡片内容变更，让仍留在栈里的学习页重渲染当前卡。
+      // 与 noteAddedTick 分开——新建笔记不改变当前卡内容，不该触发学习页重渲染。
+      if (this.pageMode === 'edit') {
+        AppStorage.setOrCreate<number>('cardContentChangedTick', Date.now());
+      }
+    }
   }
 
   private 记录草稿错误(messageIndex: number, error: Object): void {

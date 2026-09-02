@@ -139,6 +139,14 @@ export struct 学习页 {
   @StorageLink(TapZones开关AppStorage键) private TapZones开关: boolean = false;
   /** 手写模式：用户点「更多」菜单「手写」进入后置 true，关闭白板层后置 false（常驻入口，无开关） */
   @State private 手写模式: boolean = false;
+  /** Agent 改卡写入成功后 AI制卡页 广播本键（Date.now()），本页据此重渲染当前卡。
+   *  双通道之一：NavPathStack.onPop 在本项目已知偶发不触发（BUG-006 同类），
+   *  只挂 onPop 时改卡返回学习页会停在旧卡片上。与 onShown 并存，两者只消费一次。 */
+  @StorageLink('cardContentChangedTick') @Watch('卡片内容变更_回调') private 卡片内容变更信号: number = 0;
+  /** 已收到变更信号但尚未重渲染；页面隐藏时先累积，回到前台由 onShown 统一消费。 */
+  private 待重渲染当前卡: boolean = false;
+  /** 本 NavDestination 是否在前台（onShown / onHidden 维护）；隐藏时不向 Web 推数据。 */
+  private 页面已显示: boolean = false;
   @State private 主题模式值: 主题模式 = 'system';
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.动作主色按下) private 动作主色按下色: string = '#1E4FB8';
@@ -515,7 +523,9 @@ export struct 学习页 {
     };
     this.pathStack.pushPath({
       name: 'AiCardPage', param: params,
-      onPop: (): void => { this.刷新AI改卡后当前卡(); }
+      // 只置位不直接刷新：真正重渲染统一由 onShown 消费，
+      // 避免 onPop 与 AppStorage 广播同时命中时对同一张卡重复发渲染 RPC。
+      onPop: (): void => { this.待重渲染当前卡 = true; }
     });
   }
 
@@ -536,6 +546,23 @@ export struct 学习页 {
     this.pathStack.pushPath({ name: 'SettingsPage', param: params });
   }
 
+  /** 卡片内容变更广播回调（@Watch）：改卡写入成功即置位。
+   *  页面在前台则立刻重渲染；被 AI 页盖住时只置位，等 onShown 再消费。 */
+  private 卡片内容变更_回调(): void {
+    if (this.卡片内容变更信号 <= 0) { return; }
+    this.待重渲染当前卡 = true;
+    if (this.页面已显示) {
+      this.消费待重渲染();
+    }
+  }
+
+  /** 消费一次待重渲染标记。onShown 与 @Watch 共用，保证多通道命中只刷新一次。 */
+  private 消费待重渲染(): void {
+    if (!this.待重渲染当前卡) { return; }
+    this.待重渲染当前卡 = false;
+    this.刷新AI改卡后当前卡();
+  }
+
   /** 只重渲染同一张卡；不重新取队列、不评分、不埋藏或暂停。 */
   private async 刷新AI改卡后当前卡(): Promise<void> {
     if (this.当前卡片 === null || (this.阶段 !== 'question' && this.阶段 !== 'answer')) { return; }
@@ -545,8 +572,12 @@ export struct 学习页 {
       this.背面HTML = 构建卡片HTML(this.已渲染, 'answer');
       const html: string = this.阶段 === 'answer' ? this.背面HTML : this.正面HTML;
       this.网页控制器.loadData(html, 'text/html', 'UTF-8', 媒体基地址, ' ');
+      hilog.info(0x4342, '学习页', `Agent 改卡后已重渲染当前卡 cardId=${this.当前卡片.cardId}`);
     } catch (error) {
-      this.错误详情 = error instanceof Error ? error.message : `${error}`;
+      // 改卡草稿可能把当前卡移出牌组或删除，重渲染失败时保留原画面，不打断学习；
+      // 错误详情只在 error 阶段渲染，这里写它用户看不到，只落 hilog。
+      hilog.error(0x4342, '学习页',
+        `Agent 改卡后重渲染当前卡失败: ${error instanceof Error ? error.message : `${error}`}`);
     }
   }
 
@@ -1586,5 +1617,14 @@ export struct 学习页 {
     }
     .hideTitleBar(true)
     .opacity(this.转场透明度)
+    // 从 AI 改卡页 pop 返回时重渲染当前卡。onPageShow 只对 @Entry 路由页生效，
+    // NavDestination 必须用 onShown（与 学习提醒页 同款）；这是比 onPop 可靠的通道。
+    .onShown((): void => {
+      this.页面已显示 = true;
+      this.消费待重渲染();
+    })
+    .onHidden((): void => {
+      this.页面已显示 = false;
+    })
   }
 }
