@@ -41,7 +41,7 @@ test('conversation can begin without a deck/type, but still requires text and pr
 test('open clarification accepts a free-text-only answer and rejects no-answer forms', () => {
   const request = decodeAgentClarificationRequest(JSON.stringify({ clarificationId: 'goal', question: '你准备什么考试？',
     options: [], allowFreeText: true }));
-  const view = { request, selectedOptionId: '', supplementalText: '', state: 'pending', expanded: true };
+  const view = { request, selectedOptionId: '', supplementalText: '', state: 'pending' };
   assert.equal(canAnswerClarification(view), false);
   assert.equal(canAnswerClarification({ ...view, supplementalText: '四级' }), true);
   assert.throws(() => decodeAgentClarificationRequest(JSON.stringify({ ...request, clarificationId: 'goal', allowFreeText: false })));

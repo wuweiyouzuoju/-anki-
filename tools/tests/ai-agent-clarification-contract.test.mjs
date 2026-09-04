@@ -90,7 +90,7 @@ test('clarification decoder trims accepted values and clones nested options', ()
     recommendedOptionId: 'one', allowFreeText: false,
   });
   const view = cloneAgentClarificationView({
-    request, selectedOptionId: 'one', supplementalText: 'because', state: 'pending', expanded: true,
+    request, selectedOptionId: 'one', supplementalText: 'because', state: 'pending',
   });
   view.request.options[0].label = 'changed';
   assert.equal(request.options[0].label, 'One');

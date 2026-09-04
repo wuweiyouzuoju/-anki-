@@ -68,8 +68,11 @@ test('clarification is a separate assistant bubble with explicit continuation', 
   assert.match(page, /state = 'submitting'/);
   assert.match(page, /state = 'resolved'/);
   assert.match(page, /state = 'submit_failed'/);
-  assert.match(page, /expanded = false/);
-  assert.match(card, /AgentDisclosureCard/);
+  assert.doesNotMatch(card, /AgentDisclosureCard|onToggle|statusText|expanded/);
+  assert.doesNotMatch(page, /toggleClarification|clarificationStatusText/);
+  assert.match(card, /if \(this\.isEditable\(\)\) \{ this\.answerControls\(\); \}/);
+  assert.match(card, /parseAgentBoldRuns\(this\.clarification\.request\.question\)/);
+  assert.match(page, /buildClarificationAnswerVisibleText\(answer\)/);
   assert.match(card, /ai_agent_clarification_continue/);
 });
 
@@ -81,7 +84,7 @@ test('composer readiness and clarification lifecycle remain controlled by the pa
   assert.match(page, /hasPendingClarification\(\)/);
   assert.match(page, /answerMessageId/);
   assert.match(page, /existingUserMessageId/);
-  assert.match(page, /updateClarificationState/);
+  assert.match(page, /continueClarification/);
 });
 
 test('every assistant reply bubble ends with the AI-generated disclaimer', () => {
@@ -100,4 +103,14 @@ test('every assistant reply bubble ends with the AI-generated disclaimer', () =>
     .reduce((map, item) => ({ ...map, [item.name]: item.value }), {});
   assert.equal(zh.ai_agent_generated_disclaimer, '（回复由AI生成，请谨慎判断）');
   assert.equal(en.ai_agent_generated_disclaimer, '(AI-generated reply. Please verify.)');
+});
+
+// 澄清仍进入协议和审计；呈现层不能重复显示工具行或留下空白气泡。
+test('clarification traces stay in history but are excluded from visible tool rows', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  assert.match(page, /工具过程\.some\([\s\S]*?trace\.toolName !== 'request_clarification'/);
+  assert.match(page, /if \(_trace\.toolName !== 'request_clarification'\) \{\s*this\.工具过程项/);
+  assert.match(page, /else if \(this\.hasVisibleAssistantContent\(this\.消息列表\[消息索引\]\)\)/);
+  assert.match(page, /for \(const item of message\.工具过程\) \{ audits\.push/);
+  assert.match(page, /restored\[auditTarget\]\.工具过程\.push/);
 });

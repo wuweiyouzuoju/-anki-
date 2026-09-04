@@ -31,7 +31,6 @@ export interface AgentClarificationView {
   selectedOptionId: string;
   supplementalText: string;
   state: AgentClarificationState;
-  expanded: boolean;
 }
 
 interface RawClarificationOption {
@@ -129,7 +128,7 @@ export function cloneAgentClarificationView(value: AgentClarificationView): Agen
       recommendedOptionId: value.request.recommendedOptionId, allowFreeText: value.request.allowFreeText
     },
     selectedOptionId: value.selectedOptionId, supplementalText: value.supplementalText,
-    state: value.state, expanded: value.expanded
+    state: value.state
   };
 }
 

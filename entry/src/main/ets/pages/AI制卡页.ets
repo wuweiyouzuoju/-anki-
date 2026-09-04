@@ -52,7 +52,6 @@ import type {
   AgentClarificationAnswer,
   AgentClarificationOption,
   AgentClarificationRequest,
-  AgentClarificationState,
   AgentClarificationView
 } from '../model/agent/AgentClarification';
 import {
@@ -1119,21 +1118,10 @@ export struct AI制卡页 {
     message.kind = 'clarification';
     message.clarification = {
       request: request, selectedOptionId: '', supplementalText: '',
-      state: 'pending', expanded: true
+      state: 'pending'
     };
     message.expanded = true;
     this.追加消息(message);
-  }
-
-  private updateClarificationState(messageIndex: number, state: AgentClarificationState,
-    expanded: boolean): void {
-    this.更新消息(messageIndex, (message: 聊天消息): void => {
-      if (message.clarification !== null) {
-        message.clarification.state = state;
-        message.clarification.expanded = expanded;
-        message.expanded = expanded;
-      }
-    });
   }
 
   private selectClarificationOption(messageIndex: number, optionId: string): void {
@@ -1154,29 +1142,6 @@ export struct AI制卡页 {
     });
   }
 
-  private toggleClarification(messageIndex: number): void {
-    this.更新消息(messageIndex, (message: 聊天消息): void => {
-      if (message.clarification !== null &&
-        (message.clarification.state === 'resolved' || message.clarification.state === 'cancelled')) {
-        message.clarification.expanded = !message.clarification.expanded;
-        message.expanded = message.clarification.expanded;
-      }
-    });
-  }
-
-  private clarificationStatusText(view: AgentClarificationView): ResourceStr {
-    if (view.state === 'submitting') { return $r('app.string.ai_agent_clarification_submitting'); }
-    if (view.state === 'resolved') {
-      const selected: AgentClarificationOption | undefined = view.request.options.find(
-        (item: AgentClarificationOption): boolean => item.id === view.selectedOptionId);
-      return this.取本地化格式($r('app.string.ai_agent_clarification_resolved_summary'),
-        [selected === undefined ? '' : selected.label]);
-    }
-    if (view.state === 'submit_failed') { return $r('app.string.ai_agent_clarification_submit_failed'); }
-    if (view.state === 'cancelled') { return $r('app.string.ai_agent_clarification_cancelled'); }
-    return $r('app.string.ai_agent_clarification_waiting');
-  }
-
   private async continueClarification(messageIndex: number): Promise<void> {
     const source: AgentClarificationView | null = this.消息列表[messageIndex].clarification;
     if (source === null || !canAnswerClarification(source) || this.处理中) { return; }
@@ -1186,7 +1151,6 @@ export struct AI制卡页 {
     this.更新消息(messageIndex, (message: 聊天消息): void => {
       if (message.clarification !== null) {
         message.clarification.state = 'submitting';
-        message.clarification.expanded = true;
       }
     });
     const answer: AgentClarificationAnswer = {
@@ -1213,7 +1177,6 @@ export struct AI制卡页 {
         this.更新消息(messageIndex, (message: 聊天消息): void => {
           if (message.clarification !== null) {
             message.clarification.state = 'submit_failed';
-            message.clarification.expanded = true;
           }
         });
       }
@@ -1223,7 +1186,6 @@ export struct AI制卡页 {
     this.更新消息(messageIndex, (message: 聊天消息): void => {
       if (message.clarification !== null) {
         message.clarification.state = 'resolved';
-        message.clarification.expanded = false;
         message.expanded = false;
       }
     });
@@ -1241,7 +1203,6 @@ export struct AI制卡页 {
         this.更新消息(index, (message: 聊天消息): void => {
           if (message.clarification !== null) {
             message.clarification.state = 'cancelled';
-            message.clarification.expanded = false;
             message.expanded = false;
           }
         });
@@ -1571,7 +1532,7 @@ export struct AI制卡页 {
             kind: message.kind,
             action: message.action ?? undefined,
             clarification: message.clarification === null ? null : cloneAgentClarificationView(message.clarification),
-            expanded: message.clarification === null ? message.expanded : message.clarification.expanded
+            expanded: message.expanded
           });
           if (message.角色 === 'user' && title === defaultTitle) {
             title = message.正文.slice(0, 40);
@@ -1709,7 +1670,6 @@ export struct AI制卡页 {
         this.更新消息(index, (message: 聊天消息): void => {
           if (message.clarification !== null) {
             message.clarification.state = 'cancelled';
-            message.clarification.expanded = false;
             message.expanded = false;
             message.taskStatus = reason;
           }
@@ -2283,16 +2243,19 @@ export struct AI制卡页 {
         }
   }
 
+  /** 澄清由独立问题消息呈现；隐藏重复工具记录后，不留下空白回复气泡。 */
+  private hasVisibleAssistantContent(message: 聊天消息): boolean {
+    return message.正文.length > 0 || message.推理摘要.length > 0 ||
+      message.来源列表.length > 0 || message.卡片列表.length > 0 ||
+      message.变更草稿列表.length > 0 || message.action !== null ||
+      message.taskStatus === 'paused' || message.批次结果.length > 0 ||
+      message.工具过程.some((trace: AgentToolTrace): boolean => trace.toolName !== 'request_clarification');
+  }
+
   @Builder
   private AI气泡(消息索引: number) {
     Row() {
       Column({ space: 应用尺寸.间距_10 }) {
-        if (this.消息列表[消息索引].taskStatus === 'waiting') {
-          Text($r('app.string.ai_agent_clarification_waiting'))
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor($r('app.color.text_secondary'))
-            .width('100%')
-        }
         if (this.消息列表[消息索引].推理摘要 !== '') {
           Text(this.消息列表[消息索引].reasoningIsSummary ? $r('app.string.ai_agent_reasoning_summary') : $r('app.string.ai_agent_reasoning_process'))
             .fontSize(应用尺寸.字号_正文_小).fontWeight(FontWeight.Medium)
@@ -2313,10 +2276,13 @@ export struct AI制卡页 {
             ? $r('app.color.error_text') : $r('app.color.text_primary'))
           .width('100%')
 
-        if (this.消息列表[消息索引].工具过程.length > 0) {
+        if (this.消息列表[消息索引].工具过程.some((trace: AgentToolTrace): boolean =>
+          trace.toolName !== 'request_clarification')) {
           Text($r('app.string.ai_agent_tool_process')).fontSize(应用尺寸.字号_正文_小).fontWeight(FontWeight.Medium)
           ForEach(this.消息列表[消息索引].工具过程, (_trace: AgentToolTrace, index: number) => {
-            this.工具过程项(消息索引, index)
+            if (_trace.toolName !== 'request_clarification') {
+              this.工具过程项(消息索引, index)
+            }
           }, (trace: AgentToolTrace, index: number): string => `${index}-${trace.callId}-${trace.status}`)
         }
         if (this.消息列表[消息索引].来源列表.length > 0) {
@@ -2409,15 +2375,12 @@ export struct AI制卡页 {
     if (this.消息列表[messageIndex].clarification !== null) {
       AgentClarificationCard({
         clarification: this.消息列表[messageIndex].clarification!,
-        statusText: this.消息列表[messageIndex].taskStatus.length > 0 ?
-          this.消息列表[messageIndex].taskStatus :
-          this.clarificationStatusText(this.消息列表[messageIndex].clarification!),
+        noticeText: this.消息列表[messageIndex].taskStatus,
         onOptionSelected: (id: string): void => { this.selectClarificationOption(messageIndex, id); },
         onSupplementChanged: (value: string): void => {
           this.updateClarificationSupplement(messageIndex, value);
         },
-        onContinue: (): void => { this.continueClarification(messageIndex); },
-        onToggle: (): void => { this.toggleClarification(messageIndex); }
+        onContinue: (): void => { this.continueClarification(messageIndex); }
       })
     }
   }
@@ -2457,7 +2420,7 @@ export struct AI制卡页 {
             this.用户气泡(消息索引)
           } else if (this.消息列表[消息索引].kind === 'clarification') {
             this.clarificationBubble(消息索引)
-          } else {
+          } else if (this.hasVisibleAssistantContent(this.消息列表[消息索引])) {
             this.AI气泡(消息索引)
           }
         }, (消息: 聊天消息): string => `msg-${消息.id}`)

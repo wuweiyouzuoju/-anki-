@@ -4,17 +4,17 @@ import type { AgentClarificationOption, AgentClarificationView } from '../../mod
 import { canAnswerClarification } from '../../model/agent/AgentClarification';
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 颜色键 } from '../../model/颜色主题';
-import { AgentDisclosureCard } from './AgentDisclosureCard';
+import { parseAgentBoldRuns, AgentTextRun } from '../../model/agent/AgentTextFormatting';
 
+/** 澄清以普通问题呈现；提交后只保留问题，回答由独立用户消息承载。 */
 @Component
 export struct AgentClarificationCard {
   @Prop clarification: AgentClarificationView;
-  @Prop statusText: ResourceStr = '';
+  @Prop noticeText: string = '';
   @StorageProp(颜色键.主色按钮背景) private primaryBackground: string = '#2F5FD0';
   onOptionSelected: (id: string) => void = (_id: string): void => {};
   onSupplementChanged: (value: string) => void = (_value: string): void => {};
   onContinue: () => void = (): void => {};
-  onToggle: () => void = (): void => {};
 
   private isEditable(): boolean {
     return this.clarification.state === 'pending' ||
@@ -22,11 +22,7 @@ export struct AgentClarificationCard {
   }
 
   @Builder
-  private clarificationContent(): void {
-    Text(this.clarification.request.question)
-      .fontSize(应用尺寸.字号_正文)
-      .fontColor($r('app.color.text_primary'))
-      .width('100%')
+  private answerControls(): void {
     ForEach(this.clarification.request.options, (option: AgentClarificationOption) => {
       Row({ space: 应用尺寸.间距_5 }) {
         Button(option.label)
@@ -75,19 +71,25 @@ export struct AgentClarificationCard {
   }
 
   build() {
-    AgentDisclosureCard({
-      messageSurface: true,
-      title: this.clarification.state === 'resolved' ?
-        $r('app.string.ai_agent_clarification_resolved') :
-        $r('app.string.ai_agent_clarification_title'),
-      status: this.statusText,
-      showStatus: true,
-      expanded: this.clarification.expanded,
-      toggleLocked: this.clarification.state === 'pending' ||
-        this.clarification.state === 'submitting' ||
-        this.clarification.state === 'submit_failed',
-      onToggle: this.onToggle,
-      content: (): void => { this.clarificationContent(); }
-    })
+    Column({ space: 应用尺寸.间距_10 }) {
+      Text() {
+        ForEach(parseAgentBoldRuns(this.clarification.request.question), (run: AgentTextRun) => {
+          Span(run.text).fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
+        })
+      }
+        .fontSize(应用尺寸.字号_正文)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+      if (this.isEditable()) { this.answerControls(); }
+      if (this.noticeText.length > 0) {
+        Text(this.noticeText).fontSize(应用尺寸.字号_正文_小)
+          .fontColor($r('app.color.error_text')).width('100%')
+      }
+    }
+    .width('100%').alignItems(HorizontalAlign.Start)
+    .padding(应用尺寸.卡片内边距)
+    .backgroundColor($r('app.color.surface_card'))
+    .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
+    .borderRadius(应用尺寸.圆角_面板)
   }
 }

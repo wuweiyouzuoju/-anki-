@@ -122,7 +122,6 @@ function safeClarification(value: AgentClarificationView | null | undefined): Ag
     option.description = sanitizeHistoryText(option.description);
   }
   safe.request.options = safe.request.options.slice(0, 4);
-  safe.expanded = safe.state === 'pending' || safe.state === 'submit_failed';
   return safe;
 }
 
@@ -207,7 +206,7 @@ function safeConversation(value: AgentConversation): AgentConversation {
         action: message.action === undefined ? undefined :
           historyAction(message.action),
         clarification: clarification,
-        expanded: clarification === null ? message.expanded === true : clarification.expanded
+        expanded: message.expanded === true
       });
     }
   }
