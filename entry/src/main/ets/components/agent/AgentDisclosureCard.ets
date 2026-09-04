@@ -9,6 +9,7 @@ export struct AgentDisclosureCard {
   @Prop showStatus: boolean = false;
   @Prop expanded: boolean = false;
   @Prop toggleLocked: boolean = false;
+  @Prop messageSurface: boolean = false;
   onToggle: () => void = (): void => {};
   @BuilderParam content: () => void = this.emptyContent;
 
@@ -21,6 +22,7 @@ export struct AgentDisclosureCard {
         Text(this.title)
           .fontSize(应用尺寸.字号_正文_小)
           .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
         if (this.showStatus) {
           Text(this.status)
@@ -40,9 +42,9 @@ export struct AgentDisclosureCard {
       if (this.expanded) { this.content(); }
     }
     .width('100%')
-    .padding(应用尺寸.间距_8)
-    .backgroundColor($r('app.color.surface_page'))
+    .padding(this.messageSurface ? 应用尺寸.卡片内边距 : 应用尺寸.间距_8)
+    .backgroundColor(this.messageSurface ? $r('app.color.surface_card') : $r('app.color.surface_page'))
     .border({ width: 应用尺寸.卡片边框, color: $r('app.color.border_subtle') })
-    .borderRadius(应用尺寸.圆角_卡片)
+    .borderRadius(this.messageSurface ? 应用尺寸.圆角_面板 : 应用尺寸.圆角_卡片)
   }
 }

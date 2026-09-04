@@ -25,6 +25,7 @@ export struct AgentClarificationCard {
   private clarificationContent(): void {
     Text(this.clarification.request.question)
       .fontSize(应用尺寸.字号_正文)
+      .fontColor($r('app.color.text_primary'))
       .width('100%')
     ForEach(this.clarification.request.options, (option: AgentClarificationOption) => {
       Row({ space: 应用尺寸.间距_5 }) {
@@ -75,6 +76,7 @@ export struct AgentClarificationCard {
 
   build() {
     AgentDisclosureCard({
+      messageSurface: true,
       title: this.clarification.state === 'resolved' ?
         $r('app.string.ai_agent_clarification_resolved') :
         $r('app.string.ai_agent_clarification_title'),
