@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { AgentClarificationOption, AgentClarificationView } from '../../model/agent/AgentClarification';
+import { canAnswerClarification } from '../../model/agent/AgentClarification';
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { AgentDisclosureCard } from './AgentDisclosureCard';
 
@@ -62,7 +63,7 @@ export struct AgentClarificationCard {
     if (this.isEditable()) {
       Button($r('app.string.ai_agent_clarification_continue'))
         .width('100%')
-        .enabled(this.clarification.selectedOptionId.length > 0)
+        .enabled(canAnswerClarification(this.clarification))
         .onClick((): void => { this.onContinue(); })
     }
   }

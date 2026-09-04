@@ -139,7 +139,7 @@ test('browser edit entry passes selected IDs and preserves the active search', (
   assert.match(browser, /onPop:[\s\S]*this\.执行搜索\(\)/);
 });
 
-test('preselected edit hides selectors, keeps global read search, and locks writes to the selection', () => {
+test('preselected edit hides selectors, keeps global reads, and proposes discovered objects for confirmation', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
   const cardTools = read('entry/src/main/ets/backend/agent/CardAgentTools.ets');
   assert.match(page,
@@ -149,11 +149,12 @@ test('preselected edit hides selectors, keeps global read search, and locks writ
   assert.match(page,
     /private providerFunctionToolsForTurn\(\): ProviderFunctionTool\[\][\s\S]*return agentFunctionTools\(this\.agentSettings\.batchLimit, this\.pageMode\)/);
   assert.match(page, /functionTools:\s*this\.providerFunctionToolsForTurn\(\)/);
-  assert.match(page, /读取到的稳定 ID 只获得读取权限，绝不自动扩大修改范围/);
-  assert.match(page, /预选卡片或笔记时只能修改应用提供的稳定 ID/);
+  const instructions = read('entry/src/main/ets/model/agent/AgentSessionContext.ts');
+  assert.match(instructions, /用户审核具体范围后才能保存/);
+  assert.match(instructions, /修改搜索发现的对象只生成草稿/);
   assert.match(cardTools, /search_cards[\s\S]*registerReadableCardIds/);
-  assert.match(cardTools, /assertNoteIdsInScope/);
-  assert.match(cardTools, /assertCardIdsInScope/);
+  assert.match(cardTools, /assertReadableNoteIds/);
+  assert.match(cardTools, /assertReadableCardIds/);
   assert.match(page, /ai_agent_edit_selected_cards/);
   assert.match(page, /ai_agent_edit_selected_notes/);
 });
@@ -176,7 +177,7 @@ test('shared page rebuilds stable ID scope and batch policy for every user turn'
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
   assert.match(page, /private 重建本轮AgentScope\(\)/);
   assert.match(page, /runAgentTurn[\s\S]*this\.重建本轮AgentScope\(\)/);
-  assert.match(page, /this\.agentScope\.reset\(\)/);
+  assert.match(page, /this\.agentScope\.beginTurn\(\)/);
   assert.match(page, /configureBatchLimit\(this\.agentSettings\.batchLimit\)/);
   assert.match(page, /providerFunctionToolsForTurn\(\)/);
 });
@@ -210,7 +211,7 @@ test('page does not implement hidden draft-correction reply recycling', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
   assert.doesNotMatch(page, /draft_correction/,
     'a no-draft response must terminate instead of silently recycling the same AI bubble');
-  assert.match(page, /如果无法生成合法内容，只解释一次原因并结束/,
+  assert.match(read('entry/src/main/ets/model/agent/AgentSessionContext.ts'), /如果无法完成，明确解释原因/,
     'the provider must be told that refusal is a valid terminal response');
 });
 

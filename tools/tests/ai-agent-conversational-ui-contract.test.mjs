@@ -36,7 +36,7 @@ test('create setup is an assistant-side local card instead of a fixed top form',
   assert.match(setup, /border\(\{ width: 应用尺寸\.卡片边框, color: \$r\('app\.color\.border_subtle'\) \}\)/);
   assert.match(setup, /borderRadius\(应用尺寸\.圆角_面板\)/);
   assert.match(setup, /padding\(应用尺寸\.卡片内边距\)/);
-  assert.doesNotMatch(page, /setupExpanded/);
+  assert.doesNotMatch(page, /setupExpanded|ai_agent_target_settings/);
 });
 
 test('edit setup exposes explicit deck and note-type search scope selectors', () => {
@@ -48,7 +48,7 @@ test('edit setup exposes explicit deck and note-type search scope selectors', ()
   assert.match(setup, /this\.onNotetypeSelected\(0\)/);
   assert.match(page, /allDecksLabel:/);
   assert.match(page, /allNotetypesLabel:/);
-  assert.match(page, /configureCardSearchPrefix\(this\.改卡搜索范围\(\)\)/);
+  assert.doesNotMatch(page, /configureCardSearchPrefix\(/);
 });
 
 test('local setup is excluded while the task snapshot is sent', () => {
