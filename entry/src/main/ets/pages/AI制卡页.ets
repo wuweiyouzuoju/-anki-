@@ -19,6 +19,8 @@ import type { AgentWorkspaceState, AgentDeckPreference } from '../model/agent/Ag
 import { 牌组服务 } from '../backend/牌组服务';
 import type { DeckTreeNode } from '../proto/messages/DeckMessages';
 import { buildAgentSessionInstructions } from '../model/agent/AgentSessionContext';
+import { parseAgentBoldRuns } from '../model/agent/AgentTextFormatting';
+import type { AgentTextRun } from '../model/agent/AgentTextFormatting';
 import { canAnswerClarification } from '../model/agent/AgentClarification';
 import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { 后端会话 } from '../backend/后端会话';
@@ -2294,10 +2296,18 @@ export struct AI制卡页 {
         if (this.消息列表[消息索引].推理摘要 !== '') {
           Text(this.消息列表[消息索引].reasoningIsSummary ? $r('app.string.ai_agent_reasoning_summary') : $r('app.string.ai_agent_reasoning_process'))
             .fontSize(应用尺寸.字号_正文_小).fontWeight(FontWeight.Medium)
-          Text(this.消息列表[消息索引].推理摘要)
+          Text() {
+            ForEach(parseAgentBoldRuns(this.消息列表[消息索引].推理摘要), (run: AgentTextRun) => {
+              Span(run.text).fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
+            })
+          }
             .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_tertiary'))
         }
-        Text(this.消息列表[消息索引].正文)
+        Text() {
+          ForEach(parseAgentBoldRuns(this.消息列表[消息索引].正文), (run: AgentTextRun) => {
+            Span(run.text).fontWeight(run.bold ? FontWeight.Bold : FontWeight.Normal)
+          })
+        }
           .fontSize(应用尺寸.字号_正文)
           .fontColor(this.消息列表[消息索引].是否错误
             ? $r('app.color.error_text') : $r('app.color.text_primary'))

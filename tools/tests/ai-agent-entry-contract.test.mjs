@@ -305,7 +305,7 @@ test('all successful and failed tool calls use one typed detail view collapsed b
 
   const bubble = page.match(/private AI气泡\(消息索引: number\)[\s\S]*?@Builder\s+private 消息流/)?.[0] ?? '';
   const reasoningIndex = bubble.indexOf("ai_agent_reasoning_process");
-  const bodyIndex = bubble.indexOf('Text(this.消息列表[消息索引].正文)');
+  const bodyIndex = bubble.indexOf('parseAgentBoldRuns(this.消息列表[消息索引].正文)');
   const toolsIndex = bubble.indexOf("ai_agent_tool_process");
   const sourcesIndex = bubble.indexOf("来源列表.length > 0");
   const cardsIndex = bubble.indexOf("卡片列表.length > 0");
