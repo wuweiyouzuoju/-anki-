@@ -3,12 +3,14 @@
 import type { AgentClarificationOption, AgentClarificationView } from '../../model/agent/AgentClarification';
 import { canAnswerClarification } from '../../model/agent/AgentClarification';
 import { 应用尺寸 } from '../../utils/应用尺寸';
+import { 颜色键 } from '../../model/颜色主题';
 import { AgentDisclosureCard } from './AgentDisclosureCard';
 
 @Component
 export struct AgentClarificationCard {
   @Prop clarification: AgentClarificationView;
   @Prop statusText: ResourceStr = '';
+  @StorageProp(颜色键.主色按钮背景) private primaryBackground: string = '#2F5FD0';
   onOptionSelected: (id: string) => void = (_id: string): void => {};
   onSupplementChanged: (value: string) => void = (_value: string): void => {};
   onContinue: () => void = (): void => {};
@@ -29,7 +31,7 @@ export struct AgentClarificationCard {
         Button(option.label)
           .enabled(this.isEditable())
           .backgroundColor(option.id === this.clarification.selectedOptionId ?
-            $r('app.color.action_primary') : $r('app.color.surface_card'))
+            this.primaryBackground : $r('app.color.surface_card'))
           .fontColor(option.id === this.clarification.selectedOptionId ?
             $r('app.color.action_on_primary') : $r('app.color.text_primary'))
           .onClick((): void => { this.onOptionSelected(option.id); })
@@ -64,6 +66,9 @@ export struct AgentClarificationCard {
       Button($r('app.string.ai_agent_clarification_continue'))
         .width('100%')
         .enabled(canAnswerClarification(this.clarification))
+        .height(应用尺寸.按钮高度).fontSize(应用尺寸.字号_按钮)
+        .backgroundColor(this.primaryBackground).fontColor($r('app.color.action_on_primary'))
+        .borderRadius(应用尺寸.圆角_胶囊)
         .onClick((): void => { this.onContinue(); })
     }
   }

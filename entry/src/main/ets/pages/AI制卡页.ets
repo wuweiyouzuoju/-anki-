@@ -2325,6 +2325,9 @@ export struct AI制卡页 {
         if (this.消息列表[消息索引].taskStatus === 'paused') {
           Text($r('app.string.ai_agent_task_paused'))
           Button($r('app.string.ai_agent_task_resume')).enabled(!this.处理中)
+            .height(应用尺寸.按钮高度).fontSize(应用尺寸.字号_按钮)
+            .backgroundColor(this.主色按钮背景色).fontColor($r('app.color.action_on_primary'))
+            .borderRadius(应用尺寸.圆角_胶囊)
             .onClick((): void => { this.resumePausedTask(消息索引); })
         }
         if (this.消息列表[消息索引].卡片列表.length > 0) {

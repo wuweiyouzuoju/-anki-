@@ -4,6 +4,7 @@ import type { AgentAction } from '../../model/agent/AgentAction';
 import type { AgentExtensionArguments } from '../../model/agent/AgentExtensionTools';
 import type { AgentMemoryChange } from '../../model/agent/AgentMemory';
 import { 应用尺寸 } from '../../utils/应用尺寸';
+import { 颜色键 } from '../../model/颜色主题';
 
 interface AnalysisPreview { query: string; totalMatched: number; alreadyRead: number; }
 
@@ -12,6 +13,8 @@ interface AnalysisPreview { query: string; totalMatched: number; alreadyRead: nu
 export struct AgentActionCard {
   @Prop action: AgentAction;
   @Prop disabled: boolean = false;
+  @StorageProp(颜色键.主色按钮背景) private primaryBackground: string = '#2F5FD0';
+  @StorageProp(颜色键.动作主色) private actionColor: string = '#2F5FD0';
   onConfirm: () => void = (): void => {};
   onCancel: () => void = (): void => {};
 
@@ -67,7 +70,13 @@ export struct AgentActionCard {
       if (this.action.status === 'pending') {
         Row({ space: 12 }) {
           Button($r('app.string.ai_agent_action_cancel')).enabled(!this.disabled).onClick(this.onCancel)
+            .height(应用尺寸.按钮高度).fontSize(应用尺寸.字号_按钮)
+            .backgroundColor($r('app.color.surface_card')).fontColor(this.actionColor)
+            .borderRadius(应用尺寸.圆角_胶囊)
           Button($r('app.string.ai_agent_action_confirm')).enabled(!this.disabled).onClick(this.onConfirm)
+            .height(应用尺寸.按钮高度).fontSize(应用尺寸.字号_按钮)
+            .backgroundColor(this.primaryBackground).fontColor($r('app.color.action_on_primary'))
+            .borderRadius(应用尺寸.圆角_胶囊)
         }
       } else {
         Text(this.action.status === 'completed' ? $r('app.string.ai_agent_action_completed') :
