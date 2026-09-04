@@ -1228,8 +1228,6 @@
     {"name": "ai_agent_action_failed", "value": "The action could not be completed. See execution details; current state will be checked before retrying."},
     {"name": "ai_agent_preferences_failed", "value": "Unable to load or save the previous selection. Please check target settings."},
     {"name": "ai_agent_reasoning_summary", "value": "Thinking summary returned by the model"},
-    {"name": "ai_agent_show_less", "value": "Show less"},
-    {"name": "ai_agent_show_more", "value": "Show full content"},
     {"name": "ai_agent_task_paused", "value": "Task paused; retrieval progress is retained. Resuming starts another bounded batch of model calls."},
     {"name": "ai_agent_task_resume", "value": "Resume the previous task"},
     {"name": "ai_agent_action_confirmed_continue", "value": "I confirmed this action. Continue the original task using the actual execution result."},

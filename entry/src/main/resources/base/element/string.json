@@ -1833,8 +1833,6 @@
     {"name": "ai_agent_action_failed", "value": "操作未能完成，请查看执行详情；重试前会重新检查当前状态。"},
     {"name": "ai_agent_preferences_failed", "value": "暂时无法读取或保存上次选择，请在目标设置中检查。"},
     {"name": "ai_agent_reasoning_summary", "value": "模型返回的思考摘要"},
-    {"name": "ai_agent_show_less", "value": "收起"},
-    {"name": "ai_agent_show_more", "value": "展开完整内容"},
     {"name": "ai_agent_task_paused", "value": "任务已暂停，检索进度已保留。继续后将使用新的调用额度分批处理。"},
     {"name": "ai_agent_task_resume", "value": "继续之前的任务"},
     {"name": "ai_agent_action_confirmed_continue", "value": "已确认此操作，请根据实际执行结果继续原任务。"},

@@ -173,7 +173,6 @@ interface 卡片草稿 {
 /** 一条聊天消息。 */
 interface 聊天消息 {
   action: AgentAction | null;
-  reasoningExpanded: boolean;
   reasoningIsSummary: boolean;
   draftDeckId: number;
   draftNotetypeId: number;
@@ -739,7 +738,7 @@ export struct AI制卡页 {
       id: this.下一个消息ID(), 角色: 角色, 正文: 正文, 是否错误: 是否错误,
       卡片列表: [], 字段名列表: [], 批次结果: '', 批次保存中: false,
       变更草稿列表: [], 工具过程: [], 来源列表: [], 推理摘要: '',
-      action: null, reasoningExpanded: false, reasoningIsSummary: false, draftDeckId: 0, draftNotetypeId: 0, draftTargetLabel: '',
+      action: null, reasoningIsSummary: false, draftDeckId: 0, draftNotetypeId: 0, draftTargetLabel: '',
       kind: 'normal', clarification: null, expanded: false, taskStatus: '',
       answerMessageId: 0, providerText: 正文
     };
@@ -784,7 +783,7 @@ export struct AI制卡页 {
 
   private 克隆消息(消息: 聊天消息): 聊天消息 {
     return {
-      action: 消息.action, reasoningExpanded: 消息.reasoningExpanded, reasoningIsSummary: 消息.reasoningIsSummary,
+      action: 消息.action, reasoningIsSummary: 消息.reasoningIsSummary,
       draftDeckId: 消息.draftDeckId, draftNotetypeId: 消息.draftNotetypeId, draftTargetLabel: 消息.draftTargetLabel,
       id: 消息.id,
       角色: 消息.角色,
@@ -2296,9 +2295,7 @@ export struct AI制卡页 {
           Text(this.消息列表[消息索引].reasoningIsSummary ? $r('app.string.ai_agent_reasoning_summary') : $r('app.string.ai_agent_reasoning_process'))
             .fontSize(应用尺寸.字号_正文_小).fontWeight(FontWeight.Medium)
           Text(this.消息列表[消息索引].推理摘要)
-            .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_tertiary')).maxLines(this.消息列表[消息索引].reasoningExpanded ? 100000 : 8)
-          Button(this.消息列表[消息索引].reasoningExpanded ? $r('app.string.ai_agent_show_less') : $r('app.string.ai_agent_show_more'))
-            .onClick((): void => { this.更新消息(消息索引, (message: 聊天消息): void => { message.reasoningExpanded = !message.reasoningExpanded; }); })
+            .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_tertiary'))
         }
         Text(this.消息列表[消息索引].正文)
           .fontSize(应用尺寸.字号_正文)
