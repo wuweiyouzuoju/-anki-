@@ -19,6 +19,7 @@ import {
   registerToolCallId
 } from '../../model/agent/AgentPolicy';
 import type { ProviderCapabilities } from '../../model/agent/AgentTypes';
+import { compactAgentToolOutputs } from '../../model/agent/AgentSessionState';
 import {
   DEEPSEEK_PROVIDER,
   OPENAI_PROVIDER,
@@ -33,11 +34,13 @@ import { AgentStreamObserver, AgentTransportError, AgentTransportSession } from 
 import { DeepSeekAdapter } from './DeepSeekAdapter';
 import { OpenAIAdapter } from './OpenAIAdapter';
 import { CustomAdapter } from './CustomAdapter';
-import { AgentToolRegistry, AgentToolResult } from './AgentToolRegistry';
+import { AgentToolRegistry } from './AgentToolRegistry';
+import type { AgentToolResult } from './AgentToolRegistry';
 import { AgentToolSchemaError } from '../../model/agent/AgentToolSchemas';
+import type { AgentAction } from '../../model/agent/AgentAction';
 import type { AgentClarificationRequest } from '../../model/agent/AgentClarification';
+import type { AgentToolFailureRecord } from '../../model/agent/AgentToolDiagnostics';
 import {
-  AgentToolFailureRecord,
   AgentToolFailureTracker,
   completeAgentToolTrace,
   createStartedAgentToolTrace,
@@ -49,9 +52,10 @@ export interface AgentRunObserver {
   onEvent(event: AgentEvent): void;
 }
 
-export type AgentRunStatus = 'completed' | 'awaiting_clarification';
+export type AgentRunStatus = 'completed' | 'awaiting_clarification' | 'awaiting_confirmation' | 'paused';
 
 export interface AgentRunResult {
+  action?: AgentAction;
   status: AgentRunStatus;
   clarification: AgentClarificationRequest | null;
   drafts: ChangeDraft[];
@@ -310,6 +314,13 @@ function appendRoundContinuation(request: ProviderTurnRequest, collector: RoundC
 
 /** 有界 Agent 循环。读工具可执行，写工具只能由注册表返回 ChangeDraft。 */
 export class AgentRunner {
+  private continuationInput: ProviderInputItem[] = [];
+  private partialDrafts: ChangeDraft[] = [];
+  getPartialDrafts(): ChangeDraft[] { return this.partialDrafts.slice(); }
+
+  getContinuationInput(): ProviderInputItem[] {
+    return this.continuationInput.map((item: ProviderInputItem): ProviderInputItem => copyInput(item));
+  }
   private readonly registry: AgentToolRegistry;
   private readonly limits: AgentTurnLimits;
   private activeSession: AgentTransportSession | null = null;
@@ -323,7 +334,9 @@ export class AgentRunner {
   async run(provider: ProviderId, originalRequest: ProviderTurnRequest,
     observer: AgentRunObserver): Promise<AgentRunResult> {
     this.cancelled = false;
+    this.partialDrafts = [];
     const request: ProviderTurnRequest = copyRequest(originalRequest);
+    this.continuationInput = request.input;
     const capabilities: ProviderCapabilities = provider === 'deepseek' ?
       DEEPSEEK_PROVIDER.capabilities : (provider === 'openai' ?
         OPENAI_PROVIDER.capabilities : customProviderDefaults().capabilities);
@@ -350,6 +363,7 @@ export class AgentRunner {
       request.searchMode = 'off';
     }
     const drafts: ChangeDraft[] = [];
+    this.partialDrafts = drafts;
     const allSearchSources: AgentSearchSourceEvent[] = [];
     const seenToolCallIds: Set<string> = new Set<string>();
     const failureTracker: AgentToolFailureTracker = new AgentToolFailureTracker();
@@ -364,6 +378,7 @@ export class AgentRunner {
         throw new AgentRunnerError('cancelled');
       }
       providerCalls += 1;
+      compactAgentToolOutputs(request.input);
       const collector: RoundCollector = new RoundCollector(observer);
       this.activeSession = this.createSession(provider, request, collector);
       try {
@@ -442,6 +457,7 @@ export class AgentRunner {
         }
         enforceSearchExecution(searchRequired, searchExecuted);
         enforceSearchEvidence(request.requiresSearchEvidence, allSearchSources);
+        appendRoundContinuation(request, collector);
         observer.onEvent(simpleEvent('completed'));
         return {
           status: 'completed', clarification: null,
@@ -451,7 +467,9 @@ export class AgentRunner {
       searchHandoffPending = false;
       appendRoundContinuation(request, collector);
       const hasClarification: boolean = collector.toolCalls.some((call: AgentToolCall): boolean =>
-        call.name === 'request_clarification');
+        call.name === 'request_clarification' || call.name === 'propose_create_deck' ||
+        call.name === 'propose_create_note_type' || call.name === 'propose_memory_change' ||
+        call.name === 'propose_analysis' || call.name === 'configure_create_target');
       if (hasClarification && collector.toolCalls.length > 1) {
         if (toolCalls + collector.toolCalls.length > this.limits.maxToolCalls) {
           observer.onEvent(simpleEvent('error', '', 'agent_tool_limit'));
@@ -459,12 +477,12 @@ export class AgentRunner {
         }
         const output = JSON.stringify({
           tool_error: 'clarification_must_be_only_tool',
-          message: 'request_clarification must be the only tool call in its provider round.',
-          correction: 'Call request_clarification alone, or finish ordinary tool work before asking the user.'
+          message: 'Clarification, target configuration and confirmation proposals must each be the only tool call in their provider round.',
+          correction: 'Call this tool alone, then continue after its result.'
         });
         const diagnostic: AgentToolDiagnostic = {
           code: 'clarification_must_be_only_tool', path: '',
-          message: 'request_clarification must be the only tool call in its provider round.',
+          message: 'Clarification, target configuration and confirmation proposals must each be the only tool call in their provider round.',
           receivedKeys: [], allowedKeys: [], validTemplateJson: ''
         };
         for (const call of collector.toolCalls) {
@@ -510,6 +528,7 @@ export class AgentRunner {
       let completedToolsInRound: number = 0;
       let failedToolsInRound: number = 0;
       for (const call of acceptedToolCalls) {
+        if (this.cancelled) { throw new AgentRunnerError('cancelled'); }
         const sequence: number = toolCalls - acceptedToolCalls.length + acceptedToolCalls.indexOf(call) + 1;
         const startedTrace: AgentToolTrace = createStartedAgentToolTrace(call, providerCalls, sequence);
         observer.onEvent(toolStatusEvent('tool_started', call, startedTrace));
@@ -531,12 +550,24 @@ export class AgentRunner {
           const result: AgentToolResult = await this.registry.execute(call);
           if (result.draft !== null) { drafts.push(result.draft); }
           const completedTrace: AgentToolTrace = completeAgentToolTrace(startedTrace, result.outputJson);
+          if (result.action !== undefined) { completedTrace.status = 'awaiting_confirmation'; }
           observer.onEvent(toolStatusEvent('tool_completed', call, completedTrace));
           request.input.push({
             kind: 'function_call_output', role: '', content: '', callId: call.id,
-            name: '', argumentsJson: '', output: sanitizeAgentToolJson(result.outputJson, 32768).text
+            name: '', argumentsJson: '', output: sanitizeAgentToolJson(result.outputJson, Number.MAX_SAFE_INTEGER).text
           });
           completedToolsInRound += 1;
+          if (result.action !== undefined) {
+            // 同批后续工具尚未执行，补齐协议结果，恢复时让模型重新发起。
+            for (let pendingIndex: number = acceptedToolCalls.indexOf(call) + 1;
+              pendingIndex < acceptedToolCalls.length; pendingIndex++) {
+              request.input.push({ kind: 'function_call_output', role: '', content: '',
+                callId: acceptedToolCalls[pendingIndex].id, name: '', argumentsJson: '',
+                output: '{"status":"not_executed_awaiting_confirmation"}' });
+            }
+            return { status: 'awaiting_confirmation', action: result.action, clarification: null,
+              drafts: drafts, providerCalls: providerCalls, toolCalls: toolCalls };
+          }
           if (result.clarification !== null) {
             if (this.cancelled) {
               throw new AgentRunnerError('cancelled');
@@ -562,7 +593,7 @@ export class AgentRunner {
           }
         }
       }
-      if (request.requiresDraft && drafts.length > 0) {
+      if (drafts.length > 0) {
         const createdCount: number = createDraftNoteCount(drafts);
         if (request.expectedDraftCount > 0 && createdCount !== request.expectedDraftCount) {
           drafts.splice(0, drafts.length);

@@ -58,7 +58,10 @@ test('both modes expose complete semantic reads while only edit exposes write pr
     assert.ok(createNames.includes(name), `create is missing ${name}`);
     assert.ok(editNames.includes(name), `edit is missing ${name}`);
   }
-  assert.ok(!createNames.some((name) => name.startsWith('propose_')));
+  assert.ok(!createNames.includes('propose_update_notes'));
+  for (const name of ['propose_create_deck', 'propose_create_note_type', 'propose_memory_change', 'propose_analysis']) {
+    assert.ok(createNames.includes(name)); assert.ok(editNames.includes(name));
+  }
   assert.ok(editNames.includes('propose_update_notes'));
 });
 

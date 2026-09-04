@@ -42,7 +42,7 @@ test('clarification schema is available in create and edit modes', () => {
       .find((item) => item.name === 'request_clarification');
     assert.ok(tool);
     const schema = JSON.parse(tool.parametersJson);
-    assert.equal(schema.properties.options.minItems, 2);
+    assert.equal(schema.properties.options.minItems, 0);
     assert.equal(schema.properties.options.maxItems, 4);
     assert.equal(schema.additionalProperties, false);
   }
@@ -152,11 +152,11 @@ test('clarification answer text contains the question, selected option and suppl
   assert.equal(buildClarificationAnswerVisibleText({ ...answer, supplementalText: '' }), '每个知识点一张');
 });
 
-test('create readiness requires deck, note type capability, text and provider', () => {
+test('conversation readiness requires text and provider; targets are resolved before generation', () => {
   const base = { mode: 'create', deckId: 0, deckName: '', notetypeId: 0,
     notetypeName: '', fieldNames: [], noteTypeKind: 0, clozeFieldOrds: [], expanded: true };
-  assert.equal(evaluateAgentReadiness(base, '', true), 'missing_deck');
-  assert.equal(evaluateAgentReadiness({ ...base, deckId: 1 }, '', true), 'missing_notetype');
+  assert.equal(evaluateAgentReadiness(base, '', true), 'missing_input');
+  assert.equal(evaluateAgentReadiness({ ...base, deckId: 1 }, '', true), 'missing_input');
   assert.equal(evaluateAgentReadiness({ ...base, deckId: 1, notetypeId: 2,
     fieldNames: ['文字'] }, '', true), 'missing_input');
   assert.equal(evaluateAgentReadiness({ ...base, deckId: 1, notetypeId: 2,

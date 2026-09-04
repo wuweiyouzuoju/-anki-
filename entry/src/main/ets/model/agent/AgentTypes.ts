@@ -52,7 +52,7 @@ export interface AgentToolCall {
   argumentsJson: string;
 }
 
-export type AgentToolTraceStatus = 'started' | 'completed' | 'failed';
+export type AgentToolTraceStatus = 'started' | 'completed' | 'failed' | 'awaiting_confirmation';
 
 /** 模型工具参数或执行失败的固定诊断；空值以空串/空数组表示。 */
 export interface AgentToolDiagnostic {

@@ -44,8 +44,8 @@ test('read tools use official services and register discovered IDs as read-only'
 });
 
 test('ordinary tools validate scope and create before/after drafts without writes', () => {
-  assert.match(source, /assertNoteIdsInScope/);
-  assert.match(source, /assertCardIdsInScope/);
+  assert.match(source, /assertReadableNoteIds/);
+  assert.match(source, /assertReadableCardIds/);
   assert.match(source, /before:/);
   assert.match(source, /after:/);
   assert.match(source, /affectedCardIds/);
@@ -54,10 +54,11 @@ test('ordinary tools validate scope and create before/after drafts without write
 
 test('search and deck listing apply bounded deterministic result limits', () => {
   assert.match(source, /Math\.min\(1000/);
-  assert.match(source, /slice\(0, limit\)/);
+  assert.match(source, /slice\(args.offset, args.offset \+ limit\)/);
   assert.match(source, /flattenDeckTree/);
-  assert.match(source, /scopedCardSearchQuery\(args\.query\)/,
-    'edit range selected by the user must constrain local card search');
+  assert.doesNotMatch(source, /scopedCardSearchQuery/);
+  assert.match(source, /retrieval.next/);
+  assert.match(source, /nextCursor/);
 });
 
 test('one create proposal can carry many notes without merging their fields', () => {

@@ -80,8 +80,9 @@ export function decodeAgentClarificationRequest(argumentsJson: string): AgentCla
         `${key} is not a clarification argument`, receivedKeys, allowedKeys);
     }
   }
-  if (!Array.isArray(raw.options) || raw.options.length < 2 || raw.options.length > 4) {
-    throw new AgentToolSchemaError('invalid_value', 'options', 'Provide between 2 and 4 options');
+  if (!Array.isArray(raw.options) || raw.options.length === 1 || raw.options.length > 4 ||
+    (raw.options.length === 0 && raw.allowFreeText !== true)) {
+    throw new AgentToolSchemaError('invalid_value', 'options', 'Provide 2-4 options, or no options with free text enabled');
   }
   const options: AgentClarificationOption[] = [];
   const seen: Set<string> = new Set<string>();
@@ -140,6 +141,13 @@ export function buildClarificationAnswerText(request: AgentClarificationRequest,
 }
 
 export function buildClarificationAnswerVisibleText(answer: AgentClarificationAnswer): string {
+  if (answer.optionLabel.length === 0) { return answer.supplementalText; }
   return answer.supplementalText.length > 0 ?
     `${answer.optionLabel}\n${answer.supplementalText}` : answer.optionLabel;
+}
+
+/** 自由文本可独立提交，不强迫用户先选择建议。 */
+export function canAnswerClarification(view: AgentClarificationView): boolean {
+  return view.selectedOptionId.length > 0 ||
+    (view.request.allowFreeText && view.supplementalText.trim().length > 0);
 }

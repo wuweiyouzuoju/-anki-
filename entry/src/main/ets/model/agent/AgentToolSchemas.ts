@@ -10,6 +10,11 @@ export interface AgentToolArguments {
   noteIds: number[];
   deckIds: number[];
   notetypeIds: number[];
+  cursor: string;
+  offset: number;
+  length: number;
+  noteId: number;
+  fieldOrd: number;
   query: string;
   limit: number;
   draftId: string;
@@ -70,6 +75,11 @@ interface RawAgentToolArguments {
   noteIds?: number[];
   deckIds?: number[];
   notetypeIds?: number[];
+  cursor?: string;
+  offset?: number;
+  length?: number;
+  noteId?: number;
+  fieldOrd?: number;
   query?: string;
   limit?: number;
   draftId?: string;
@@ -131,52 +141,21 @@ function schemaError(toolName: string, code: string, path: string, message: stri
 function emptyArguments(): AgentToolArguments {
   return {
     cardIds: [], noteIds: [], deckIds: [], notetypeIds: [],
-    query: '', limit: 0, draftId: '', targetDeckId: 0, targetNotetypeId: 0,
+    cursor: '', offset: 0, length: 12000, noteId: 0, fieldOrd: 0, query: '', limit: 0, draftId: '', targetDeckId: 0, targetNotetypeId: 0,
     fieldUpdatesJson: '', fieldMappingJson: '', templateMappingJson: '',
     templateJson: '', css: '', tags: [], reason: '', createNotes: [], imageUpdates: []
   };
 }
 
+interface ToolPropertySchema { properties: Record<string, Object>; }
 function allowedKeys(toolName: string): string[] {
-  switch (toolName) {
-    case 'get_note_type_capabilities':
-      return ['notetypeIds'];
-    case 'get_note_context':
-      return ['cardIds', 'noteIds'];
-    case 'search_cards':
-    case 'search_notes':
-      return ['query', 'limit'];
-    case 'list_decks':
-    case 'list_notetypes':
-    case 'list_tags':
-      return ['query', 'limit'];
-    case 'get_notetype_details':
-      return ['notetypeIds'];
-    case 'get_card_statistics':
-      return ['cardIds', 'limit'];
-    case 'search_images':
-      return ['query', 'limit'];
-    case 'create_flashcards':
-      return ['cards'];
-    case 'propose_update_notes':
-      return ['noteIds', 'fieldUpdatesJson', 'imagesJson', 'tags', 'draftId', 'reason'];
-    case 'propose_move_cards':
-      return ['cardIds', 'targetDeckId', 'draftId', 'reason'];
-    case 'propose_delete_notes':
-      return ['noteIds', 'draftId', 'reason'];
-    case 'propose_delete_cards':
-      return ['cardIds', 'draftId', 'reason'];
-    case 'propose_change_note_type':
-      return ['noteIds', 'targetNotetypeId', 'fieldMappingJson', 'templateMappingJson', 'draftId', 'reason'];
-    case 'propose_update_note_type_templates':
-      return ['notetypeIds', 'templateJson', 'css', 'draftId', 'reason'];
-    case 'propose_delete_deck':
-      return ['deckIds', 'draftId', 'reason'];
-    case 'propose_delete_note_type':
-      return ['notetypeIds', 'draftId', 'reason'];
-    default:
-      return [];
+  const tools = agentFunctionTools(1000, toolName === 'create_flashcards' ? 'create' : 'edit');
+  for (const item of tools) {
+    if (item.name === toolName) {
+      return Object.keys((JSON.parse(item.parametersJson) as ToolPropertySchema).properties);
+    }
   }
+  return [];
 }
 
 function isAllowed(key: string, allowed: string[]): boolean {
@@ -424,6 +403,16 @@ export function decodeAgentToolArguments(toolName: string, argumentsJson: string
   output.noteIds = validateIds(toolName, 'noteIds', raw.noteIds);
   output.deckIds = validateIds(toolName, 'deckIds', raw.deckIds);
   output.notetypeIds = validateIds(toolName, 'notetypeIds', raw.notetypeIds);
+  output.cursor = stringValue(toolName, 'cursor', raw.cursor);
+  output.noteId = positiveId(toolName, 'noteId', raw.noteId);
+  for (const key of ['offset', 'length', 'fieldOrd']) {
+    const value: number | undefined = key === 'offset' ? raw.offset : (key === 'length' ? raw.length : raw.fieldOrd);
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw schemaError(toolName, 'invalid_value', key, 'Expected a nonnegative integer');
+    }
+  }
+  output.offset = raw.offset ?? 0; output.fieldOrd = raw.fieldOrd ?? 0;
+  output.length = Math.min(12000, Math.max(1, raw.length ?? 12000));
   output.query = stringValue(toolName, 'query', raw.query).trim();
   output.draftId = stringValue(toolName, 'draftId', raw.draftId).trim();
   output.fieldUpdatesJson = stringValue(toolName, 'fieldUpdatesJson', raw.fieldUpdatesJson);

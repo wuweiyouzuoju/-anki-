@@ -7,6 +7,8 @@ import { sanitizeAgentToolJson } from './AgentToolDiagnostics';
 import type { AgentTaskSetup } from './AgentTaskContext';
 import type { AgentClarificationState, AgentClarificationView } from './AgentClarification';
 import { cloneAgentClarificationView } from './AgentClarification';
+import { safeAgentAction } from './AgentSessionState';
+import type { AgentAction } from './AgentAction';
 
 const STORE_NAME: string = 'jidecards_ai_agent_history';
 const HISTORY_KEY: string = 'conversations_v1';
@@ -15,7 +17,18 @@ const MAX_MESSAGES: number = 200;
 const MAX_TEXT_LENGTH: number = 20000;
 const MAX_AUDIT_TEXT_TOTAL: number = 200000;
 
+interface AnalysisHistoryPayload { query: string; totalMatched: number; alreadyRead: number; }
+function historyAction(action: AgentAction): AgentAction {
+  const safe: AgentAction = safeAgentAction(action);
+  if (safe.kind === 'analysis') {
+    const payload: AnalysisHistoryPayload = JSON.parse(safe.payloadJson) as AnalysisHistoryPayload;
+    safe.payloadJson = JSON.stringify({ query: payload.query, totalMatched: payload.totalMatched, alreadyRead: payload.alreadyRead });
+  }
+  return safe;
+}
+
 export interface AgentHistoryMessage {
+  action?: AgentAction;
   role: string;
   text: string;
   kind: string;
@@ -135,6 +148,7 @@ export function sanitizeHistoryText(value: string): string {
 }
 
 function safeAuditStatus(value: string): AgentToolTraceStatus {
+  if (value === 'awaiting_confirmation') { return value; }
   if (value === 'completed' || value === 'failed') { return value; }
   return 'started';
 }
@@ -190,6 +204,8 @@ function safeConversation(value: AgentConversation): AgentConversation {
       messages.push({
         role: message.role, text: sanitizeHistoryText(message.text),
         kind: message.kind === 'clarification' ? 'clarification' : 'normal',
+        action: message.action === undefined ? undefined :
+          historyAction(message.action),
         clarification: clarification,
         expanded: clarification === null ? message.expanded === true : clarification.expanded
       });

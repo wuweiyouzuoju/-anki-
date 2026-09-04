@@ -113,7 +113,7 @@ export class HighRiskAgentTools {
   }
 
   private async proposeDeleteNotes(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertNoteIdsInScope(args.noteIds);
+    this.scope.assertReadableNoteIds(args.noteIds);
     const operations: DraftOperation[] = [];
     const cardIds: number[] = [];
     for (const noteId of args.noteIds) {
@@ -131,7 +131,7 @@ export class HighRiskAgentTools {
   }
 
   private async proposeDeleteCards(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertCardIdsInScope(args.cardIds);
+    this.scope.assertReadableCardIds(args.cardIds);
     assertHardLimit(args.cardIds);
     this.scope.assertBatchCount(args.cardIds.length);
     const operations: DraftOperation[] = [];
@@ -148,8 +148,8 @@ export class HighRiskAgentTools {
   }
 
   private async proposeChangeNotetype(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertNoteIdsInScope(args.noteIds);
-    this.scope.assertNotetypeIdsInScope([args.targetNotetypeId]);
+    this.scope.assertReadableNoteIds(args.noteIds);
+    this.scope.assertReadableNotetypeIds([args.targetNotetypeId]);
     const oldId: number = await this.notes.获取笔记的唯一笔记类型(args.noteIds);
     const info: 变更笔记类型信息 = await this.notetypes.获取变更笔记类型信息(oldId, args.targetNotetypeId);
     const fields: number[] = parseMapping(args.fieldMappingJson);
@@ -167,7 +167,7 @@ export class HighRiskAgentTools {
   }
 
   private async proposeTemplates(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertNotetypeIdsInScope(args.notetypeIds);
+    this.scope.assertReadableNotetypeIds(args.notetypeIds);
     if (args.notetypeIds.length !== 1) { throw new AgentToolSchemaError('invalid_tool_arguments'); }
     const id: number = args.notetypeIds[0];
     const before: string = await this.notetypes.获取笔记类型旧版(id);
@@ -185,7 +185,7 @@ export class HighRiskAgentTools {
   }
 
   private async proposeDeleteDeck(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertDeckIdsInScope(args.deckIds);
+    this.scope.assertReadableDeckIds(args.deckIds);
     if (args.deckIds.length !== 1) { throw new AgentToolSchemaError('invalid_tool_arguments'); }
     const tree: DeckTreeNode = await this.decks.获取牌组树();
     const deck: DeckTreeNode | null = findDeck(tree, args.deckIds[0]);
@@ -204,7 +204,7 @@ export class HighRiskAgentTools {
   }
 
   private async proposeDeleteNotetype(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertNotetypeIdsInScope(args.notetypeIds);
+    this.scope.assertReadableNotetypeIds(args.notetypeIds);
     if (args.notetypeIds.length !== 1) { throw new AgentToolSchemaError('invalid_tool_arguments'); }
     const id: number = args.notetypeIds[0];
     const capability: NotetypeCapabilities = await this.notetypes.获取笔记类型能力(id);

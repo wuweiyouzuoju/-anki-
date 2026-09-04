@@ -488,7 +488,7 @@ test('mixed clarification batches execute no registry calls and return protocol 
   assert.ok(outputs.every((item) => {
     const output = JSON.parse(item.output);
     return output.tool_error === 'clarification_must_be_only_tool' &&
-      output.correction === 'Call request_clarification alone, or finish ordinary tool work before asking the user.';
+      output.correction === 'Call this tool alone, then continue after its result.';
   }));
 });
 

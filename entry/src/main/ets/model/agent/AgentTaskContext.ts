@@ -48,10 +48,6 @@ export type AgentReadinessReason =
 export function evaluateAgentReadiness(setup: AgentTaskSetup, input: string,
   providerReady: boolean, busy: boolean = false): AgentReadinessReason {
   if (busy) { return 'busy'; }
-  if (setup.mode === 'create' && setup.deckId <= 0) { return 'missing_deck'; }
-  if (setup.mode === 'create' && (setup.notetypeId <= 0 || setup.fieldNames.length === 0)) {
-    return 'missing_notetype';
-  }
   if (input.trim().length === 0) { return 'missing_input'; }
   if (!providerReady) { return 'missing_provider'; }
   return 'ready';

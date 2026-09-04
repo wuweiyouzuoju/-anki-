@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { AgentImageCandidate } from '../../model/agent/AgentTypes';
+import { AgentRetrieval } from '../../model/agent/AgentRetrieval';
 
 export class AgentScopeError extends Error {
   readonly code: string;
@@ -13,6 +14,23 @@ export class AgentScopeError extends Error {
 
 /** 一轮会话可引用的稳定 ID 集合；模型不能凭空构造卡库对象 ID。 */
 export class AgentScope {
+  readonly retrieval: AgentRetrieval = new AgentRetrieval();
+
+  /** 每轮只刷新操作上下文，保留会话中已发现的只读对象和分页进度。 */
+  beginTurn(): void {
+    this.cardIds.clear(); this.noteIds.clear(); this.deckIds.clear(); this.notetypeIds.clear();
+    this.requireYearCloze = false;
+  }
+
+  restoreReadableIds(cardIds: number[], noteIds: number[], deckIds: number[], notetypeIds: number[]): void {
+    this.registerReadableCardIds(cardIds); this.registerReadableNoteIds(noteIds);
+    this.registerReadableDeckIds(deckIds); this.registerReadableNotetypeIds(notetypeIds);
+  }
+
+  readableIds(): number[][] {
+    return [Array.from(this.readableCardIds), Array.from(this.readableNoteIds),
+      Array.from(this.readableDeckIds), Array.from(this.readableNotetypeIds)];
+  }
   private readonly readableCardIds: Set<number> = new Set<number>();
   private readonly readableNoteIds: Set<number> = new Set<number>();
   private readonly readableDeckIds: Set<number> = new Set<number>();
@@ -113,6 +131,8 @@ export class AgentScope {
     this.createNotetypeId = notetypeId;
   }
 
+  currentCreateTarget(): number[] { return [this.createDeckId, this.createNotetypeId]; }
+
   createTargetDeckId(): number {
     this.assertConfiguredCreateTarget();
     return this.createDeckId;
@@ -162,6 +182,7 @@ export class AgentScope {
   }
 
   reset(): void {
+    this.retrieval.clear();
     this.readableCardIds.clear();
     this.readableNoteIds.clear();
     this.readableDeckIds.clear();

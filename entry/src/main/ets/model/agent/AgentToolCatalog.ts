@@ -3,6 +3,7 @@
 import type { ProviderFunctionTool } from './ProviderProtocol';
 import { normalizeBatchLimit } from './AgentPolicy';
 import type { AgentMode } from './AgentTypes';
+import { agentExtensionTools } from './AgentExtensionTools';
 
 function exampleArgumentsFor(name: string): string {
   switch (name) {
@@ -16,6 +17,7 @@ function exampleArgumentsFor(name: string): string {
     case 'list_notetypes': return '{"query":"basic","limit":20}';
     case 'list_tags': return '{"query":"important","limit":50}';
     case 'get_notetype_details': return '{"notetypeIds":[1]}';
+    case 'read_note_field': return '{"noteId":1,"fieldOrd":0,"offset":0,"length":12000}';
     case 'get_card_statistics': return '{"cardIds":[1],"limit":50}';
     case 'search_images': return '{"query":"中国传统文化","limit":5}';
     case 'create_flashcards':
@@ -39,7 +41,7 @@ function exampleArgumentsFor(name: string): string {
 
 function rulesFor(name: string): string {
   if (name === 'request_clarification') {
-    return 'Use only for blocking ambiguity. This tool must be called alone and never writes.';
+    return 'Ask when missing information materially changes the content, difficulty or scope. For an open question use options=[] and allowFreeText=true. Do not ask about reasonable defaults or already answered questions. Call alone; never writes.';
   }
   if (name === 'create_flashcards') {
     return 'Submit only card content. Every cards[] item may contain fields and optional images. The application supplies ' +
@@ -50,18 +52,18 @@ function rulesFor(name: string): string {
       'This creates a draft, never a saved note.';
   }
   if (name.startsWith('propose_')) {
-    return 'Use only stable in-scope IDs. This tool creates a draft and never writes immediately. ' +
+    return 'Use only IDs actually discovered in this session. This tool creates a draft and never writes immediately. ' +
       (name.startsWith('propose_delete_') || name === 'propose_change_note_type' ||
       name === 'propose_update_note_type_templates' ?
         'This high-risk draft requires separate user confirmations.' : 'User confirmation is required before writing.');
   }
   if (name === 'search_cards' || name === 'search_notes') {
-    return 'This searches the local collection, not the public web. Search results are readable only and never expand write scope.';
+    return 'Search the whole local collection. Use deck:/note: only when requested. Continue with nextCursor and the same query until empty; totalMatched is not the number read. Found IDs may be proposed for changes, but only user-confirmed drafts can write.';
   }
   if (name === 'search_images') {
     return 'Search only Wikimedia Commons. This is read-only. Use returned candidateId values in image drafts; never invent URLs.';
   }
-  return 'Use only stable IDs and values obtained from the current turn; never invent backend identifiers.';
+  return 'Use only stable IDs and values obtained from this session; never invent backend identifiers.';
 }
 
 function tool(name: string, description: string, properties: string,
@@ -89,24 +91,26 @@ export function agentFunctionTools(batchLimit: number = 100, mode: AgentMode = '
   const notes: string = `{"type":"array","minItems":1,"maxItems":${createLimit},"items":{"type":"object","properties":{"fields":{"type":"array","items":{"type":"string"}},"images":{"type":"array","maxItems":1,"items":${IMAGE_ATTACHMENT}}},"required":[],"additionalProperties":{"type":"string"}}}`;
   const tools: ProviderFunctionTool[] = [
     tool('request_clarification', '提出一个需要用户选择的澄清问题；只等待回答，绝不写入。',
-      '"clarificationId":{"type":"string","minLength":1,"maxLength":64},"question":{"type":"string","minLength":1,"maxLength":600},"options":{"type":"array","minItems":2,"maxItems":4,"items":{"type":"object","properties":{"id":{"type":"string","minLength":1,"maxLength":64},"label":{"type":"string","minLength":1,"maxLength":80},"description":{"type":"string","maxLength":240}},"required":["id","label"],"additionalProperties":false}},"recommendedOptionId":{"type":"string","maxLength":64},"allowFreeText":{"type":"boolean"}',
+      '"clarificationId":{"type":"string","minLength":1,"maxLength":64},"question":{"type":"string","minLength":1,"maxLength":600},"options":{"type":"array","minItems":0,"maxItems":4,"items":{"type":"object","properties":{"id":{"type":"string","minLength":1,"maxLength":64},"label":{"type":"string","minLength":1,"maxLength":80},"description":{"type":"string","maxLength":240}},"required":["id","label"],"additionalProperties":false}},"recommendedOptionId":{"type":"string","maxLength":64},"allowFreeText":{"type":"boolean"}',
       '"clarificationId","question","options","allowFreeText"'),
     tool('get_note_type_capabilities', '读取笔记类型结构、字段与填空字段序号。',
       `"notetypeIds":${ID_ARRAY}`, '"notetypeIds"'),
     tool('get_note_context', '读取当前笔记、卡片、字段、标签、牌组和兄弟卡片。',
-      `"cardIds":${ID_ARRAY},"noteIds":${ID_ARRAY}`, '"cardIds","noteIds"'),
+      `"cardIds":${ID_ARRAY},"noteIds":${ID_ARRAY},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":5}`, '"cardIds","noteIds"'),
     tool('search_cards', '在当前 Anki 集合中搜索卡片，返回稳定 ID。',
-      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
+      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":200},"cursor":${TEXT}`, '"query","limit"'),
     tool('search_notes', '在当前 Anki 集合中搜索笔记，返回稳定 ID；结果只读，不扩大修改范围。',
-      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
+      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":200},"cursor":${TEXT}`, '"query","limit"'),
     tool('list_decks', '列出或按名称筛选牌组。',
-      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
+      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000},"offset":{"type":"integer","minimum":0}`, '"query","limit"'),
     tool('list_notetypes', '列出或按名称筛选笔记类型，返回稳定 ID 与结构摘要。',
-      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
+      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000},"offset":{"type":"integer","minimum":0}`, '"query","limit"'),
     tool('list_tags', '列出或按名称筛选标签。',
-      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000}`, '"query","limit"'),
-    tool('get_notetype_details', '读取指定笔记类型的字段、填空能力、模板和 CSS 原始结构。',
-      `"notetypeIds":${ID_ARRAY}`, '"notetypeIds"'),
+      `"query":${TEXT},"limit":{"type":"integer","minimum":1,"maximum":1000},"offset":{"type":"integer","minimum":0}`, '"query","limit"'),
+    tool('get_notetype_details', '读取笔记类型结构；长模板/CSS 用 offset=nextOffset 续读，nextOffset=-1 表示读完。',
+      `"notetypeIds":${ID_ARRAY},"offset":{"type":"integer","minimum":0},"length":{"type":"integer","minimum":1,"maximum":12000}`, '"notetypeIds"'),
+    tool('read_note_field', '按字符位置续读笔记字段全文；nextOffset=-1 表示读完，禁止把片段当作全文。',
+      '"noteId":'+ID+',"fieldOrd":{"type":"integer","minimum":0},"offset":{"type":"integer","minimum":0},"length":{"type":"integer","minimum":1,"maximum":12000}', '"noteId","fieldOrd"'),
     tool('get_card_statistics', '读取指定卡片的调度统计与最近复习历史；limit 是每张卡最多返回的历史条数。',
       `"cardIds":${ID_ARRAY},"limit":{"type":"integer","minimum":1,"maximum":200}`, '"cardIds","limit"'),
     tool('search_images', '搜索 Wikimedia Commons 图片候选；只读，返回候选 ID、预览、来源和许可证。',
@@ -136,7 +140,7 @@ export function agentFunctionTools(batchLimit: number = 100, mode: AgentMode = '
       `"notetypeIds":${ID_ARRAY},"draftId":${TEXT},"reason":${TEXT}`, '"notetypeIds","draftId","reason"')
   ];
   if (mode === 'edit') {
-    return tools.filter((value: ProviderFunctionTool): boolean => value.name !== 'create_flashcards');
+    return tools.filter((value: ProviderFunctionTool): boolean => value.name !== 'create_flashcards').concat(agentExtensionTools());
   }
   const createTools: ProviderFunctionTool[] = [];
   for (const value of tools) {
@@ -144,5 +148,5 @@ export function agentFunctionTools(batchLimit: number = 100, mode: AgentMode = '
       createTools.push(value);
     }
   }
-  return createTools;
+  return createTools.concat(agentExtensionTools());
 }

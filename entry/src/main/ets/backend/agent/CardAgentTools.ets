@@ -8,8 +8,8 @@ import type { CardStatsView, StatsRevlogEntry } from '../../proto/messages/Stats
 import type { TagTreeNode } from '../../proto/messages/TagsMessages';
 import type { AgentImageAttachment, AgentImageCandidate, AgentMode, ChangeDraft, DraftOperation } from '../../model/agent/AgentTypes';
 import { validateAgentNoteFields } from '../../model/agent/AgentNoteValidation';
+import type { AgentToolArguments } from '../../model/agent/AgentToolSchemas';
 import {
-  AgentToolArguments,
   AgentToolSchemaError,
   decodeAgentToolArguments,
   resolveCreateNoteFields
@@ -23,11 +23,8 @@ import { 标签服务 } from '../标签服务';
 import { 统计服务 } from '../统计服务';
 import { AgentScope } from './AgentScope';
 import { WikimediaImageService, WikimediaImageServiceError } from './WikimediaImageService';
-import {
-  AgentDraftToolHandler,
-  AgentReadToolHandler,
-  AgentToolRegistry
-} from './AgentToolRegistry';
+import type { AgentDraftToolHandler, AgentReadToolHandler } from './AgentToolRegistry';
+import { AgentToolRegistry } from './AgentToolRegistry';
 
 interface FieldUpdate {
   noteId: number;
@@ -56,6 +53,7 @@ interface AgentNoteContextView {
   noteId: number;
   notetypeId: number;
   fields: string[];
+  fieldLengths: number[];
   tags: string[];
   cardIds: number[];
   deckIds: number[];
@@ -66,6 +64,8 @@ interface AgentNotetypeDetailsView {
   capability: NotetypeCapabilities;
   legacyJson: string;
   legacyJsonTruncated: boolean;
+  totalLength: number;
+  nextOffset: number;
 }
 
 interface AgentTagView {
@@ -130,12 +130,13 @@ function uniqueIds(ids: number[]): number[] {
   return output;
 }
 
-function flattenDeckTree(node: DeckTreeNode, output: AgentDeckView[]): void {
+function flattenDeckTree(node: DeckTreeNode, output: AgentDeckView[], prefix: string = ''): void {
+  const full: string = prefix.length === 0 ? node.name : `${prefix}::${node.name}`;
   if (node.deckId > 0) {
-    output.push({ deckId: node.deckId, name: node.name, cardCount: node.totalIncludingChildren });
+    output.push({ deckId: node.deckId, name: full, cardCount: node.totalIncludingChildren });
   }
   for (const child of node.children) {
-    flattenDeckTree(child, output);
+    flattenDeckTree(child, output, node.deckId > 0 ? full : '');
   }
 }
 
@@ -203,6 +204,7 @@ export class CardAgentTools {
   register(registry: AgentToolRegistry, mode: AgentMode = 'edit'): void {
     registry.registerRead('get_note_type_capabilities', new NamedReadHandler(this, 'get_note_type_capabilities'));
     registry.registerRead('get_note_context', new NamedReadHandler(this, 'get_note_context'));
+    registry.registerRead('read_note_field', new NamedReadHandler(this, 'read_note_field'));
     registry.registerRead('search_cards', new NamedReadHandler(this, 'search_cards'));
     registry.registerRead('search_notes', new NamedReadHandler(this, 'search_notes'));
     registry.registerRead('list_decks', new NamedReadHandler(this, 'list_decks'));
@@ -232,27 +234,32 @@ export class CardAgentTools {
     if (name === 'get_note_context') {
       return this.getNoteContext(args);
     }
-    if (name === 'search_cards') {
-      const scopedQuery: string = this.scope.scopedCardSearchQuery(args.query);
-      const allIds: number[] = await this.searches.搜索卡片({
-        search: scopedQuery,
-        order: { kind: 'none' }
-      });
-      const limit: number = Math.min(1000, args.limit === 0 ? 100 : args.limit);
-      const ids: number[] = allIds.slice(0, limit);
-      this.scope.registerReadableCardIds(ids);
-      return JSON.stringify({ cardIds: ids, totalMatched: allIds.length });
+    if (name === 'search_cards' || name === 'search_notes') {
+      const allIds: number[] = args.cursor.length > 0 ? [] : (name === 'search_cards' ?
+        await this.searches.搜索卡片({ search: args.query, order: { kind: 'none' } }) :
+        await this.searches.搜索笔记({ search: args.query, order: { kind: 'none' } }));
+      const page = args.cursor.length > 0 ? this.scope.retrieval.next(name, args.cursor, args.limit) :
+        this.scope.retrieval.begin(name, args.query, allIds, args.limit);
+      if (name === 'search_cards') {
+        this.scope.registerReadableCardIds(page.ids);
+        return JSON.stringify({ cardIds: page.ids, totalMatched: page.totalMatched,
+          nextCursor: page.nextCursor, returnedCount: page.returnedCount, query: page.query });
+      }
+      this.scope.registerReadableNoteIds(page.ids);
+      return JSON.stringify({ noteIds: page.ids, totalMatched: page.totalMatched,
+        nextCursor: page.nextCursor, returnedCount: page.returnedCount, query: page.query });
     }
-    if (name === 'search_notes') {
-      const scopedQuery: string = this.scope.scopedCardSearchQuery(args.query);
-      const allIds: number[] = await this.searches.搜索笔记({
-        search: scopedQuery,
-        order: { kind: 'none' }
-      });
-      const limit: number = Math.min(1000, args.limit === 0 ? 100 : args.limit);
-      const ids: number[] = allIds.slice(0, limit);
-      this.scope.registerReadableNoteIds(ids);
-      return JSON.stringify({ noteIds: ids, totalMatched: allIds.length });
+    if (name === 'read_note_field') {
+      this.scope.assertReadableNoteIds([args.noteId]);
+      this.scope.retrieval.beforeRead([args.noteId]);
+      const note: EditableNote = await this.notes.获取笔记(args.noteId);
+      if (args.fieldOrd >= note.fields.length) { throw new Error('field_out_of_range'); }
+      const field: string = note.fields[args.fieldOrd];
+      if (args.offset > field.length) { throw new Error('field_offset_out_of_range'); }
+      const end: number = Math.min(field.length, args.offset + args.length);
+      this.scope.retrieval.recordRead(note.id);
+      return JSON.stringify({ noteId: note.id, fieldOrd: args.fieldOrd, text: field.slice(args.offset, end),
+        totalLength: field.length, nextOffset: end < field.length ? end : -1, readCount: this.scope.retrieval.readCount() });
     }
     if (name === 'list_notetypes') {
       const allValues: NotetypeNameId[] = await this.notetypes.获取笔记类型名列表();
@@ -264,9 +271,9 @@ export class CardAgentTools {
         }
       }
       const limit: number = Math.min(1000, args.limit === 0 ? 100 : args.limit);
-      const result: NotetypeNameId[] = filtered.slice(0, limit);
+      const result: NotetypeNameId[] = filtered.slice(args.offset, args.offset + limit);
       this.scope.registerReadableNotetypeIds(result.map((value: NotetypeNameId): number => value.id));
-      return JSON.stringify({ notetypes: result, totalMatched: filtered.length });
+      return JSON.stringify({ notetypes: result, totalMatched: filtered.length, nextOffset: args.offset + limit < filtered.length ? args.offset + limit : -1 });
     }
     if (name === 'list_tags') {
       const tree: TagTreeNode = await this.tags.标签树();
@@ -280,7 +287,7 @@ export class CardAgentTools {
         }
       }
       const limit: number = Math.min(1000, args.limit === 0 ? 100 : args.limit);
-      return JSON.stringify({ tags: filtered.slice(0, limit), totalMatched: filtered.length });
+      return JSON.stringify({ tags: filtered.slice(args.offset, args.offset + limit), totalMatched: filtered.length, nextOffset: args.offset + limit < filtered.length ? args.offset + limit : -1 });
     }
     if (name === 'get_notetype_details') {
       this.scope.assertReadableNotetypeIds(args.notetypeIds);
@@ -288,11 +295,14 @@ export class CardAgentTools {
       for (const id of args.notetypeIds) {
         const capability: NotetypeCapabilities = await this.notetypes.获取笔记类型能力(id);
         const legacyJson: string = await this.notetypes.获取笔记类型旧版(id);
-        const truncated: boolean = legacyJson.length > 20000;
+        if (args.offset > legacyJson.length) { throw new Error('field_offset_out_of_range'); }
+        const end: number = Math.min(legacyJson.length, args.offset + args.length);
+        const truncated: boolean = args.offset > 0 || end < legacyJson.length;
         values.push({
           capability: capability,
-          legacyJson: truncated ? legacyJson.slice(0, 20000) : legacyJson,
-          legacyJsonTruncated: truncated
+          legacyJson: legacyJson.slice(args.offset, end),
+          legacyJsonTruncated: truncated, totalLength: legacyJson.length,
+          nextOffset: end < legacyJson.length ? end : -1
         });
       }
       return JSON.stringify(values);
@@ -330,9 +340,9 @@ export class CardAgentTools {
       }
     }
     const limit: number = Math.min(1000, args.limit === 0 ? 100 : args.limit);
-    const result: AgentDeckView[] = filtered.slice(0, limit);
-    this.scope.registerDeckIds(result.map((deck: AgentDeckView): number => deck.deckId));
-    return JSON.stringify({ decks: result, totalMatched: filtered.length });
+    const result: AgentDeckView[] = filtered.slice(args.offset, args.offset + limit);
+    this.scope.registerReadableDeckIds(result.map((deck: AgentDeckView): number => deck.deckId));
+    return JSON.stringify({ decks: result, totalMatched: filtered.length, nextOffset: args.offset + limit < filtered.length ? args.offset + limit : -1 });
   }
 
   async proposeDraft(name: string, argumentsJson: string): Promise<ChangeDraft> {
@@ -366,7 +376,10 @@ export class CardAgentTools {
       this.scope.registerReadableDeckIds([card.deckId]);
     }
     const contexts: AgentNoteContextView[] = [];
-    for (const noteId of uniqueIds(noteIds)) {
+    const allNoteIds: number[] = uniqueIds(noteIds);
+    const pageIds: number[] = allNoteIds.slice(args.offset, args.offset + Math.min(5, args.limit || 5));
+    this.scope.retrieval.beforeRead(pageIds);
+    for (const noteId of pageIds) {
       const note: EditableNote = await this.notes.获取笔记(noteId);
       const cardIds: number[] = await this.notes.获取笔记的卡片(noteId);
       const deckIds: number[] = [];
@@ -381,19 +394,23 @@ export class CardAgentTools {
       contexts.push({
         noteId: note.id,
         notetypeId: note.notetypeId,
-        fields: note.fields.slice(),
+        fields: note.fields.map((field: string): string => field.slice(0, Math.min(1000, Math.max(1, Math.floor(4000 / note.fields.length))))),
+        fieldLengths: note.fields.map((field: string): number => field.length),
         tags: note.tags.slice(),
         cardIds: cardIds,
         deckIds: uniqueIds(deckIds),
         capability: capability
       });
     }
-    return JSON.stringify(contexts);
+    for (const item of contexts) { this.scope.retrieval.recordRead(item.noteId); }
+    return JSON.stringify({ notes: contexts, totalRequested: allNoteIds.length,
+      nextOffset: args.offset + pageIds.length < allNoteIds.length ? args.offset + pageIds.length : -1,
+      readCount: this.scope.retrieval.readCount(), fieldPreviewLimit: 1000 });
   }
 
   private async proposeCreate(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertDeckIdsInScope([args.targetDeckId]);
-    this.scope.assertNotetypeIdsInScope([args.targetNotetypeId]);
+    this.scope.assertReadableDeckIds([args.targetDeckId]);
+    this.scope.assertReadableNotetypeIds([args.targetNotetypeId]);
     this.scope.assertCreateTarget(args.targetDeckId, args.targetNotetypeId);
     this.scope.assertBatchCount(args.createNotes.length);
     const capability: NotetypeCapabilities = await this.notetypes.获取笔记类型能力(args.targetNotetypeId);
@@ -455,7 +472,7 @@ export class CardAgentTools {
   }
 
   private async proposeUpdate(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertNoteIdsInScope(args.noteIds);
+    this.scope.assertReadableNoteIds(args.noteIds);
     const updates: FieldUpdate[] = args.fieldUpdatesJson.trim().length === 0 ? [] :
       parseFieldUpdates(args.fieldUpdatesJson);
     const operations: DraftOperation[] = [];
@@ -522,8 +539,8 @@ export class CardAgentTools {
   }
 
   private async proposeMove(args: AgentToolArguments): Promise<ChangeDraft> {
-    this.scope.assertCardIdsInScope(args.cardIds);
-    this.scope.assertDeckIdsInScope([args.targetDeckId]);
+    this.scope.assertReadableCardIds(args.cardIds);
+    this.scope.assertReadableDeckIds([args.targetDeckId]);
     const operations: DraftOperation[] = [];
     const noteIds: number[] = [];
     for (const cardId of args.cardIds) {

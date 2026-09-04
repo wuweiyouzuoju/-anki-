@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import type { ToolRisk } from './AgentTypes';
+import { extensionToolRisk } from './AgentExtensionTools';
 
 export const DEFAULT_BATCH_LIMIT: number = 100;
 export const MAX_BATCH_LIMIT: number = 1000;
@@ -38,6 +39,7 @@ export function toolRiskOf(toolName: string): ToolRisk {
   switch (toolName) {
     case 'get_note_type_capabilities':
     case 'get_note_context':
+    case 'read_note_field':
     case 'search_cards':
     case 'search_notes':
     case 'list_decks':
@@ -67,7 +69,7 @@ export function toolRiskOf(toolName: string): ToolRisk {
     case 'propose_update_note_type_templates':
       return 'high_risk';
     default:
-      return 'blocked';
+      return extensionToolRisk(toolName);
   }
 }
 
