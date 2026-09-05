@@ -462,8 +462,8 @@ test('interval graph always shows intervals; stability is a separate FSRS-only g
 });
 
 test('graph preferences are in-chart controls without a modal (Anki autoSavingPrefs)', () => {
-  // 对齐 Anki：官方无图表偏好弹窗——偏好控件内嵌各图、改动即时落库
-  // （autoSavingPrefs）；统计天数是 RangeBox 顶栏 radio（1年/全部两档）。
+  // 对齐 Anki：官方无图表偏好弹窗——偏好控件内嵌各图、改动即时落库。
+  // 统计天数保留 1 年/全部两档，但入口改为右上角按钮，并唤出与设置页同款双项菜单。
   // 曾用集中弹窗（图表偏好面板）+ 30/90/365/全部四档，2026-08-25 用户裁定完全复刻 Anki。
   const statsPage = read('entry/src/main/ets/pages/统计页.ets');
   const counts = read('entry/src/main/ets/components/stats/卡片状态分布.ets');
@@ -474,10 +474,16 @@ test('graph preferences are in-chart controls without a modal (Anki autoSavingPr
     '图表偏好面板.ets 已删除（Anki 无偏好弹窗）'
   );
   assert.doesNotMatch(statsPage, /显示偏好面板|保存偏好|onBackPress/, '统计页不得残留偏好弹窗状态/方法');
-  // 顶栏天数两档：365/0，切换重新请求后端
-  assert.match(statsPage, /on天数切换\(天数: number\)/, '须有顶栏天数切换（Anki RangeBox）');
-  assert.match(statsPage, /on天数切换\(365\)/);
-  assert.match(statsPage, /on天数切换\(0\)/);
+  // 顶栏天数两档：365/0；点击当前范围后，右上角菜单选择项会重新请求后端。
+  assert.match(statsPage, /on天数切换\(天数: number\)/, '须有顶栏天数切换');
+  assert.match(statsPage, /显示统计范围菜单/);
+  assert.match(statsPage, /统计范围切换菜单/);
+  assert.match(statsPage, /on天数切换\(全部范围 \? 0 : 365\)/);
+  const rangeMenu = read('entry/src/main/ets/components/stats/统计范围切换菜单.ets');
+  assert.match(rangeMenu, /Alignment\.TopEnd/, '范围菜单必须锚定右上角');
+  assert.match(rangeMenu, /stats_hours_range_1y/);
+  assert.match(rangeMenu, /stats_hours_range_all/);
+  assert.match(rangeMenu, /TransitionEffect\.opacity\(0\)/, '范围菜单沿用设置页的纯淡入淡出');
   // 图内偏好控件：即时写偏好（更新偏好 + 设置图表偏好）
   assert.match(statsPage, /更新偏好\(字段: \(旧: GraphPreferences\) => GraphPreferences\)/, '须有图内偏好即时落库辅助');
   assert.match(statsPage, /on分离变更/, '卡片数量分离复选框回调');

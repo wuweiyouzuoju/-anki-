@@ -40,6 +40,7 @@ import { 加载主题模式 } from '../model/主题存储';
 import { CustomTransition } from '../utils/自定义转场';
 import { 按下态按钮 } from '../components/common/按下态按钮';
 import { 统计图表分区 } from '../components/stats/统计图表分区';
+import { 统计范围切换菜单 } from '../components/stats/统计范围切换菜单';
 import { 今日计数卡 } from '../components/stats/今日计数卡';
 import { 预测卡 } from '../components/stats/预测卡';
 import { 日历卡 } from '../components/stats/日历卡';
@@ -87,6 +88,7 @@ export struct 统计页 {
   @State private 图表数据: GraphsView | null = null;
   @State private 图表偏好: GraphPreferences = 默认偏好();
   @State private 统计天数: number = 365;
+  @State private 显示统计范围菜单: boolean = false;
   // 牌组选择（顶部条内嵌下拉）：索引 0 = 全部牌组（搜索串空），>0 对应 牌组名列表[索引-1]
   @State private 牌组选项: SelectOption[] = [];
   @State private 选中牌组索引: number = 0;
@@ -386,29 +388,15 @@ export struct 统计页 {
 
         Blank()
 
-        // 统计天数两档（对齐 Anki RangeBox RevlogRange：1 年 / 全部），
-        // 胶囊样式与各图表内范围切换条一致；切换重新请求后端
-        Row({ space: 应用尺寸.间距_4 }) {
-          Text($r('app.string.stats_hours_range_1y'))
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor(this.统计天数 !== 0 ? this.主色按钮背景色 : $r('app.color.text_secondary'))
-            .fontWeight(this.统计天数 !== 0 ? FontWeight.Bold : FontWeight.Normal)
-            .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8,
-              top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
-            .backgroundColor(this.统计天数 !== 0 ? this.主色容器色 : Color.Transparent)
-            .borderRadius(应用尺寸.圆角_进度条)
-            .onClick((): void => { this.on天数切换(365); })
-          Text($r('app.string.stats_hours_range_all'))
-            .fontSize(应用尺寸.字号_正文_小)
-            .fontColor(this.统计天数 === 0 ? this.主色按钮背景色 : $r('app.color.text_secondary'))
-            .fontWeight(this.统计天数 === 0 ? FontWeight.Bold : FontWeight.Normal)
-            .padding({ left: 应用尺寸.间距_8, right: 应用尺寸.间距_8,
-              top: 应用尺寸.间距_4, bottom: 应用尺寸.间距_4 })
-            .backgroundColor(this.统计天数 === 0 ? this.主色容器色 : Color.Transparent)
-            .borderRadius(应用尺寸.圆角_进度条)
-            .onClick((): void => { this.on天数切换(0); })
-        }
-        .alignItems(VerticalAlign.Center)
+        // 统计天数入口：点击当前范围，在右上角唤出与设置页同款的双项选择菜单。
+        按下态按钮({
+          文案: this.统计天数 === 0
+            ? $r('app.string.stats_hours_range_all')
+            : $r('app.string.stats_hours_range_1y'),
+          选中态背景: this.主色容器色,
+          字色: $r('app.color.text_primary'),
+          点击回调: (): void => { this.显示统计范围菜单 = true; }
+        })
       }
       .width('100%')
       .height('100%')
@@ -727,6 +715,19 @@ export struct 统计页 {
             onClose: (): void => {
               this.显示分区帮助 = false;
             }
+          })
+        }
+
+        if (this.显示统计范围菜单) {
+          统计范围切换菜单({
+            当前全部范围: this.统计天数 === 0,
+            主色: this.主色按钮背景色,
+            顶部偏移: 应用尺寸.工具栏高度 + this.状态栏高度 + 应用尺寸.间距_8,
+            选择回调: (全部范围: boolean): void => {
+              this.显示统计范围菜单 = false;
+              this.on天数切换(全部范围 ? 0 : 365);
+            },
+            关闭回调: (): void => { this.显示统计范围菜单 = false; }
           })
         }
       }

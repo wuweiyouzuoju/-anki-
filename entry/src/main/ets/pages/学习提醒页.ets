@@ -223,16 +223,8 @@ export struct 学习提醒页 {
 
   @Builder
   private 顶部条() {
-    // 与统计页顶部条同款：标题在底层绝对居中，按钮行在顶层铺满。
     Stack() {
-      // 下层：标题居中（ⓘ 帮助按钮已按用户要求移除）
-      Text($r('app.string.reminder_list_title'))
-        .fontSize(应用尺寸.字号_面板标题)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .hitTestBehavior(HitTestMode.Transparent)
-
-      // 上层：左返回 + 右新建按钮，铺满
+      // 左返回 + 右新建按钮，铺满
       Row() {
         按下态按钮({
           文案: $r('app.string.study_back'),

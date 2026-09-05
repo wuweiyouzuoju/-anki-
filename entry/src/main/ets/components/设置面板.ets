@@ -800,9 +800,16 @@ export struct 设置面板 {
   build() {
     Stack() {
       Column() {
-        // 顶部条：左当前模式按钮（弹出 简洁版/实验版 菜单）+ 中标题 + 右确认（关闭设置页）
+        // 顶部条：左确认（关闭设置页）+ 右当前模式按钮（弹出 简洁版/实验版 菜单）
         Stack() {
           Row() {
+            按下态按钮({
+              文案: $r('app.string.settings_confirm'),
+              选中态背景: this.主色容器色,
+              字色: this.动作主色链接,
+              点击回调: (): void => { this.关闭回调(); }
+            })
+            Blank()
             按下态按钮({
               文案: this.简洁模式 ? $r('app.string.settings_simple_mode_simple')
                 : $r('app.string.settings_simple_mode_full'),
@@ -810,26 +817,11 @@ export struct 设置面板 {
               字色: $r('app.color.text_primary'),
               点击回调: (): void => { this.显示模式菜单 = true; }
             })
-            Blank()
-            按下态按钮({
-              文案: $r('app.string.settings_confirm'),
-              选中态背景: this.主色容器色,
-              字色: this.动作主色链接,
-              点击回调: (): void => { this.关闭回调(); }
-            })
           }
           .width('100%')
           .height('100%')
           .padding({ left: 应用尺寸.页面内边距_水平, right: 应用尺寸.页面内边距_水平 })
           .hitTestBehavior(HitTestMode.Transparent)
-
-          Text($r('app.string.settings_title'))
-            .fontSize(应用尺寸.字号_面板标题)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-            .width('100%')
-            .textAlign(TextAlign.Center)
-            .hitTestBehavior(HitTestMode.Transparent)
         }
         .width('100%')
         .height(应用尺寸.工具栏高度 + this.状态栏高度)
