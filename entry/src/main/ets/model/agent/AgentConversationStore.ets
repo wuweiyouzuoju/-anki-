@@ -16,6 +16,7 @@ const MAX_CONVERSATIONS: number = 50;
 const MAX_MESSAGES: number = 200;
 const MAX_TEXT_LENGTH: number = 20000;
 const MAX_AUDIT_TEXT_TOTAL: number = 200000;
+const MAX_REASONING_TEXT_TOTAL: number = 200000;
 
 interface AnalysisHistoryPayload { query: string; totalMatched: number; alreadyRead: number; }
 function historyAction(action: AgentAction): AgentAction {
@@ -27,7 +28,12 @@ function historyAction(action: AgentAction): AgentAction {
   return safe;
 }
 
+/** 保存接口实际返回的可见思考及其类型；不从正文生成或反推思考。 */
 export interface AgentHistoryMessage {
+  id?: number;
+  reasoning?: string;
+  reasoningIsSummary?: boolean;
+  reasoningTruncated?: boolean;
   action?: AgentAction;
   role: string;
   text: string;
@@ -36,7 +42,7 @@ export interface AgentHistoryMessage {
   expanded: boolean;
 }
 
-export interface AgentHistoryAudit extends AgentToolTrace {}
+export interface AgentHistoryAudit extends AgentToolTrace { messageId?: number; }
 
 export interface AgentHistoryResult {
   draftId: string;
@@ -172,6 +178,7 @@ function safeAudit(audit: AgentHistoryAudit): AgentHistoryAudit {
   const templateSafe = sanitizeAgentToolJson(
     typeof audit.validTemplateJson === 'string' ? audit.validTemplateJson : '', 4096);
   return {
+    messageId: typeof audit.messageId === 'number' && Number.isFinite(audit.messageId) ? audit.messageId : undefined,
     callId: legacy ? `legacy-${oldToolName}` : sanitizeHistoryText(audit.callId),
     toolName: sanitizeHistoryText(oldToolName),
     status: legacy ? 'completed' : safeAuditStatus(oldStatus),
@@ -197,10 +204,18 @@ function safeAudit(audit: AgentHistoryAudit): AgentHistoryAudit {
 
 function safeConversation(value: AgentConversation): AgentConversation {
   const messages: AgentHistoryMessage[] = [];
+  let reasoningTotal: number = 0;
   for (const message of value.messages.slice(-MAX_MESSAGES)) {
     if (message.role === 'user' || message.role === 'assistant') {
       const clarification: AgentClarificationView | null = safeClarification(message.clarification);
+      const rawReasoning: string = typeof message.reasoning === 'string' ? message.reasoning : '';
+      const reasoning: string = sanitizeHistoryText(rawReasoning).slice(0, MAX_REASONING_TEXT_TOTAL - reasoningTotal);
+      reasoningTotal += reasoning.length;
       messages.push({
+        id: typeof message.id === 'number' && Number.isFinite(message.id) ? message.id : undefined,
+        reasoning: reasoning, reasoningIsSummary: message.reasoningIsSummary === true,
+        reasoningTruncated: message.reasoningTruncated === true || rawReasoning.length > MAX_TEXT_LENGTH ||
+          sanitizeHistoryText(rawReasoning).length > reasoning.length,
         role: message.role, text: sanitizeHistoryText(message.text),
         kind: message.kind === 'clarification' ? 'clarification' : 'normal',
         action: message.action === undefined ? undefined :

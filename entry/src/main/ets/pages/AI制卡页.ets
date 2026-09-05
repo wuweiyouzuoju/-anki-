@@ -76,6 +76,7 @@ import {
 import { loadAgentSecret } from '../backend/agent/AgentSecretStore';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 颜色键 } from '../model/颜色主题';
+import { 简洁模式AppStorage键 } from '../model/简洁模式存储';
 import { CustomTransition } from '../utils/自定义转场';
 import { 按下态按钮 } from '../components/common/按下态按钮';
 import type { EditableNote } from '../proto/messages/NoteMessages';
@@ -175,6 +176,7 @@ interface 卡片草稿 {
 interface 聊天消息 {
   action: AgentAction | null;
   reasoningIsSummary: boolean;
+  reasoningTruncated: boolean;
   draftDeckId: number;
   draftNotetypeId: number;
   draftTargetLabel: string;
@@ -264,6 +266,7 @@ export struct AI制卡页 {
 
   private 下一个消息ID值: number = 1;
 
+  @StorageProp(简洁模式AppStorage键) @Watch('applyToolPresentationMode') private simpleMode: boolean = true;
   @StorageProp(颜色键.动作主色) private 动作主色: string = '#2F5FD0';
   @StorageProp(颜色键.选中背景) private 选中背景色: string = '#E8EEFC';
   @StorageProp(颜色键.主色容器) private 主色容器色: string = '#E8EEFC';
@@ -739,7 +742,7 @@ export struct AI制卡页 {
       id: this.下一个消息ID(), 角色: 角色, 正文: 正文, 是否错误: 是否错误,
       卡片列表: [], 字段名列表: [], 批次结果: '', 批次保存中: false,
       变更草稿列表: [], 工具过程: [], 来源列表: [], 推理摘要: '',
-      action: null, reasoningIsSummary: false, draftDeckId: 0, draftNotetypeId: 0, draftTargetLabel: '',
+      action: null, reasoningIsSummary: false, reasoningTruncated: false, draftDeckId: 0, draftNotetypeId: 0, draftTargetLabel: '',
       kind: 'normal', clarification: null, expanded: false, taskStatus: '',
       answerMessageId: 0, providerText: 正文
     };
@@ -784,7 +787,7 @@ export struct AI制卡页 {
 
   private 克隆消息(消息: 聊天消息): 聊天消息 {
     return {
-      action: 消息.action, reasoningIsSummary: 消息.reasoningIsSummary,
+      action: 消息.action, reasoningIsSummary: 消息.reasoningIsSummary, reasoningTruncated: 消息.reasoningTruncated,
       draftDeckId: 消息.draftDeckId, draftNotetypeId: 消息.draftNotetypeId, draftTargetLabel: 消息.draftTargetLabel,
       id: 消息.id,
       角色: 消息.角色,
@@ -1231,7 +1234,7 @@ export struct AI制卡页 {
         for (let index: number = 0; index < message.工具过程.length; index++) {
           if (message.工具过程[index].callId === trace.callId) { existingIndex = index; break; }
         }
-        if (existingIndex < 0) { message.工具过程.push(trace); }
+        if (existingIndex < 0) { trace.expanded = !this.simpleMode; message.工具过程.push(trace); }
         else {
           trace.expanded = message.工具过程[existingIndex].expanded;
           message.工具过程[existingIndex] = trace;
@@ -1524,8 +1527,11 @@ export struct AI制卡页 {
         $r('app.string.ai_agent_history_create_title') : $r('app.string.ai_agent_history_edit_title'));
       let title: string = defaultTitle;
       for (const message of this.消息列表) {
-        if ((message.正文.length > 0 || message.action !== null) && (message.kind === 'normal' || message.kind === 'clarification')) {
+        if ((message.正文.length > 0 || message.推理摘要.length > 0 || message.工具过程.length > 0 ||
+          message.action !== null) && (message.kind === 'normal' || message.kind === 'clarification')) {
           messages.push({
+            id: message.id, reasoning: message.推理摘要, reasoningIsSummary: message.reasoningIsSummary,
+            reasoningTruncated: message.reasoningTruncated,
             role: message.角色 === 'user' ? 'user' : 'assistant',
             text: message.角色 === 'ai' && message.providerText.length > 0 ?
               message.providerText : message.正文,
@@ -1538,7 +1544,11 @@ export struct AI制卡页 {
             title = message.正文.slice(0, 40);
           }
         }
-        for (const item of message.工具过程) { audits.push(this.克隆历史审计(item)); }
+        for (const item of message.工具过程) {
+          const audit: AgentHistoryAudit = this.克隆历史审计(item);
+          audit.messageId = message.id;
+          audits.push(audit);
+        }
         for (const source of message.来源列表) { sources.push(source); }
       }
       if (messages.length === 0) { return; }
@@ -1582,6 +1592,7 @@ export struct AI制卡页 {
   /** 恢复可见历史、协议与检索进度；旧卡片写入令牌不恢复。 */
   private async 恢复历史会话(selected: AgentConversation): Promise<void> {
     const restored: 聊天消息[] = [];
+    const messagePositions: Map<number, number> = new Map<number, number>();
     for (const item of selected.messages) {
       const message: 聊天消息 = this.空消息(item.role === 'user' ? 'user' : 'ai', item.text, false);
       message.kind = item.kind;
@@ -1589,20 +1600,26 @@ export struct AI制卡页 {
       message.clarification = item.clarification;
       message.expanded = item.expanded;
       message.providerText = item.text;
+      message.推理摘要 = item.reasoning ?? '';
+      message.reasoningIsSummary = item.reasoningIsSummary === true;
+      message.reasoningTruncated = item.reasoningTruncated === true;
+      if (item.id !== undefined) { messagePositions.set(item.id, restored.length); }
       restored.push(message);
     }
-    let auditTarget: number = -1;
-    for (let index: number = restored.length - 1; index >= 0; index--) {
-      if (restored[index].角色 === 'ai') { auditTarget = index; break; }
-    }
-    if (selected.audits.length > 0 && auditTarget < 0) {
-      restored.push(this.空消息('ai', '', false));
-      auditTarget = restored.length - 1;
-    }
-    if (auditTarget >= 0) {
-      for (const audit of selected.audits) {
-        restored[auditTarget].工具过程.push(this.克隆工具追踪(audit));
+    // 新历史按消息归属恢复；旧记录无法确定归属时单独列出，不冒充最后一轮调用。
+    let legacyAuditTarget: number = -1;
+    for (const audit of selected.audits) {
+      let auditTarget: number | undefined = audit.messageId === undefined ? undefined : messagePositions.get(audit.messageId);
+      if (auditTarget === undefined) {
+        if (legacyAuditTarget < 0) {
+          restored.push(this.空消息('ai', this.取本地化文案($r('app.string.ai_agent_history_unassigned_tools')), false));
+          legacyAuditTarget = restored.length - 1;
+        }
+        auditTarget = legacyAuditTarget;
       }
+      const trace: AgentToolTrace = this.克隆工具追踪(audit);
+      trace.expanded = !this.simpleMode;
+      restored[auditTarget].工具过程.push(trace);
     }
     this.conversationId = selected.id;
     this.历史执行结果 = selected.results.slice();
@@ -2167,6 +2184,15 @@ export struct AI制卡页 {
     }
   }
 
+  /** 模式只决定详情默认展开程度，不改变模型、工具权限或确认规则。 */
+  private applyToolPresentationMode(): void {
+    this.消息列表 = this.消息列表.map((message: 聊天消息): 聊天消息 => {
+      const next: 聊天消息 = this.克隆消息(message);
+      for (const trace of next.工具过程) { trace.expanded = !this.simpleMode; }
+      return next;
+    });
+  }
+
   private 切换工具详情(消息索引: number, 追踪索引: number): void {
     this.更新消息(消息索引, (消息: 聊天消息): void => {
       if (追踪索引 >= 0 && 追踪索引 < 消息.工具过程.length) {
@@ -2243,13 +2269,13 @@ export struct AI制卡页 {
         }
   }
 
-  /** 澄清由独立问题消息呈现；隐藏重复工具记录后，不留下空白回复气泡。 */
+  /** 有真实思考、工具或正文时保留回复；澄清工具与下一条问题消息分别呈现。 */
   private hasVisibleAssistantContent(message: 聊天消息): boolean {
     return message.正文.length > 0 || message.推理摘要.length > 0 ||
       message.来源列表.length > 0 || message.卡片列表.length > 0 ||
       message.变更草稿列表.length > 0 || message.action !== null ||
       message.taskStatus === 'paused' || message.批次结果.length > 0 ||
-      message.工具过程.some((trace: AgentToolTrace): boolean => trace.toolName !== 'request_clarification');
+      message.工具过程.length > 0;
   }
 
   @Builder
@@ -2265,6 +2291,10 @@ export struct AI制卡页 {
             })
           }
             .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_tertiary'))
+          if (this.消息列表[消息索引].reasoningTruncated) {
+            Text($r('app.string.ai_agent_history_reasoning_truncated'))
+              .fontSize(应用尺寸.字号_正文_小).fontColor($r('app.color.text_tertiary'))
+          }
         }
         Text() {
           ForEach(parseAgentBoldRuns(this.消息列表[消息索引].正文), (run: AgentTextRun) => {
@@ -2276,13 +2306,10 @@ export struct AI制卡页 {
             ? $r('app.color.error_text') : $r('app.color.text_primary'))
           .width('100%')
 
-        if (this.消息列表[消息索引].工具过程.some((trace: AgentToolTrace): boolean =>
-          trace.toolName !== 'request_clarification')) {
+        if (this.消息列表[消息索引].工具过程.length > 0) {
           Text($r('app.string.ai_agent_tool_process')).fontSize(应用尺寸.字号_正文_小).fontWeight(FontWeight.Medium)
           ForEach(this.消息列表[消息索引].工具过程, (_trace: AgentToolTrace, index: number) => {
-            if (_trace.toolName !== 'request_clarification') {
-              this.工具过程项(消息索引, index)
-            }
+            this.工具过程项(消息索引, index)
           }, (trace: AgentToolTrace, index: number): string => `${index}-${trace.callId}-${trace.status}`)
         }
         if (this.消息列表[消息索引].来源列表.length > 0) {

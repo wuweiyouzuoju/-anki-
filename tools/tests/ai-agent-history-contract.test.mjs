@@ -19,13 +19,15 @@ test('local Agent history is resumable and deletable', () => {
   assert.match(source, /preferences\.getPreferences/);
 });
 
-test('history schema keeps audit, sources and results but has no secret, reasoning or media fields', () => {
+test('history schema keeps visible provider reasoning with reply attribution but no secrets or media', () => {
   const source = fs.readFileSync(historyPath, 'utf8');
   assert.match(source, /AgentHistoryAudit/);
   assert.match(source, /AgentHistoryResult/);
   assert.match(source, /SearchSource/);
   assert.doesNotMatch(source, /apiKey\s*:/);
-  assert.doesNotMatch(source, /reasoning\s*:/i);
+  assert.match(source, /reasoning\?: string/);
+  assert.match(source, /messageId\?: number/);
+  assert.match(source, /MAX_REASONING_TEXT_TOTAL/);
   assert.doesNotMatch(source, /media(Bytes|Data)\s*:/i);
   assert.match(source, /sanitizeHistoryText/);
   assert.match(source, /data:/);

@@ -1095,6 +1095,8 @@
     { "name": "ai_agent_http_error", "value": "AI provider rejected the request (HTTP %1$d)" },
     { "name": "ai_agent_http_error_detail", "value": "AI provider rejected the request (HTTP %1$d): %2$s" },
     { "name": "ai_agent_history", "value": "History" },
+    { "name": "ai_agent_history_unassigned_tools", "value": "Earlier tool records (original reply not recorded)" },
+    { "name": "ai_agent_history_reasoning_truncated", "value": "Only part of this long reasoning was retained in history." },
     { "name": "ai_agent_history_title", "value": "Conversation History" },
     { "name": "ai_agent_history_none", "value": "No restorable conversation" },
     { "name": "ai_agent_history_next", "value": "Next page" },

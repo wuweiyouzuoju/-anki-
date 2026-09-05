@@ -105,12 +105,22 @@ test('every assistant reply bubble ends with the AI-generated disclaimer', () =>
   assert.equal(en.ai_agent_generated_disclaimer, '(AI-generated reply. Please verify.)');
 });
 
-// 澄清仍进入协议和审计；呈现层不能重复显示工具行或留下空白气泡。
-test('clarification traces stay in history but are excluded from visible tool rows', () => {
+// 工具轨迹保留在发起问题的回复中，问题气泡本身没有工具外壳。
+test('clarification traces remain visible while question bubbles stay conversational', () => {
   const page = read('entry/src/main/ets/pages/AI制卡页.ets');
-  assert.match(page, /工具过程\.some\([\s\S]*?trace\.toolName !== 'request_clarification'/);
-  assert.match(page, /if \(_trace\.toolName !== 'request_clarification'\) \{\s*this\.工具过程项/);
+  assert.doesNotMatch(page, /toolName !== 'request_clarification'/);
   assert.match(page, /else if \(this\.hasVisibleAssistantContent\(this\.消息列表\[消息索引\]\)\)/);
-  assert.match(page, /for \(const item of message\.工具过程\) \{ audits\.push/);
-  assert.match(page, /restored\[auditTarget\]\.工具过程\.push/);
+  assert.match(page, /audit\.messageId = message\.id/);
+  assert.match(page, /messagePositions\.get\(audit\.messageId\)/);
+  assert.match(page, /trace\.expanded = !this\.simpleMode/);
+});
+
+test('simple and experimental modes only change the default tool detail visibility', () => {
+  const page = read('entry/src/main/ets/pages/AI制卡页.ets');
+  assert.match(page, /@StorageProp\(简洁模式AppStorage键\) @Watch\('applyToolPresentationMode'\)/);
+  assert.match(page, /if \(existingIndex < 0\) \{ trace\.expanded = !this\.simpleMode/);
+  assert.match(page, /trace\.expanded = message\.工具过程\[existingIndex\]\.expanded/);
+  assert.match(page, /for \(const trace of next\.工具过程\) \{ trace\.expanded = !this\.simpleMode; \}/);
+  assert.match(page, /toggleLocked: false/);
+  assert.doesNotMatch(page, /simpleMode[\s\S]{0,100}reasoningEffort/);
 });

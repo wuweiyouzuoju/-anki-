@@ -1700,6 +1700,8 @@
     { "name": "ai_agent_http_error", "value": "请求被 AI 提供商拒绝（HTTP %1$d）" },
     { "name": "ai_agent_http_error_detail", "value": "请求被 AI 提供商拒绝（HTTP %1$d）：%2$s" },
     { "name": "ai_agent_history", "value": "历史" },
+    { "name": "ai_agent_history_unassigned_tools", "value": "较早的工具记录（原记录未保存所属回复）" },
+    { "name": "ai_agent_history_reasoning_truncated", "value": "历史思考内容较长，仅保存了部分内容。" },
     { "name": "ai_agent_history_title", "value": "历史对话" },
     { "name": "ai_agent_history_none", "value": "暂无可恢复的历史会话" },
     { "name": "ai_agent_history_next", "value": "下一页" },
