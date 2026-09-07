@@ -28,11 +28,11 @@ test('托管目录提供六个带准确卡片数量的公开牌组', async () =>
       fileName: decodeURIComponent(new URL(downloadUrl).pathname.split('/').at(-1)),
     })),
     [
-      { id: 'cet-46-vocabulary', name: 'CET四六级词汇', version: '1.1.0', size: 169033353, cardCount: 14311, accessType: 'public', fileName: 'CET四六级词汇（分发版）.apkg' },
-      { id: 'high-school-english-vocabulary', name: '高考英语词汇', version: '1.1.0', size: 89347750, cardCount: 8453, accessType: 'public', fileName: '高考英语词汇（分发版）.apkg' },
-      { id: 'middle-school-english-vocabulary', name: '中考英语词汇', version: '1.1.0', size: 44392978, cardCount: 3305, accessType: 'public', fileName: '中考英语词汇（分发版）.apkg' },
-      { id: 'ai-machine-learning', name: 'AI机器学习', version: '1.1.0', size: 5526001, cardCount: 1450, accessType: 'public', fileName: 'AI机器学习（分发版）.apkg' },
-      { id: 'it-computer', name: 'IT计算机', version: '1.0.0', size: 35303280, cardCount: 3400, accessType: 'public', fileName: 'IT计算机（分发版）.apkg' },
+      { id: 'cet-46-vocabulary', name: 'CET四六级词汇', version: '1.1.0', size: 166299572, cardCount: 14311, accessType: 'public', fileName: 'CET四六级词汇（分发版）.apkg' },
+      { id: 'high-school-english-vocabulary', name: '高考英语词汇', version: '1.1.0', size: 89366080, cardCount: 8453, accessType: 'public', fileName: '高考英语词汇（分发版）.apkg' },
+      { id: 'middle-school-english-vocabulary', name: '中考英语词汇', version: '1.1.0', size: 44358781, cardCount: 3305, accessType: 'public', fileName: '中考英语词汇（分发版）.apkg' },
+      { id: 'ai-machine-learning', name: 'AI机器学习', version: '1.1.0', size: 5513671, cardCount: 1450, accessType: 'public', fileName: 'AI机器学习（分发版）.apkg' },
+      { id: 'it-computer', name: 'IT计算机', version: '1.0.0', size: 35284024, cardCount: 3400, accessType: 'public', fileName: 'IT计算机（分发版）.apkg' },
       { id: 'china-law-professional', name: '中国法律专业版', version: '1.0.0', size: 1351898, cardCount: 2500, accessType: 'public', fileName: '中国法律专业版.apkg' },
     ],
   );

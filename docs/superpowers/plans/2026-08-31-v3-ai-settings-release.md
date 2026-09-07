@@ -1,5 +1,8 @@
 # 记得闪卡 3.0.0 与 AI 配置界面 Implementation Plan
 
+> 归档状态：这是一次性历史设计/执行记录，不是当前路线图、待办列表或操作手册。未勾选项不表示仍未实现；当前事实请查阅 [文档导航](../../README.md)、[开发状态](../../DEVELOPMENT_PLAN.md)、[当前架构](../../architecture.md) 和实际源码/测试。
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 发布版本与正式公告统一到 3.0.0，并完成 AI 配置文案、DeepSeek 模型、输入框样式和标题居中的调整。

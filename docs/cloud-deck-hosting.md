@@ -1,5 +1,8 @@
 # 云端牌组托管指南
 
+> 现行运维文档。目录 Schema 以 `entry/src/main/ets/model/云端牌组模型.ts` 为准，
+> 当前发布数据以 `hosting/cloud-decks.json` 为准；历史 plan/spec 不能覆盖这两处事实。
+
 云端牌组功能不要求自建业务服务器。客户端只读取一个公开 HTTPS JSON 目录，再从目录提供的 HTTPS 地址下载 `.apkg` 内容。目录和文件可以放在 123Pan、GitCode、国内对象存储或其他能稳定提供下载地址的第三方服务。
 
 ## 1. 准备文件

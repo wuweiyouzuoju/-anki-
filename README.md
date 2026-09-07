@@ -2,9 +2,10 @@
 
 jidecards 是面向 HarmonyOS 的开源 Anki 卡片学习客户端，使用 ArkUI 构建应用界面，并复用 Anki 的 Rust 后端。
 
-**当前版本：2.3.3（GitHub 与华为应用市场一致）**
+**当前源码版本：2.3.3（versionCode 2303）**
 
-在华为应用市场（AppGallery）搜索“记得闪卡”即可下载安装。
+应用已发布到华为应用市场，可搜索“记得闪卡”下载安装。商店实际上架版本以
+AppGallery 页面为准；仓库中的构建版本以 `AppScope/app.json5` 为唯一依据。
 
 ### 2.3.3 暂时隐藏的功能
 
@@ -48,7 +49,7 @@ jidecards 是面向 HarmonyOS 的开源 Anki 卡片学习客户端，使用 ArkU
 - **多入口改卡**：可从首页、新建牌组面板、学习中的当前卡片和浏览器选中内容进入 AI 改卡；从当前卡片进入时只在本地预载上下文，用户发送消息后才请求 AI 提供商。
 - **安全写入**：普通修改需要确认；删除、迁移笔记类型、模板/CSS 等高风险操作会显示精确影响并要求二次确认。执行前重新检查基线，检测到卡片已被其他操作修改时停止写入。
 - **可观察过程**：页面按正文、思考摘要、工具过程、来源、草稿和操作的顺序展示执行过程；工具详情默认折叠，可查看经过脱敏和截断的参数、结果与失败原因。
-- **联网与来源**：Provider 真正返回搜索事件和 HTTPS 来源时才显示联网成功；不支持联网的模型不会被伪装成已经搜索。
+- **联网与来源**：2.3.3 源码保留 Provider 搜索协议与来源展示，但页面当前强制关闭联网搜索；重新开放前不得宣称 Agent 已联网检索。
 - **提供商配置**：DeepSeek 为默认提供商，同时支持 OpenAI 和兼容 Responses 协议的自定义 HTTPS 接口；提供商、模型选择会被记忆，API 密钥加密保存在设备本地。
 
 > 当前限制：通用 Agent 尚不创建图片遮罩；图片和音频只发送模型可支持的安全表示；实体手机、OpenAI 在线请求及高风险真实写入仍需在重新开放入口前完成重点回归。
@@ -116,17 +117,19 @@ jidecards 是面向 HarmonyOS 的开源 Anki 卡片学习客户端，使用 ArkU
 
 - Node.js 18 或更高版本
 - DevEco Studio 6.1.0.860
-- HarmonyOS SDK 6.1.0.105，Compile/Target API 23
+- HarmonyOS SDK 6.1.0.105，Compatible API 21、Target API 23（Compile API 由当前 DevEco SDK 决定）
 - Rust 1.92.0（见 `rust-toolchain.toml`）
 - `protoc`、`cargo-zigbuild`、`zig`
 
 ### 获取 Anki 源码
 
-Rust 后端依赖锁定在 Anki 26.05（提交 `e64c6b1`）。构建前将对应源码放到 `third_party/anki/`：
+Rust 后端依赖锁定在 Anki 26.05（提交 `e64c6b1`）。`third_party/` 被
+`.gitignore` 排除，并不是 Git submodule；首次构建前需自行准备本地源码：
 
 ```bash
 git clone https://github.com/ankitects/anki.git third_party/anki
 git -C third_party/anki checkout e64c6b1
+git -C third_party/anki rev-parse --short HEAD
 ```
 
 Anki rslib 版权归 Ankitects Pty Ltd 及其贡献者所有，并依据 AGPL-3.0-or-later 提供。
@@ -145,7 +148,9 @@ npm run build:app
 npm test
 ```
 
-更完整的开发说明见 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) 和 [docs/architecture.md](docs/architecture.md)。
+完整文档导航见 [docs/README.md](docs/README.md)。当前开发状态见
+[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)，架构见
+[docs/architecture.md](docs/architecture.md)。
 
 ## 开源许可
 

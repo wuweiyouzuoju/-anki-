@@ -1,5 +1,8 @@
 # 官方公告直链发布指南
 
+> 现行运维文档。公告 Schema 以 `entry/src/main/ets/model/官方公告模型.ts` 为准，
+> 当前发布内容以 `hosting/announcement.json` 为准。
+
 应用通过 123 云盘为 `announcement.json` 实际生成的公开 HTTPS 长链读取公告。不得根据 UID、目录名或 CDN 主域名自行拼接地址，客户端不得包含 Client ID、Client Secret、Token 或上传凭据。
 
 ## 首次接入：验证固定文件路径

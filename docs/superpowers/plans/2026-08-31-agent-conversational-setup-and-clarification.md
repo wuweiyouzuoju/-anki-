@@ -1,5 +1,8 @@
 # Agent Conversational Setup and Clarification Implementation Plan
 
+> 归档状态：这是一次性历史设计/执行记录，不是当前路线图、待办列表或操作手册。未勾选项不表示仍未实现；当前事实请查阅 [文档导航](../../README.md)、[开发状态](../../DEVELOPMENT_PLAN.md)、[当前架构](../../architecture.md) 和实际源码/测试。
+
+
 > 历史设计说明：2026-09-04 用户确认的现行交互见 [Agent 2.0 实施约定](../../agent-2-design.md#澄清的对话呈现)。本文中的澄清自动折叠、“已确认”标题及共用工具外壳已被替代：澄清显示普通问题，回答后移除回答控件，上一段保留澄清工具记录，按简洁版/实验版默认收起/展开；底层协议和状态机仍保留。开局配置也沿用原有直接显示的选择控件。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -1,5 +1,8 @@
 # 云端分发版牌组目录与三选上限 Implementation Plan
 
+> 归档状态：这是一次性历史设计/执行记录，不是当前路线图、待办列表或操作手册。未勾选项不表示仍未实现；当前事实请查阅 [文档导航](../../README.md)、[开发状态](../../DEVELOPMENT_PLAN.md)、[当前架构](../../architecture.md) 和实际源码/测试。
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让首次云端牌组引导只展示当前可下载的六个牌组、最多选择三个，并明确提示可从官方 QQ 群免费下载更多牌组文件。
