@@ -33,6 +33,7 @@
 
 import { 应用尺寸 } from '../../utils/应用尺寸';
 import { 颜色键 } from '../../model/颜色主题';
+import { SHOW_AI_AGENT_CHANNELS } from '../../model/ReleaseFeatures';
 
 @Component
 export struct 批量操作栏 {
@@ -206,15 +207,17 @@ export struct 批量操作栏 {
       }
       .width('100%')
 
-      Button($r('app.string.ai_card_edit'))
-        .width('100%')
-        .height(应用尺寸.按钮高度)
-        .fontSize(应用尺寸.字号_正文_小)
-        .fontColor($r('app.color.text_primary'))
-        .backgroundColor($r('app.color.surface_card'))
-        .borderRadius(应用尺寸.圆角_胶囊)
-        .enabled(!this.busy)
-        .onClick((): void => { this.onAI改卡(); })
+      if (SHOW_AI_AGENT_CHANNELS) {
+        Button($r('app.string.ai_card_edit'))
+          .width('100%')
+          .height(应用尺寸.按钮高度)
+          .fontSize(应用尺寸.字号_正文_小)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.surface_card'))
+          .borderRadius(应用尺寸.圆角_胶囊)
+          .enabled(!this.busy)
+          .onClick((): void => { this.onAI改卡(); })
+      }
     }
     .width('100%')
     .padding({

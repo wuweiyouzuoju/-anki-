@@ -2,6 +2,7 @@
 
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
+import { SHOW_AI_AGENT_CHANNELS } from '../model/ReleaseFeatures';
 
 // ========================================================
 // @块ID COMP-HOME-ACTION-001
@@ -67,28 +68,30 @@ export struct 主页操作面板 {
           .height(应用尺寸.行动按钮高度)
           .textAlign(TextAlign.Center)
           .onClick((): void => this.导入牌组回调())
-        Divider()
-          .color($r('app.color.border_subtle'))
-          .strokeWidth(应用尺寸.卡片边框)
-          .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
-        Text($r('app.string.ai_card_title'))
-          .fontSize(应用尺寸.字号_正文)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .height(应用尺寸.行动按钮高度)
-          .textAlign(TextAlign.Center)
-          .onClick((): void => this.AI制卡回调())
-        Divider()
-          .color($r('app.color.border_subtle'))
-          .strokeWidth(应用尺寸.卡片边框)
-          .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
-        Text($r('app.string.ai_card_edit'))
-          .fontSize(应用尺寸.字号_正文)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .height(应用尺寸.行动按钮高度)
-          .textAlign(TextAlign.Center)
-          .onClick((): void => this.AI改卡回调())
+        if (SHOW_AI_AGENT_CHANNELS) {
+          Divider()
+            .color($r('app.color.border_subtle'))
+            .strokeWidth(应用尺寸.卡片边框)
+            .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+          Text($r('app.string.ai_card_title'))
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .height(应用尺寸.行动按钮高度)
+            .textAlign(TextAlign.Center)
+            .onClick((): void => this.AI制卡回调())
+          Divider()
+            .color($r('app.color.border_subtle'))
+            .strokeWidth(应用尺寸.卡片边框)
+            .margin({ left: 应用尺寸.卡片内边距, right: 应用尺寸.卡片内边距 })
+          Text($r('app.string.ai_card_edit'))
+            .fontSize(应用尺寸.字号_正文)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .height(应用尺寸.行动按钮高度)
+            .textAlign(TextAlign.Center)
+            .onClick((): void => this.AI改卡回调())
+        }
         if (this.显示获取直链牌组) {
           Divider()
             .color($r('app.color.border_subtle'))

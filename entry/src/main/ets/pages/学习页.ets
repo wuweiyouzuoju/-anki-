@@ -64,6 +64,7 @@ import {
   loadAgentSettings
 } from '../backend/agent/AgentSettingsStore';
 import { loadAgentSecret } from '../backend/agent/AgentSecretStore';
+import { SHOW_AI_AGENT_CHANNELS } from '../model/ReleaseFeatures';
 
 /** 与上游 buildNextLearnMsg 一致：下一张学习卡 >=1 天后到期时，完成页不再提示学习卡 */
 const SECONDS_PER_DAY: number = 86400;
@@ -489,11 +490,13 @@ export struct 学习页 {
     ];
     // 「手写」入口：常驻显示（question/answer 阶段），无开关，进入后叠加 Canvas 笔迹层
     if (this.阶段 === 'question' || this.阶段 === 'answer') {
-      菜单.push({
-        value: this.取文案($r('app.string.ai_card_edit')),
-        action: () => { this.打开AI改卡(); },
-        enabled: this.当前卡片 !== null
-      });
+      if (SHOW_AI_AGENT_CHANNELS) {
+        菜单.push({
+          value: this.取文案($r('app.string.ai_card_edit')),
+          action: () => { this.打开AI改卡(); },
+          enabled: this.当前卡片 !== null
+        });
+      }
       菜单.push({
         value: this.取文案($r('app.string.study_handwrite')),
         action: () => { this.手写模式 = true; },

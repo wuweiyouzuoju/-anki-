@@ -9,6 +9,22 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
+test('2.3.3 release hides every user-visible Agent channel behind one disabled gate', () => {
+  const features = read('entry/src/main/ets/model/ReleaseFeatures.ets');
+  assert.match(features, /SHOW_AI_AGENT_CHANNELS:\s*boolean\s*=\s*false/);
+
+  for (const relative of [
+    'entry/src/main/ets/components/主页操作面板.ets',
+    'entry/src/main/ets/pages/学习页.ets',
+    'entry/src/main/ets/components/browser/批量操作栏.ets',
+    'entry/src/main/ets/components/设置面板.ets',
+  ]) {
+    const source = read(relative);
+    assert.match(source, /import \{ SHOW_AI_AGENT_CHANNELS \} from/);
+    assert.match(source, /if \(SHOW_AI_AGENT_CHANNELS\) \{/);
+  }
+});
+
 test('home exposes Agent create directly and routes Agent edit through Browser selection', () => {
   const panel = read('entry/src/main/ets/components/主页操作面板.ets');
   const home = read('entry/src/main/ets/pages/首页.ets');

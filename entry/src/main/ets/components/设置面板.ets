@@ -42,6 +42,7 @@ import { 字段帮助面板 } from './字段帮助面板';
 import { 取全屏转场时长, 取全屏转场曲线 } from '../utils/转场时长';
 import { 应用尺寸 } from '../utils/应用尺寸';
 import { 按下态按钮 } from './common/按下态按钮';
+import { SHOW_AI_AGENT_CHANNELS } from '../model/ReleaseFeatures';
 
 // ========================================================
 // @块ID UI-SETTINGS-PANEL-001
@@ -895,13 +896,14 @@ export struct 设置面板 {
           })
         }
 
-        // AI Agent：提供商/模型下拉、自定义端点、联网模式与 Asset Store 密钥。
-        ListItem() {
-          AIAgent设置分组({
-            是否深色: this.是否深色,
-            已展开: this.AIAgent分组展开,
-            切换展开回调: (): void => { this.AIAgent分组展开 = !this.AIAgent分组展开; }
-          })
+        if (SHOW_AI_AGENT_CHANNELS) {
+          ListItem() {
+            AIAgent设置分组({
+              是否深色: this.是否深色,
+              已展开: this.AIAgent分组展开,
+              切换展开回调: (): void => { this.AIAgent分组展开 = !this.AIAgent分组展开; }
+            })
+          }
         }
 
         // 6. 数据库检查分组（内联：契约测试要求 import 集合服务 / 检查数据库 / 数据库检查中 等保留在主壳）

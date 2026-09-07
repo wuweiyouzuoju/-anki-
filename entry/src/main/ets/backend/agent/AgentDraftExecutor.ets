@@ -6,10 +6,8 @@ import type { DeckTreeNode } from '../../proto/messages/DeckMessages';
 import type { EditableNote } from '../../proto/messages/NoteMessages';
 import type { NotetypeCapabilities, 变更笔记类型请求 } from '../../proto/messages/NotetypeMessages';
 import type { AgentImageAttachment, AgentImageCandidate, ChangeDraft, DraftOperation } from '../../model/agent/AgentTypes';
-import {
-  AgentConfirmationManager,
-  AgentConfirmationToken
-} from '../../model/agent/AgentConfirmation';
+import { AgentConfirmationManager } from '../../model/agent/AgentConfirmation';
+import type { AgentConfirmationToken } from '../../model/agent/AgentConfirmation';
 import { 卡片服务 } from '../卡片服务';
 import { 牌组服务 } from '../牌组服务';
 import { 笔记服务 } from '../笔记服务';
@@ -302,9 +300,8 @@ export class AgentDraftExecutor {
   }
 
   private async appendImages(note: EditableNote, attachments: AgentImageAttachment[],
-    draftId: string, noteIndex: number): Promise<string[]> {
-    const addedMedia: string[] = [];
-    if (attachments.length === 0) { return addedMedia; }
+    draftId: string, noteIndex: number, writtenMedia: string[]): Promise<void> {
+    if (attachments.length === 0) { return; }
     const context: common.UIAbilityContext = this.getAbilityContext();
     for (let index: number = 0; index < attachments.length; index++) {
       const attachment: AgentImageAttachment = attachments[index];
@@ -322,7 +319,8 @@ export class AgentDraftExecutor {
       if (最终文件名.length === 0) {
         throw new AgentDraftExecutorError('media_write_failed');
       }
-      addedMedia.push(最终文件名);
+      // 逐项登记到调用方的补偿列表，后续图片失败时也能回收此前写入。
+      writtenMedia.push(最终文件名);
       const altText: string = this.escapeHtmlAttribute(attachment.altText);
       const imageTag: string = altText.length === 0
         ? `<img src="${this.escapeHtmlAttribute(最终文件名)}">`
@@ -330,7 +328,6 @@ export class AgentDraftExecutor {
       const current: string = note.fields[attachment.fieldOrd];
       note.fields[attachment.fieldOrd] = current.length === 0 ? imageTag : `${current}<br>${imageTag}`;
     }
-    return addedMedia;
   }
 
   private async compensateMedia(fileNames: string[]): Promise<string> {
@@ -360,7 +357,7 @@ export class AgentDraftExecutor {
           for (const operation of group.operations) { note.fields[operation.fieldOrd] = operation.after; }
           const imageAttachments: AgentImageAttachment[] = (draft.imageAttachments ?? []).filter(
             (attachment: AgentImageAttachment): boolean => attachment.noteId === group.noteId);
-          writtenMedia.push(...await this.appendImages(note, imageAttachments, draft.id, groupIndex));
+          await this.appendImages(note, imageAttachments, draft.id, groupIndex, writtenMedia);
           const noteId: number = await this.notes.添加笔记(note, draft.affectedDeckIds[0]);
           this.appendSuccess(result, 'create_note', noteId);
         } catch (error) {
@@ -386,7 +383,7 @@ export class AgentDraftExecutor {
           if (operation.kind === 'update_field') { note.fields[operation.fieldOrd] = operation.after; }
           if (operation.kind === 'update_tags') { note.tags = JSON.parse(operation.after) as string[]; }
         }
-        writtenMedia.push(...await this.appendImages(note, imageAttachments, draft.id, noteId));
+        await this.appendImages(note, imageAttachments, draft.id, noteId, writtenMedia);
         await this.notes.更新笔记([note], false);
         this.appendSuccess(result, 'update_note', noteId);
       } catch (error) {
