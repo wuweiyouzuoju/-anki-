@@ -11,6 +11,16 @@ function read(relativePath) {
   return readFileSync(path.join(root, relativePath), 'utf8');
 }
 
+function lockValue(source, key) {
+  const prefix = `${key}=`;
+  const line = source.split(/\r?\n/).find((candidate) => candidate.startsWith(prefix));
+  return line?.slice(prefix.length);
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function markdownFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const absolute = path.join(directory, entry.name);
@@ -27,6 +37,7 @@ test('current documentation follows application and SDK configuration', () => {
   const upstream = read('UPSTREAM.lock');
   const readme = read('README.md');
   const status = read('docs/DEVELOPMENT_PLAN.md');
+  const sourceGuide = read('docs/CSDN-记得闪卡项目全解.md');
 
   const versionName = app.match(/versionName:\s*'([^']+)'/)?.[1];
   const versionCode = app.match(/versionCode:\s*(\d+)/)?.[1];
@@ -34,9 +45,11 @@ test('current documentation follows application and SDK configuration', () => {
   const compatibleVersion = compatibleSdk?.[1];
   const compatibleApi = compatibleSdk?.[2];
   const targetApi = buildProfile.match(/targetSdkVersion:\s*'[^']+\((\d+)\)'/)?.[1];
-  const lockedMinVersion = upstream.match(/^HARMONY_MIN_VERSION=(.+)$/m)?.[1];
-  const lockedMinApi = upstream.match(/^HARMONY_MIN_API=(\d+)$/m)?.[1];
-  const lockedTargetApi = upstream.match(/^HARMONY_TARGET_API=(\d+)$/m)?.[1];
+  const lockedMinVersion = lockValue(upstream, 'HARMONY_MIN_VERSION');
+  const lockedMinApi = lockValue(upstream, 'HARMONY_MIN_API');
+  const lockedTargetApi = lockValue(upstream, 'HARMONY_TARGET_API');
+  const lockedRust = lockValue(upstream, 'RUST_TOOLCHAIN');
+  const rustToolchain = read('rust-toolchain.toml').match(/^channel\s*=\s*"([^"]+)"$/m)?.[1];
 
   assert.ok(versionName);
   assert.ok(versionCode);
@@ -46,11 +59,37 @@ test('current documentation follows application and SDK configuration', () => {
   assert.equal(lockedMinVersion, compatibleVersion);
   assert.equal(lockedMinApi, compatibleApi);
   assert.equal(lockedTargetApi, targetApi);
+  assert.equal(lockedRust, rustToolchain);
   assert.match(readme, new RegExp(`当前源码版本：${versionName.replaceAll('.', '\\.')}`));
   assert.match(status, new RegExp(`应用版本 \\| ${versionName.replaceAll('.', '\\.')} / versionCode ${versionCode}`));
   assert.match(status, new RegExp(`最低兼容 SDK \\| HarmonyOS [^|]+（API ${compatibleApi}）`));
   assert.match(status, new RegExp(`目标 SDK \\| HarmonyOS [^|]+（API ${targetApi}）`));
+  assert.match(sourceGuide, new RegExp('源码版本是 `' + escapeRegex(versionName) + '`'));
+  assert.match(sourceGuide, new RegExp(`Compatible SDK 是 API ${compatibleApi}，Target SDK 是 API ${targetApi}`));
   assert.doesNotMatch(status, /当前实施记录|最低系统版本 \| HarmonyOS 5\.0\.0（API 12）/);
+});
+
+test('current capability documentation follows release gates and runtime constants', () => {
+  const releaseFeatures = read('entry/src/main/ets/model/ReleaseFeatures.ets');
+  const agentPage = read('entry/src/main/ets/pages/AI制卡页.ets');
+  const cardHtml = read('entry/src/main/ets/model/学习卡片HTML构建器.ets');
+  const readme = read('README.md');
+  const architecture = read('docs/architecture.md');
+  const agentDesign = read('docs/agent-2-design.md');
+  const gitignore = read('.gitignore');
+  const ci = read('.github/workflows/ci.yml');
+
+  assert.match(releaseFeatures, /SHOW_AI_AGENT_CHANNELS:\s*boolean\s*=\s*false/);
+  assert.match(agentPage, /searchMode:\s*'off'/);
+  assert.match(readme, /暂时隐藏的功能/);
+  assert.match(agentDesign, /关闭[\s\S]*全部 Agent 入口/);
+  assert.match(cardHtml, /https:\/\/jidecards-media\.local\//);
+  assert.match(architecture, /https:\/\/jidecards-media\.local\//);
+  assert.match(gitignore, /^\/third_party\/$/m);
+  assert.equal(existsSync(path.join(root, '.gitmodules')), false);
+  assert.match(ci, /\. \.\/UPSTREAM\.lock/);
+  assert.match(ci, /--branch "\$ANKI_TAG" "\$ANKI_REPOSITORY"/);
+  assert.match(ci, /rev-parse --short=7 HEAD\)" = "\$ANKI_RELEASE_COMMIT"/);
 });
 
 test('active Markdown uses valid relative links', () => {
@@ -63,6 +102,7 @@ test('active Markdown uses valid relative links', () => {
     'docs/agent-2-design.md',
     'docs/cloud-deck-hosting.md',
     'docs/official-announcement-hosting.md',
+    'docs/CSDN-记得闪卡项目全解.md',
     'docs/releases/3.0.0.md',
     'docs/superpowers/README.md',
   ];

@@ -22,8 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Clone Anki source (required for path dependency resolution)
-        run: git clone --depth 1 https://github.com/ankitects/anki.git third_party/anki
+      - name: Clone locked Anki source (required for path dependency resolution)
+        run: |
+          . ./UPSTREAM.lock
+          git clone --depth 1 --branch "$ANKI_TAG" "$ANKI_REPOSITORY" third_party/anki
+          test "$(git -C third_party/anki rev-parse --short=7 HEAD)" = "$ANKI_RELEASE_COMMIT"
       - uses: dtolnay/rust-toolchain@1.92.0
         with:
           components: rustfmt, clippy

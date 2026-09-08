@@ -209,7 +209,7 @@ function 剥除音频标签(html: string): string {
 //
 // @业务规则
 // Anki 桌面端通过全局 reviewer.scss 提供 #image-occlusion-container 的
-// position:relative 与 img/canvas 的 position:absolute 定位；jidecards01
+// position:relative 与 img/canvas 的 position:absolute 定位；jidecards
 // 复习页无此全局样式，需随卡片 HTML 一起注入。
 //
 // @副作用
