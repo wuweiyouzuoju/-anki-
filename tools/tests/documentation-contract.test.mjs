@@ -24,18 +24,28 @@ function markdownFiles(directory) {
 test('current documentation follows application and SDK configuration', () => {
   const app = read('AppScope/app.json5');
   const buildProfile = read('build-profile.json5');
+  const upstream = read('UPSTREAM.lock');
   const readme = read('README.md');
   const status = read('docs/DEVELOPMENT_PLAN.md');
 
   const versionName = app.match(/versionName:\s*'([^']+)'/)?.[1];
   const versionCode = app.match(/versionCode:\s*(\d+)/)?.[1];
-  const compatibleApi = buildProfile.match(/compatibleSdkVersion:\s*'[^']+\((\d+)\)'/)?.[1];
+  const compatibleSdk = buildProfile.match(/compatibleSdkVersion:\s*'([^']+)\((\d+)\)'/);
+  const compatibleVersion = compatibleSdk?.[1];
+  const compatibleApi = compatibleSdk?.[2];
   const targetApi = buildProfile.match(/targetSdkVersion:\s*'[^']+\((\d+)\)'/)?.[1];
+  const lockedMinVersion = upstream.match(/^HARMONY_MIN_VERSION=(.+)$/m)?.[1];
+  const lockedMinApi = upstream.match(/^HARMONY_MIN_API=(\d+)$/m)?.[1];
+  const lockedTargetApi = upstream.match(/^HARMONY_TARGET_API=(\d+)$/m)?.[1];
 
   assert.ok(versionName);
   assert.ok(versionCode);
+  assert.ok(compatibleVersion);
   assert.ok(compatibleApi);
   assert.ok(targetApi);
+  assert.equal(lockedMinVersion, compatibleVersion);
+  assert.equal(lockedMinApi, compatibleApi);
+  assert.equal(lockedTargetApi, targetApi);
   assert.match(readme, new RegExp(`当前源码版本：${versionName.replaceAll('.', '\\.')}`));
   assert.match(status, new RegExp(`应用版本 \\| ${versionName.replaceAll('.', '\\.')} / versionCode ${versionCode}`));
   assert.match(status, new RegExp(`最低兼容 SDK \\| HarmonyOS [^|]+（API ${compatibleApi}）`));
