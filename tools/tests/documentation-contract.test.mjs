@@ -61,6 +61,9 @@ test('current documentation follows application and SDK configuration', () => {
   assert.equal(lockedTargetApi, targetApi);
   assert.equal(lockedRust, rustToolchain);
   assert.match(readme, new RegExp(`当前源码版本：${versionName.replaceAll('.', '\\.')}`));
+  assert.match(readme, /checkout --detach e64c6b1/);
+  assert.match(readme, /rev-parse --short=7 HEAD/);
+  assert.match(readme, /Project > Signing Configs/);
   assert.match(status, new RegExp(`应用版本 \\| ${versionName.replaceAll('.', '\\.')} / versionCode ${versionCode}`));
   assert.match(status, new RegExp(`最低兼容 SDK \\| HarmonyOS [^|]+（API ${compatibleApi}）`));
   assert.match(status, new RegExp(`目标 SDK \\| HarmonyOS [^|]+（API ${targetApi}）`));
@@ -85,11 +88,13 @@ test('current capability documentation follows release gates and runtime constan
   assert.match(agentDesign, /关闭[\s\S]*全部 Agent 入口/);
   assert.match(cardHtml, /https:\/\/jidecards-media\.local\//);
   assert.match(architecture, /https:\/\/jidecards-media\.local\//);
+  assert.match(architecture, /当前不检查 `protoc`、`cargo-zigbuild`、`zig`、Anki checkout 或签名材料/);
   assert.match(gitignore, /^\/third_party\/$/m);
   assert.equal(existsSync(path.join(root, '.gitmodules')), false);
   assert.match(ci, /\. \.\/UPSTREAM\.lock/);
   assert.match(ci, /--branch "\$ANKI_TAG" "\$ANKI_REPOSITORY"/);
   assert.match(ci, /rev-parse --short=7 HEAD\)" = "\$ANKI_RELEASE_COMMIT"/);
+  assert.doesNotMatch(cardHtml + read('entry/src/main/ets/model/颜色主题.ets'), /\.trae\//);
 });
 
 test('active Markdown uses valid relative links', () => {

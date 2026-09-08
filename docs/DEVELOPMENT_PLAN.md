@@ -51,7 +51,9 @@ Core”或“兼容常用 Anki 数据与学习流程”，不要使用未经差�
 
 每次发布至少记录以下证据；没有证据的项目应写“未验证”，不能沿用旧日期结果：
 
-- `npm run doctor` 通过，工具链与锁定版本一致。
+- `npm run doctor` 通过其当前覆盖的基础工具检查；另行确认 `protoc`、
+  `cargo-zigbuild`、`zig`、Anki checkout 和本机签名配置。不得把 doctor 通过解释为
+  完整构建已经通过。
 - `npm test` 全部通过。
 - `npm run build:app` 完成 Rust 双架构、ArkTS 类型检查和签名 HAP 构建。
 - 只使用 `hdc install -r` 覆盖安装，确认不会删除用户 collection 与媒体。

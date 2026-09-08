@@ -128,8 +128,8 @@ Rust 后端依赖锁定在 Anki 26.05（提交 `e64c6b1`）。`third_party/` 被
 
 ```bash
 git clone https://github.com/ankitects/anki.git third_party/anki
-git -C third_party/anki checkout e64c6b1
-git -C third_party/anki rev-parse --short HEAD
+git -C third_party/anki checkout --detach e64c6b1
+git -C third_party/anki rev-parse --short=7 HEAD
 ```
 
 Anki rslib 版权归 Ankitects Pty Ltd 及其贡献者所有，并依据 AGPL-3.0-or-later 提供。
@@ -141,6 +141,11 @@ ohpm install
 npm run doctor
 npm run build:app
 ```
+
+`build-profile.json5` 中的签名材料路径只对配置它的开发机有效。首次在 DevEco
+Studio 运行或安装到模拟器/真机前，请在
+**File > Project Structure > Project > Signing Configs** 中改为自己的自动签名；
+命令行安装必须使用本机生成的 signed HAP，不能复用他人的签名配置。
 
 运行 Node 契约测试：
 
